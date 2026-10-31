@@ -35,6 +35,10 @@ describe("normalizeBbox", () => {
     expect(normalizeBbox({ west: 370, east: 390, ...lat })).toEqual({ west: 10, east: 30, ...lat });
   });
 
+  it("handles already-wrapped crossing bounds starting at 180", () => {
+    expect(normalizeBbox({ west: 180, east: -170, ...lat })).toEqual({ west: -180, east: -170, ...lat });
+  });
+
   it("keeps an east edge of exactly 180", () => {
     expect(normalizeBbox({ west: 170, east: 180, ...lat })).toEqual({ west: 170, east: 180, ...lat });
   });
@@ -42,6 +46,9 @@ describe("normalizeBbox", () => {
   it.each([
     [-180, 180],
     [-300, 200],
+    // Exactly 360° but not from -180: must not collapse to a zero-width box.
+    [10, 370],
+    [-170, 190],
   ])("returns the whole world for a span of 360° or more (%d..%d)", (west, east) => {
     expect(normalizeBbox({ west, east, ...lat })).toEqual({ west: -180, east: 180, ...lat });
   });

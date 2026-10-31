@@ -126,11 +126,12 @@ describe("mapItemsQuerySchema", () => {
     ["NaN", "NaN,2,3,4"],
     ["south above north", "0,10,1,5"],
     ["west above east outside ±180", "200,0,10,1"],
+    ["west above east with east below -180", "170,0,-190,1"],
   ])("rejects a bbox with %s", (_label, bbox) => {
     expect(mapItemsQuerySchema.safeParse({ bbox, zoom: "5" }).success).toBe(false);
   });
 
-  it.each(["", "2.5", "-1", "23", "abc", "Infinity"])("rejects zoom %j", (zoom) => {
+  it.each(["", "   ", "2.5", "-1", "23", "abc", "Infinity"])("rejects zoom %j", (zoom) => {
     expect(mapItemsQuerySchema.safeParse({ bbox: "0,0,1,1", zoom }).success).toBe(false);
   });
 
@@ -149,7 +150,7 @@ describe("listMessagesQuerySchema", () => {
     expect(listMessagesQuerySchema.parse({ after: ID })).toEqual({ after: ID });
   });
 
-  it.each(["0", "101", "2.5", "abc", "NaN", "Infinity", ""])("rejects limit %j", (limit) => {
+  it.each(["0", "101", "2.5", "abc", "NaN", "Infinity", "", "   "])("rejects limit %j", (limit) => {
     expect(listMessagesQuerySchema.safeParse({ limit }).success).toBe(false);
   });
 
