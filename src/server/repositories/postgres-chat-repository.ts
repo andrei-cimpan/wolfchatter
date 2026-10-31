@@ -1,12 +1,7 @@
 import type pg from "pg";
+import { MESSAGE_LIMIT_DEFAULT, MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import type { Bbox, MapItem, Message, Room } from "@/lib/types";
-import {
-  DEFAULT_MESSAGE_LIMIT,
-  MAX_MESSAGE_LIMIT,
-  RoomNotFoundError,
-  type ChatRepository,
-  type ListMessagesOptions,
-} from "./chat-repository";
+import { RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
 import { CLUSTER_MAX_ZOOM, MAP_ITEMS_LIMIT, clusterCellSize, longitudeRanges } from "./map-grid";
 
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -80,8 +75,8 @@ function toRoomItem(row: Pick<RoomRow, "id" | "title" | "lat" | "lng" | "message
 
 // NaN would reach Postgres as the text "NaN" and fail the query, so it means "use the default".
 function clampLimit(limit: number | undefined): number {
-  if (limit === undefined || Number.isNaN(limit)) return DEFAULT_MESSAGE_LIMIT;
-  return Math.min(Math.max(Math.trunc(limit), 1), MAX_MESSAGE_LIMIT);
+  if (limit === undefined || Number.isNaN(limit)) return MESSAGE_LIMIT_DEFAULT;
+  return Math.min(Math.max(Math.trunc(limit), 1), MESSAGE_LIMIT_MAX);
 }
 
 // Shared viewport filter: $1..$2 latitude, $3..$6 the two longitude ranges.

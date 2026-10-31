@@ -73,7 +73,7 @@ interface ChatRepository {
 `Room`, `Message`, and `MapItem` live in `src/lib/types.ts` so the UI can use them without importing server code. The rules the implementation follows:
 
 - **Message cursors are message ids.** `before` returns the page just older than that message and `after` returns the messages newer than it, always oldest first. Messages are ordered by `(created_at, id)`, which keeps the order total when several rows share a `created_at` (as they do inside one transaction). It also avoids `created_at` cursors, which lose microseconds when they pass through a JavaScript `Date`. `limit` defaults to 50 and is capped at 100. Passing both `before` and `after` is an error.
-- **Malformed or unknown ids match nothing.** `getRoom` returns `null`, `listMessages` returns `[]`, and `postMessage` throws `RoomNotFoundError`, which the API maps to 404.
+- **Malformed or unknown ids match nothing.** `getRoom` returns `null`, `listMessages` returns `[]`, and `postMessage` throws `RoomNotFoundError`. The repository stays lenient so it never throws on bad input; the routes decide the status code (see Input validation).
 - **Map items:** at zoom 16 and above, the newest 500 rooms in view. Below that, the 500 busiest grid cells.
 
 Live delivery is a separate concern (`server/realtime`), so v2 can replace it with Supabase Realtime without touching the repository contract.
@@ -127,6 +127,18 @@ create trigger messages_notify after insert on messages
 | `GET /api/rooms/:id/stream` | SSE stream of new messages | 200 `text/event-stream` |
 
 Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. Statuses: 400 validation, 404 unknown room, 429 rate limited.
+
+### Input validation
+
+Schemas live in `src/lib/schemas.ts`, and limits shared with the database and UI live in `src/lib/limits.ts`. Each route parses its input with these schemas before calling the repository.
+
+- **Room id in the path** (`/api/rooms/:id`): a value that fails `roomIdSchema` gets the same **404** as an unknown room, because to the caller both are "no such room".
+- **Cursors** (`before`, `after`): must be UUIDs; a malformed cursor is a **400**, since it can only come from a broken client.
+- **New room:** `lat` is a finite number in [-90, 90]. `lng` is any finite number, wrapped into ±180, so a click on a repeated copy of the world creates the room in the right place.
+- **Message:** `author` (1 to 32 characters) and `body` (1 to 1000) are trimmed, and whitespace-only values are rejected. Line breaks inside the body are kept. Lengths count code points, as Postgres `char_length` does, so an emoji counts once.
+- **Viewport:** `bbox=west,south,east,north` must be four finite numbers with `south <= north`, and `zoom` an integer from 0 to 22. `west > east` is accepted only when both are within ±180 (already-wrapped bounds that cross the antimeridian). Bounds are then normalized (see Viewport loading, step 1), which clamps latitudes to ±90 after the `south <= north` check.
+- **Message paging:** `limit` is an integer from 1 to 100 (anything else is a 400), and `before` and `after` cannot be combined.
+- **Query numbers:** plain decimals only, optionally with an exponent (`1e-7`), and surrounding whitespace is ignored. Empty strings, hex, binary, a leading `+`, `NaN` and values that overflow to `Infinity` are rejected rather than coerced.
 
 ## Viewport loading and clustering
 
