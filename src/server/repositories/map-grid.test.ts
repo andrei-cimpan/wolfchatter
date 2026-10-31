@@ -1,22 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clusterCellSize, longitudeRanges } from "./map-grid";
-
-describe("clusterCellSize", () => {
-  it.each([
-    [0, 90],
-    [2, 22.5],
-    [10, 360 / 1024 / 4],
-    [15, 360 / 32768 / 4],
-  ])("at zoom %d is %d degrees", (zoom, size) => {
-    expect(clusterCellSize(zoom)).toBeCloseTo(size, 12);
-  });
-
-  it("puts cell edges exactly on the antimeridian", () => {
-    for (let zoom = 0; zoom < 16; zoom++) {
-      expect(Number.isInteger(180 / clusterCellSize(zoom))).toBe(true);
-    }
-  });
-});
+import { longitudeRanges, viewportCenter } from "./map-grid";
 
 describe("longitudeRanges", () => {
   it("returns the viewport range for a normal viewport", () => {
@@ -35,5 +18,16 @@ describe("longitudeRanges", () => {
 
   it("keeps a whole-world viewport as one range", () => {
     expect(longitudeRanges({ west: -180, east: 180 })[0]).toEqual({ from: -180, to: 180 });
+  });
+});
+
+describe("viewportCenter", () => {
+  it("is the middle of a normal viewport", () => {
+    expect(viewportCenter({ west: 10, south: 40, east: 30, north: 50 })).toEqual({ lat: 45, lng: 20 });
+  });
+
+  it("is on the far side of the world for a viewport that crosses the antimeridian", () => {
+    expect(viewportCenter({ west: 170, south: -10, east: -160, north: 10 })).toEqual({ lat: 0, lng: -175 });
+    expect(viewportCenter({ west: 160, south: -10, east: -170, north: 10 })).toEqual({ lat: 0, lng: 175 });
   });
 });

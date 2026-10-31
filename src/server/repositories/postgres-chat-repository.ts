@@ -2,7 +2,8 @@ import type pg from "pg";
 import { MESSAGE_LIMIT_DEFAULT, MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import type { Bbox, MapItem, Message, Room } from "@/lib/types";
 import { RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
-import { CLUSTER_MAX_ZOOM, MAP_ITEMS_LIMIT, clusterCellSize, longitudeRanges } from "./map-grid";
+import { CLUSTER_MAX_ZOOM, clusterCellSize } from "@/lib/map-grid";
+import { MAP_ITEMS_LIMIT, longitudeRanges, viewportCenter } from "./map-grid";
 
 const FOREIGN_KEY_VIOLATION = "23503";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -118,15 +119,21 @@ export class PostgresChatRepository implements ChatRepository {
     }
 
     // One row per grid cell. For a single-room cell the array_agg()[1] values are that room's.
+    // Over the cap, the busiest cells win; among equally busy ones, those nearest the centre, so
+    // the cap trims the padded edges the client asked for rather than whole rows of the view.
+    // Longitude distance goes the short way round, for viewports that cross the antimeridian.
+    const center = viewportCenter(bbox);
     const { rows } = await this.pool.query<CellRow>(
       `select count(*)::int as count, avg(lat) as lat, avg(lng) as lng,
               (array_agg(id))[1] as id, (array_agg(title))[1] as title,
               (array_agg(message_count))[1] as message_count
        from rooms where ${IN_VIEWPORT}
        group by floor(lat / $7), floor(lng / $7)
-       order by count desc, floor(lat / $7), floor(lng / $7)
+       order by count desc,
+                power(avg(lat) - $8, 2) + power(least(abs(avg(lng) - $9), 360 - abs(avg(lng) - $9)), 2),
+                floor(lat / $7), floor(lng / $7)
        limit ${MAP_ITEMS_LIMIT}`,
-      [...viewportParams(bbox), clusterCellSize(zoom)],
+      [...viewportParams(bbox), clusterCellSize(zoom), center.lat, center.lng],
     );
     return rows.map((row) =>
       row.count === 1 ? toRoomItem(row) : { type: "cluster", lat: row.lat, lng: row.lng, count: row.count },

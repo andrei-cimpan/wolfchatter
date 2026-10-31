@@ -7,7 +7,22 @@ const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded
  * Fails any test whose page throws or logs a console error, such as React's hydration mismatch,
  * which otherwise only shows in the dev server log while the test passes.
  */
-export const test = base.extend<{ failOnBrowserErrors: void }>({
+export const test = base.extend<{ failOnBrowserErrors: void; ownRoomsOnly: boolean; hideOtherRooms: void }>({
+  /**
+   * The e2e database is emptied once per run, not per test, and tests click the same spots, so
+   * each would see (and cluster with) the others' rooms. By default a test's map shows only the
+   * rooms its own page created. Tests about viewport loading turn this off.
+   */
+  ownRoomsOnly: [true, { option: true }],
+  hideOtherRooms: [
+    async ({ page, ownRoomsOnly }, use) => {
+      if (ownRoomsOnly) await showOnlyOwnRooms(page);
+      await use();
+      // A viewport request can still be in flight when a test ends; its route.fetch would then throw.
+      if (ownRoomsOnly) await page.unrouteAll({ behavior: "ignoreErrors" });
+    },
+    { auto: true },
+  ],
   failOnBrowserErrors: [
     async ({ page }, use) => {
       const errors: string[] = [];
@@ -25,6 +40,39 @@ export const test = base.extend<{ failOnBrowserErrors: void }>({
 });
 
 export { expect };
+
+type OwnRoom = { id: string; title: string; lat: number; lng: number; messageCount: number };
+
+// Registered before each test's own routes, so those run first and reach these only when they
+// fall back; a test that fakes a POST response therefore never records a room here.
+async function showOnlyOwnRooms(page: Page): Promise<void> {
+  const ownRooms: OwnRoom[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/rooms",
+    async (route) => {
+      const response = await route.fetch();
+      if (!response.ok()) return route.fulfill({ response });
+      if (route.request().method() === "POST") {
+        // Recorded before the browser sees the room, so the refetch it triggers already has it.
+        ownRooms.push((await response.json()) as OwnRoom);
+        return route.fulfill({ response });
+      }
+      // The server's answer is replaced, not filtered: it may have clustered one of this test's
+      // rooms with another test's. Rooms outside the viewport are harmless, Leaflet just draws them off-screen.
+      const json = ownRooms.map(({ id, title, lat, lng, messageCount }) => ({ type: "room", id, title, lat, lng, messageCount }));
+      return route.fulfill({ response, json });
+    },
+  );
+}
+
+/** Zoom levels of the tiles on screen; tile URLs end in /{z}/{x}/{y}.png. The map opens at 5. */
+export function tileZooms(page: Page) {
+  return page
+    .locator(".leaflet-tile")
+    .evaluateAll((tiles) => [
+      ...new Set(tiles.map((t) => new URL((t as HTMLImageElement).src).pathname.split("/")[1])),
+    ]);
+}
 
 // A 1x1 PNG served for every off-site image, whichever basemap the dev server is configured with:
 // the tests stay offline and off tile providers' servers (whose policies forbid automated load),

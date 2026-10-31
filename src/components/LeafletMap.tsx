@@ -1,42 +1,24 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-import type { StaticImageData } from "next/image";
-import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
-import iconUrl from "leaflet/dist/images/marker-icon.png";
-import shadowUrl from "leaflet/dist/images/marker-shadow.png";
-import { useEffect, useState } from "react";
-import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { useCallback, useEffect, useState } from "react";
+import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { useMapItems } from "@/hooks/useMapItems";
 import { useRoom } from "@/hooks/useRoom";
 import { useSelectedRoomId } from "@/hooks/useSelectedRoom";
-import { nearestWorldCopy } from "@/lib/bbox";
 import { INITIAL_VIEW, tileConfigFromEnv } from "@/lib/map-config";
-import type { Room } from "@/lib/types";
+import type { Bbox, MapItem } from "@/lib/types";
+import { nextViewportQuery, type ViewportQuery } from "@/lib/viewport";
+import { MapMarkers, type Cluster, type PinAnchor, type PinRoom } from "./MapMarkers";
+
+export type { PinAnchor } from "./MapMarkers";
 
 const tileConfig = tileConfigFromEnv();
 
-// Next types image imports as StaticImageData, but Turbopack gives a plain URL for these.
-function assetUrl(image: StaticImageData | string): string {
-  return typeof image === "string" ? image : image.src;
-}
-
-// Leaflet finds its default pin images through a CSS path that bundling breaks, so point the
-// same images (and sizes) at the URLs the bundler emits.
-const pinIcon = new L.Icon({
-  iconUrl: assetUrl(iconUrl),
-  iconRetinaUrl: assetUrl(iconRetinaUrl),
-  shadowUrl: assetUrl(shadowUrl),
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  shadowSize: [41, 41],
-});
-
-/** The longitude a room was clicked at, possibly on a repeated copy of the world. */
-export type PinAnchor = { roomId: string; lng: number };
+// Waits for the map to settle, so a drag or a run of zoom clicks makes one request, not one per step.
+const VIEWPORT_DEBOUNCE_MS = 250;
 
 export interface LeafletMapProps {
-  createdRooms: Room[];
   pinAnchor: PinAnchor | null;
   onMapClick: (lat: number, lng: number) => void;
   onRoomClick: (id: string) => void;
@@ -65,52 +47,53 @@ function KeepSizeInSync() {
   return null;
 }
 
-// Rooms store a wrapped longitude, but the map repeats the world sideways. Each pin is drawn on the
-// copy nearest the view's centre, recomputed after every move. At low zoom several copies are on
-// screen at once, so the room just created stays on the copy that was clicked until the user
-// drags or zooms. Not on any move: raising the mobile sheet moves the map too.
-function RoomPins({
-  rooms,
-  pinAnchor,
-  onRoomClick,
-}: Pick<LeafletMapProps, "pinAnchor" | "onRoomClick"> & { rooms: Room[] }) {
+/** Reports the visible area straight away, then once the map stops moving. */
+function TrackViewport({ onChange }: { onChange: (bounds: Bbox, zoom: number) => void }) {
   const map = useMap();
-  const [centerLng, setCenterLng] = useState(() => map.getCenter().lng);
-  const [releasedAnchor, setReleasedAnchor] = useState<PinAnchor | null>(null);
-  useMapEvents({
-    moveend: () => setCenterLng(map.getCenter().lng),
-    dragstart: () => setReleasedAnchor(pinAnchor),
-    zoomstart: () => setReleasedAnchor(pinAnchor),
-  });
-  const anchor = pinAnchor !== releasedAnchor ? pinAnchor : null;
-
-  return rooms.map((room) => (
-    <Marker
-      key={room.id}
-      position={[room.lat, nearestWorldCopy(room.lng, room.id === anchor?.roomId ? anchor.lng : centerLng)]}
-      icon={pinIcon}
-      title={room.title}
-      alt={room.title}
-      eventHandlers={{
-        click: () => onRoomClick(room.id),
-        // Leaflet makes pins focusable buttons but only handles Enter when a popup is bound.
-        keydown: (event) => {
-          const { key } = event.originalEvent;
-          if (key !== "Enter" && key !== " ") return;
-          event.originalEvent.preventDefault();
-          onRoomClick(room.id);
-        },
-      }}
-    />
-  ));
+  useEffect(() => {
+    const report = () => {
+      const bounds = map.getBounds();
+      onChange(
+        { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() },
+        map.getZoom(),
+      );
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const reportLater = () => {
+      clearTimeout(timer);
+      timer = setTimeout(report, VIEWPORT_DEBOUNCE_MS);
+    };
+    report();
+    map.on("moveend", reportLater);
+    return () => {
+      clearTimeout(timer);
+      map.off("moveend", reportLater);
+    };
+  }, [map, onChange]);
+  return null;
 }
 
-export default function LeafletMap({ createdRooms, pinAnchor, onMapClick, onRoomClick }: LeafletMapProps) {
+function splitItems(items: MapItem[]): { rooms: PinRoom[]; clusters: Cluster[] } {
+  const rooms: PinRoom[] = [];
+  const clusters: Cluster[] = [];
+  for (const item of items) {
+    if (item.type === "room") rooms.push(item);
+    else clusters.push(item);
+  }
+  return { rooms, clusters };
+}
+
+export default function LeafletMap({ pinAnchor, onMapClick, onRoomClick }: LeafletMapProps) {
+  const [viewport, setViewport] = useState<ViewportQuery | null>(null);
+  const onViewChange = useCallback(
+    (bounds: Bbox, zoom: number) => setViewport((current) => nextViewportQuery(current, bounds, zoom)),
+    [],
+  );
+  const data = useMapItems(viewport);
+  const { rooms, clusters } = splitItems(data?.items ?? []);
+  // The open room always gets a pin, even when it is clustered, out of view, or not loaded yet.
   const { data: selectedRoom } = useRoom(useSelectedRoomId());
-  const rooms =
-    selectedRoom && !createdRooms.some((room) => room.id === selectedRoom.id)
-      ? [...createdRooms, selectedRoom]
-      : createdRooms;
+  if (selectedRoom && !rooms.some((room) => room.id === selectedRoom.id)) rooms.push(selectedRoom);
 
   return (
     <MapContainer
@@ -124,7 +107,14 @@ export default function LeafletMap({ createdRooms, pinAnchor, onMapClick, onRoom
       <TileLayer url={tileConfig.url} attribution={tileConfig.attribution} />
       <ClickToCreate onMapClick={onMapClick} />
       <KeepSizeInSync />
-      <RoomPins rooms={rooms} pinAnchor={pinAnchor} onRoomClick={onRoomClick} />
+      <TrackViewport onChange={onViewChange} />
+      <MapMarkers
+        rooms={rooms}
+        clusters={clusters}
+        clusterZoom={data?.zoom ?? 0}
+        pinAnchor={pinAnchor}
+        onRoomClick={onRoomClick}
+      />
     </MapContainer>
   );
 }

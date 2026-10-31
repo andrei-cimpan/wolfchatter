@@ -266,4 +266,16 @@ describe("listMapItems", () => {
     expect(items).toHaveLength(500);
     expect(items[0]).toEqual({ type: "cluster", lat: 5, lng: 25, count: 3 });
   });
+
+  it("among equally busy cells, keeps those nearest the viewport's centre", async () => {
+    // 501 single-room cells from 10.1°N to 60.1°N; the centre is at 50°N, so 10.1°N is the farthest.
+    await db().query(
+      "insert into rooms (lat, lng) select 10 + i * 0.1, 20 from generate_series(1, 501) i",
+    );
+    const items = await repo().listMapItems({ bbox: { west: 19, south: 10, east: 21, north: 90 }, zoom: 10 });
+    const lats = items.map((i) => Math.round(i.lat * 10) / 10);
+    expect(lats).toHaveLength(500);
+    expect(lats).toContain(60.1);
+    expect(lats).not.toContain(10.1);
+  });
 });

@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { ApiError, createRoom } from "@/lib/api-client";
 import type { Room } from "@/lib/types";
+import { MAP_ITEMS_KEY } from "./useMapItems";
 import { roomQueryKey } from "./useRoom";
 import { currentSelectedRoomId, selectRoom } from "./useSelectedRoom";
 
@@ -18,7 +19,7 @@ type CreateRoomVariables = {
 
 /**
  * Creates a room where the map was clicked, caches it so the panel shows it without a refetch,
- * and selects it unless the user picked another room while it was being created.
+ * refreshes the map's pins, and selects it unless the user picked another room while it was being created.
  */
 export function useCreateRoom(onCreated: (room: Room, clickedLng: number) => void) {
   const queryClient = useQueryClient();
@@ -30,6 +31,9 @@ export function useCreateRoom(onCreated: (room: Room, clickedLng: number) => voi
     mutationFn: ({ lat, lng }: CreateRoomVariables) => createRoom({ lat, lng }),
     onSuccess: (room, { lng, selectedAtClick, picksAtClick }) => {
       queryClient.setQueryData(roomQueryKey(room.id), room);
+      // The new room may join a cluster, which only the server can tell, so refetch the viewport.
+      // Until then the map still pins it if it is selected, as it always pins the open room.
+      void queryClient.invalidateQueries({ queryKey: MAP_ITEMS_KEY });
       onCreated(room, lng);
       const userMovedOn = currentSelectedRoomId() !== selectedAtClick || picksRef.current !== picksAtClick;
       if (!userMovedOn) selectRoom(room.id);
