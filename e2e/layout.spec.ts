@@ -2,9 +2,17 @@ import { expect, test, type Page } from "@playwright/test";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 
-// Keeps tests offline and off OpenStreetMap's servers, whose tile policy forbids automated load.
+// A 1x1 PNG served for every tile: the tests stay offline and off OpenStreetMap's servers (whose
+// tile policy forbids automated load), yet the map still has real tiles that could cover the panel.
+const BLANK_TILE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 test.beforeEach(async ({ page }) => {
-  await page.route(/tile\.openstreetmap\.org/, (route) => route.abort());
+  await page.route(/tile\.openstreetmap\.org/, (route) =>
+    route.fulfill({ contentType: "image/png", body: BLANK_TILE }),
+  );
 });
 
 async function box(page: Page, selector: string) {
@@ -39,9 +47,11 @@ test.describe("desktop", () => {
     await expectNoPageScroll(page);
   });
 
-  test("panel stays above Leaflet's controls", async ({ page }) => {
+  test("panel stays above the map's tiles", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".leaflet-container")).toBeVisible();
+    await expect(page.locator(".leaflet-tile-loaded").first()).toBeVisible();
+    // Leaflet makes tiles ignore the pointer, which would hide them from elementFromPoint.
+    await page.addStyleTag({ content: ".leaflet-tile { pointer-events: auto !important; }" });
     const card = await box(page, "aside");
     const panelOnTop = await page.evaluate(
       ({ x, y }) => document.elementFromPoint(x, y)?.closest("aside") != null,
