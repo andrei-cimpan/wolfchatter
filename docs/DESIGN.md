@@ -193,7 +193,7 @@ Because the trigger fires for every insert, messages posted through any instance
 
 - **Unit**: zod schemas, clustering grid math, repository against a test database (including bounds that cross the antimeridian).
 - **API**: route handlers with a real Postgres (Docker Compose).
-- **E2E (Playwright)**: create pin, post, reload and see persistence; a second browser sees a posted message live. Playwright starts its own dev server on port 3100 (never reusing `npm run dev` on 3000) with `DATABASE_URL` set to `E2E_DATABASE_URL`. Its global setup creates and migrates that database (its name must end in `_e2e`) and empties it once per run, so tests never write to the dev database and must not depend on each other's rooms.
+- **E2E (Playwright)**: create pin, post, reload and see persistence; a second browser sees a posted message live. Playwright starts its own dev server on port 3100 (`E2E_PORT`), never `npm run dev` on 3000, and fails if that port is busy unless `E2E_REUSE_SERVER=1`, so it cannot silently test another checkout's server, with `DATABASE_URL` set to `E2E_DATABASE_URL`. Its global setup creates and migrates that database (its name must end in `_e2e`) and empties it once per run, so tests never write to the dev database and must not depend on each other's rooms.
 
 ## Known limitations (documented, not built)
 
