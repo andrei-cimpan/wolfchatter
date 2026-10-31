@@ -71,7 +71,8 @@ export default function LeafletMap({ createdRooms, onMapClick, onRoomClick }: Le
     <MapContainer
       center={INITIAL_VIEW.center}
       zoom={INITIAL_VIEW.zoom}
-      // Leaflet fires `click` for both halves of a double-click, which would create two rooms.
+      // A double-click must not also zoom: its first click already creates a room (ClickToCreate
+      // ignores the second), so zooming as well would move the map away from the new pin.
       doubleClickZoom={false}
       className="h-full w-full"
     >

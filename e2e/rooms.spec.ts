@@ -77,13 +77,21 @@ test.describe("desktop", () => {
     await expect(panel(page)).toHaveText("Click on the map to start a chat");
   });
 
-  test("double-clicking creates one room, not two", async ({ page }) => {
+  test("double-clicking creates one room, not two, and does not zoom", async ({ page }) => {
     const posts = countRoomPosts(page);
     await openMap(page);
+    // Tile URLs carry the zoom level: /{z}/{x}/{y}.png, and the map opens at zoom 5.
+    const tileZooms = () =>
+      page.locator(".leaflet-tile").evaluateAll((tiles) =>
+        [...new Set(tiles.map((t) => new URL((t as HTMLImageElement).src).pathname.split("/")[1]))],
+      );
+    await expect.poll(tileZooms).toEqual(["5"]);
+
     await page.locator(".leaflet-container").dblclick({ position: { x: 500, y: 400 } });
     await expect(page).toHaveURL(ROOM_URL);
     await page.waitForTimeout(500);
     expect(posts).toHaveLength(1);
+    expect(await tileZooms()).toEqual(["5"]);
   });
 
   test("clicks while a room is still being created are ignored", async ({ page }) => {
