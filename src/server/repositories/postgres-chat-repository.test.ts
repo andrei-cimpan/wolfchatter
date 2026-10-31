@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Bbox, MapItem } from "@/lib/types";
-import { MAX_MESSAGE_LIMIT, RoomNotFoundError } from "./chat-repository";
+import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
+import { RoomNotFoundError } from "./chat-repository";
 import { PostgresChatRepository } from "./postgres-chat-repository";
 import { setupTestDatabase } from "./test/test-db";
 
@@ -115,9 +116,9 @@ describe("listMessages", () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });
     await db().query(
       `insert into messages (room_id, author, body) select $1, 'ana', 'x' from generate_series(1, $2::int)`,
-      [room.id, MAX_MESSAGE_LIMIT + 10],
+      [room.id, MESSAGE_LIMIT_MAX + 10],
     );
-    // Literal, not MAX_MESSAGE_LIMIT, so changing the constant is a visible test change.
+    // Literal, not MESSAGE_LIMIT_MAX, so changing the constant is a visible test change.
     expect(await repo().listMessages(room.id, { limit: 10_000 })).toHaveLength(100);
     expect(await repo().listMessages(room.id, { limit: 0 })).toHaveLength(1);
   });

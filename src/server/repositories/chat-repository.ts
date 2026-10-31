@@ -8,9 +8,6 @@ export type ListMessagesOptions = {
   limit?: number;
 };
 
-export const DEFAULT_MESSAGE_LIMIT = 50;
-export const MAX_MESSAGE_LIMIT = 100;
-
 // Lets route handlers answer 404 without knowing which database is behind the interface.
 export class RoomNotFoundError extends Error {
   constructor(roomId: string) {
