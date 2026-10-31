@@ -94,6 +94,11 @@ describe("POST /api/rooms/:id/messages", () => {
   it("answers a malformed room id with 404 before reading the body", async () => {
     await expectError(await postMessage("not-a-uuid", "not json"), 404, "room_not_found");
   });
+
+  // Existence is a database question, so it is asked only once the body is valid.
+  it("answers an invalid body for an unknown room with 400", async () => {
+    await expectError(await postMessage(UNKNOWN_ID, "{}"), 400, "validation_error");
+  });
 });
 
 describe("GET /api/rooms/:id/messages", () => {
@@ -155,5 +160,9 @@ describe("GET /api/rooms/:id/messages", () => {
 
   it.each([UNKNOWN_ID, "not-a-uuid", "%00"])("answers room %s with 404 room_not_found", async (id) => {
     expect(await expectError(await getMessages(id), 404, "room_not_found")).toBe("Room not found");
+  });
+
+  it("answers an invalid query for an unknown room with 400", async () => {
+    await expectError(await getMessages(UNKNOWN_ID, "?limit=0"), 400, "validation_error");
   });
 });
