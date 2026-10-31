@@ -12,6 +12,7 @@ const messageField = (page: Page) => panel(page).getByRole("textbox", { name: "M
 const submit = (page: Page) => panel(page).getByRole("button", { name: "Submit" });
 // The list scrolls in the log's parent, which also holds the loading and empty states.
 const scroller = (page: Page) => messages(page).locator("..");
+const newest = (page: Page) => messages(page).getByRole("listitem").last();
 const noMessages = (page: Page) => panel(page).getByText("No messages yet");
 const isMessagePost = (url: URL, method: string) => method === "POST" && url.pathname.endsWith("/messages");
 
@@ -138,6 +139,13 @@ test.describe("desktop", () => {
     }
     await openRoom(page, id);
     await expect(messages(page).getByRole("listitem")).toHaveCount(25);
+    // Opens on the newest message. The viewport check accounts for the list's own scrolling.
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+    await expect(messages(page).getByRole("listitem").first()).not.toBeInViewport();
+
+    await post(page, "ana", "Newest");
+    await expect(newest(page)).toContainText("Newest");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
 
     const card = await box(page, "aside");
     expect(card.y + card.height).toBe(720 - 16);
@@ -156,8 +164,11 @@ test.describe("narrow screen", () => {
       await page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body: `Message ${i}` } });
     }
     await openRoom(page, id);
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
     await post(page, "ana", "From my phone");
-    await expect(messages(page)).toContainText("From my phone");
+    await expect(newest(page)).toContainText("From my phone");
+    // The sheet's list shows only a message or two, so without scrolling the post would land out of sight.
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
 
     const sheet = await box(page, "aside");
     expect(sheet.y + sheet.height).toBe(667);

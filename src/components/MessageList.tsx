@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import { useMessages } from "@/hooks/useMessages";
 import { formatMessageTime } from "@/lib/messages";
 import type { Message } from "@/lib/types";
@@ -23,10 +24,12 @@ export function MessageItems({ messages }: { messages: readonly Message[] }) {
   );
 }
 
+type MessagesQuery = ReturnType<typeof useMessages>;
+
 // Only messages go in the log, which screen readers announce as it grows: status text there would
 // be read out, and so would a whole history arriving in a log already on screen.
-function MessageListBody({ roomId }: { roomId: string }) {
-  const { data: messages, isPending, isError, refetch } = useMessages(roomId);
+function MessageListBody({ query }: { query: MessagesQuery }) {
+  const { data: messages, isPending, isError, refetch } = query;
   if (isPending) return <p role="status" className="text-sm text-foreground/60">Loading messages…</p>;
   if (isError) {
     return (
@@ -50,9 +53,21 @@ function MessageListBody({ roomId }: { roomId: string }) {
 
 /** Scrolls inside the card or sheet, so the form below it stays in view. Mount one per room. */
 export function MessageList({ roomId }: { roomId: string }) {
+  const query = useMessages(roomId);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const newestId = query.data?.at(-1)?.id;
+
+  // Shows the newest message when the room opens and when one is added. The raised sheet's list
+  // fits only a message or two, so a new post would otherwise land out of sight. T5.2 refines this
+  // for live messages, which should not pull a reader away from older ones.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller && newestId !== undefined) scroller.scrollTop = scroller.scrollHeight;
+  }, [newestId]);
+
   return (
-    <div className="mt-4 flex-auto overflow-y-auto">
-      <MessageListBody roomId={roomId} />
+    <div ref={scrollerRef} className="mt-4 flex-auto overflow-y-auto">
+      <MessageListBody query={query} />
     </div>
   );
 }
