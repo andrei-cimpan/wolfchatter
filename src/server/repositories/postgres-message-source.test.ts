@@ -210,4 +210,48 @@ describe("PostgresMessageSource behind a proxy", () => {
     expect(onReconnect).toHaveBeenCalledOnce();
     expect(await listenerPids()).toHaveLength(1);
   });
+
+  // Drops the connection as soon as each reconnect lands, and returns the wait before each retry.
+  async function flap(times: number, onReconnect: ReturnType<typeof vi.fn>): Promise<number[]> {
+    const waits: number[] = [];
+    for (let i = 0; i < times; i++) {
+      const attempts = proxy!.attempts.length;
+      const dropped = Date.now();
+      proxy!.dropAll();
+      await expect.poll(() => onReconnect.mock.calls.length, { timeout: 2_000 }).toBe(i + 1);
+      waits.push(proxy!.attempts[attempts]! - dropped);
+    }
+    return waits;
+  }
+
+  it("keeps backing off while the connection drops right after each reconnect (review #5)", async () => {
+    const onReconnect = vi.fn();
+    source = new PostgresMessageSource(proxy!.connectionString, { ...options(), minRetryMs: 20, maxRetryMs: 1_000 });
+    await source.start({ onMessage: () => {}, onReconnect });
+
+    const waits = await flap(4, onReconnect);
+
+    [20, 40, 80, 160].forEach((expected, i) => expect(waits[i]).toBeGreaterThanOrEqual(expected - 5));
+  });
+
+  it("starts again from the shortest wait once a connection has stayed up (review #5)", async () => {
+    const onReconnect = vi.fn();
+    const stableMs = 100;
+    source = new PostgresMessageSource(proxy!.connectionString, {
+      ...options(),
+      minRetryMs: 20,
+      maxRetryMs: 1_000,
+      stableMs,
+    });
+    await source.start({ onMessage: () => {}, onReconnect });
+    await flap(3, onReconnect);
+
+    await sleep(stableMs + 50);
+    const attempts = proxy!.attempts.length;
+    const dropped = Date.now();
+    proxy!.dropAll();
+    await expect.poll(() => onReconnect.mock.calls.length).toBe(4);
+
+    expect(proxy!.attempts[attempts]! - dropped).toBeLessThan(40);
+  });
 });

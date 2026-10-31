@@ -38,6 +38,8 @@ export function parseMessageNotification(payload: string): Message | null {
 export type MessageSourceOptions = {
   minRetryMs: number;
   maxRetryMs: number;
+  /** How long a connection must stay up before the wait drops back to minRetryMs. */
+  stableMs: number;
   /** Names the session in pg_stat_activity, so the listener can be told apart from pool clients. */
   applicationName: string;
 };
@@ -45,6 +47,7 @@ export type MessageSourceOptions = {
 const DEFAULTS: MessageSourceOptions = {
   minRetryMs: 1_000,
   maxRetryMs: 30_000,
+  stableMs: 30_000,
   applicationName: "wolfchatter-realtime",
 };
 
@@ -54,6 +57,7 @@ export class PostgresMessageSource implements MessageSource {
   private client: pg.Client | null = null;
   private handlers: MessageSourceHandlers | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private retryMs: number;
   // Bumped by stop(), so a connection that finishes after it is closed instead of adopted.
   private generation = 0;
@@ -81,7 +85,7 @@ export class PostgresMessageSource implements MessageSource {
       await client.end();
       throw new Error("PostgresMessageSource was stopped while starting.");
     }
-    this.client = client;
+    this.adopt(client);
   }
 
   async stop(): Promise<void> {
@@ -89,6 +93,7 @@ export class PostgresMessageSource implements MessageSource {
     this.handlers = null;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    this.clearStableTimer();
     const client = this.client;
     this.client = null;
     await client?.end();
@@ -119,6 +124,21 @@ export class PostgresMessageSource implements MessageSource {
     }
   }
 
+  // A connection that drops right after connecting must not reset the backoff, or a flapping
+  // database gets retried (and every stream closed) at the shortest wait forever.
+  private adopt(client: pg.Client): void {
+    this.client = client;
+    this.stableTimer = setTimeout(() => {
+      this.stableTimer = null;
+      this.retryMs = this.options.minRetryMs;
+    }, this.options.stableMs);
+  }
+
+  private clearStableTimer(): void {
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.stableTimer = null;
+  }
+
   private onNotification({ channel, payload }: pg.Notification): void {
     if (channel !== CHANNEL || payload === undefined) return;
     const message = parseMessageNotification(payload);
@@ -133,12 +153,15 @@ export class PostgresMessageSource implements MessageSource {
     // Ignores clients still connecting (their failure rejects connect) and clients already replaced.
     if (client !== this.client) return;
     this.client = null;
+    this.clearStableTimer();
     client.end().catch(() => {});
     if (this.handlers) this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {
     const generation = this.generation;
+    const delay = this.retryMs;
+    this.retryMs = Math.min(this.retryMs * 2, this.options.maxRetryMs);
     this.retryTimer = setTimeout(async () => {
       this.retryTimer = null;
       try {
@@ -148,14 +171,12 @@ export class PostgresMessageSource implements MessageSource {
           await client.end();
           return;
         }
-        this.client = client;
-        this.retryMs = this.options.minRetryMs;
+        this.adopt(client);
         this.handlers.onReconnect();
       } catch (error) {
         console.error("Postgres message source: reconnect failed", error);
-        this.retryMs = Math.min(this.retryMs * 2, this.options.maxRetryMs);
         if (generation === this.generation && this.handlers) this.scheduleReconnect();
       }
-    }, this.retryMs);
+    }, delay);
   }
 }
