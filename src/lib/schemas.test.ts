@@ -100,6 +100,19 @@ describe("mapItemsQuerySchema", () => {
     });
   });
 
+  it("ignores whitespace around query numbers", () => {
+    expect(mapItemsQuerySchema.parse({ bbox: " 1, 2 ,3,4 ", zoom: " 7 " })).toMatchObject({ zoom: 7 });
+  });
+
+  it("accepts negative, fractional and exponent forms", () => {
+    expect(mapItemsQuerySchema.parse({ bbox: "-0.5,.25,1e-7,4.5E1", zoom: "3" }).bbox).toEqual({
+      west: -0.5,
+      south: 0.25,
+      east: 1e-7,
+      north: 45,
+    });
+  });
+
   it("wraps Leaflet's unwrapped longitudes", () => {
     expect(mapItemsQuerySchema.parse({ bbox: "170,-10,190,10", zoom: "5" }).bbox).toEqual({
       west: 170,
@@ -124,6 +137,10 @@ describe("mapItemsQuerySchema", () => {
     ["an empty string", ""],
     ["an infinite value", "1e400,2,3,4"],
     ["NaN", "NaN,2,3,4"],
+    ["a hex value", "0x10,2,3,4"],
+    ["a binary value", "0b11,2,3,4"],
+    ["a plus sign", "+1,2,3,4"],
+    ["a trailing dot", "1.,2,3,4"],
     ["south above north", "0,10,1,5"],
     ["west above east outside ±180", "200,0,10,1"],
     ["west above east with east below -180", "170,0,-190,1"],
@@ -131,7 +148,7 @@ describe("mapItemsQuerySchema", () => {
     expect(mapItemsQuerySchema.safeParse({ bbox, zoom: "5" }).success).toBe(false);
   });
 
-  it.each(["", "   ", "2.5", "-1", "23", "abc", "Infinity"])("rejects zoom %j", (zoom) => {
+  it.each(["", "   ", "2.5", "-1", "23", "abc", "Infinity", "0x10", "+5"])("rejects zoom %j", (zoom) => {
     expect(mapItemsQuerySchema.safeParse({ bbox: "0,0,1,1", zoom }).success).toBe(false);
   });
 

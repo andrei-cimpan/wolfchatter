@@ -19,10 +19,14 @@ function requiredText(label: string, max: number) {
     .refine((text) => !text.includes("\u0000") && text.isWellFormed(), `${label} contains invalid characters`);
 }
 
-// Query values arrive as strings. z.coerce.number() would read "" as 0 and "1e400" as
-// Infinity; z.number() rejects NaN and Infinity, so both fail here instead.
+// Plain decimals, with an optional exponent because JavaScript prints tiny coordinates as "1e-7".
+const DECIMAL = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?$/;
+
+// Query values arrive as strings. Number() alone (and so z.coerce.number()) reads "" and "  "
+// as 0 and accepts "0x10", "0b11" and "+5"; the pattern rejects those, and z.number() then
+// rejects values that overflow to Infinity, such as "1e400".
 function queryNumber<T extends z.ZodType<number, number>>(schema: T) {
-  return z.string().trim().min(1, "Expected a number").transform(Number).pipe(schema);
+  return z.string().trim().regex(DECIMAL, "Expected a decimal number").transform(Number).pipe(schema);
 }
 
 export const roomIdSchema = z.uuid();

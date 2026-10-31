@@ -18,6 +18,11 @@ describe("wrapLongitude", () => {
 });
 
 describe("normalizeBbox", () => {
+  it("returns in-range decimal bounds bit-for-bit unchanged", () => {
+    const bounds = { west: 26.1, south: 44.39, east: 26.123456789, north: 44.41 };
+    expect(normalizeBbox(bounds)).toEqual(bounds);
+  });
+
   it("leaves a normal viewport alone", () => {
     expect(normalizeBbox({ west: 10, east: 30, ...lat })).toEqual({ west: 10, east: 30, ...lat });
   });
