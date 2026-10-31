@@ -131,11 +131,24 @@ Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The he
 | Status | `code` | When |
 |---|---|---|
 | 400 | `validation_error` | A query or body fails its schema. `message` is the first issue, prefixed with its field, such as `bbox: south must not exceed north`. |
-| 400 | `invalid_json` | A POST body that is not JSON. Any body that parses is accepted; `Content-Type` is not checked. |
-| 413 | `payload_too_large` | A POST body over 16 KB (`JSON_BODY_MAX_BYTES`). Checked against `Content-Length` and while reading, so an unlabelled stream is cut off too. |
+| 400 | `invalid_json` | A POST body labelled JSON that does not parse. |
+| 413 | `payload_too_large` | A POST body over 16 KB (`JSON_BODY_MAX_BYTES`). Checked against `Content-Length` and while reading, so a streamed body without `Content-Length` is cut off too. |
+| 415 | `unsupported_media_type` | A POST whose `Content-Type` is not `application/json` (parameters such as `; charset=utf-8` are fine, case is ignored; `+json` types are rejected). Checked before the body is read. |
 | 404 | `room_not_found` | Unknown or malformed room id. |
-| 429 | `rate_limited` | Too many POSTs from one IP (T2.3). |
+| 429 | `rate_limited` | Too many POSTs from one IP (see Rate limiting). Sent with `Retry-After` in seconds. |
 | 500 | `internal_error` | Anything unexpected. The cause is logged to stdout, never returned. |
+
+### Rate limiting
+
+Both POST routes are limited per client IP, in fixed one-minute windows: **10 rooms** (`POST /api/rooms`) and **30 messages** (`POST /api/rooms/:id/messages`). Creating rooms gets the tighter budget because every room litters the shared map. The limiters live in `src/server/http/rate-limit.ts`.
+
+- **Configuration:** `RATE_LIMIT_ROOMS_PER_MINUTE` and `RATE_LIMIT_MESSAGES_PER_MINUTE` override the defaults. Unset or empty means the default; anything but a positive integer throws when the module loads, so a typo cannot silently change or disable a limit. Playwright sets both to 10,000 for its dev server, because every test browser posts from one address.
+
+- **Order:** the limit is checked first, before the room id, `Content-Type`, and body. Every attempt spends budget, so a flood of invalid requests is limited too. GET routes are not limited.
+- **Client IP:** route handlers cannot see the socket, so the IP is the **rightmost** `X-Forwarded-For` entry (`src/server/http/client-ip.ts`). Next.js sets that header to the socket address only when it is absent (`??=` in its base server), and a proxy such as the ALB appends the address it saw, so the rightmost entry is written by our side. Entries to its left are client-supplied and ignored. Requests with no usable address share one `unknown` key.
+- **Budget key:** an IPv4 address is its own budget. An IPv6 address is keyed by its **/64** (`2001:db8:1:2::/64`), since one subscriber usually holds a whole /64 and could otherwise rotate through it for a fresh budget per request. IPv4-mapped IPv6 (`::ffff:203.0.113.7`) shares the IPv4 budget.
+- **Why `Content-Type` is required:** a cross-site `<form enctype="text/plain">` can send a JSON-looking body with no CORS preflight, from each visitor's own browser and IP, which would spread a flood across many budgets. A form cannot send `application/json`, and a script that can needs a preflight, which we never grant.
+- **Memory:** counters live in the instance's memory. Expired keys are swept once per window, and each limiter holds at most **10,000 keys** (about 1 MB). When it is full, the oldest window is dropped, so a client spread across more than 10,000 addresses (or /64s) in one minute can free keys early; that scale of attack is for the WAF.
 
 ### Input validation
 
@@ -182,4 +195,6 @@ Because the trigger fires for every insert, messages posted through any instance
 - Clustering is grid-based over a plain `(lat, lng)` index. PostGIS with a GiST index is the next step at larger scale.
 - When a viewport has more than 500 occupied cells, the sparsest are dropped, so the shown counts can add up to fewer rooms than are in view. Merging the remainder into coarser clusters would fix it.
 - No authentication, so authorship is self-declared.
-- Basic per-IP rate limiting only.
+- Basic per-IP rate limiting only. Counters are per instance, so N instances allow N times the limit, and a restart resets them; production adds a per-IP rule at the WAF (see `INFRA.md`), and a shared store such as Redis is the next step.
+- The client IP is trusted from `X-Forwarded-For`, so the app must sit behind a proxy that appends to it. Exposed directly, a client can set the header and pick a fresh key for every request.
+- A fixed window lets one IP send up to twice the limit across a window boundary.
