@@ -11,7 +11,8 @@ type Context = RouteContext<"/api/rooms/[id]/stream">;
 export const GET = withErrorHandling(async (request: Request, ctx: Context) => {
   const { id } = await ctx.params;
   if (!roomIdSchema.safeParse(id).success) return roomNotFound();
-  // A plain 404 rather than a stream: EventSource gives up on it instead of reconnecting forever.
+  // A plain 404 rather than a stream that would end at once and reconnect every second or two.
+  // The client still retries it on its slow backoff; it only opens streams for rooms that loaded.
   if (!(await getChatRepository().getRoom(id))) return roomNotFound();
 
   return new Response(openRoomEventStream(getRealtimeHub(), id, request.signal), { headers: SSE_HEADERS });
