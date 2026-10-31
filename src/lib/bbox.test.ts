@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { normalizeBbox, wrapLongitude } from "./bbox";
+import { nearestWorldCopy, normalizeBbox, wrapLongitude } from "./bbox";
 
 const lat = { south: -10, north: 10 };
+
+describe("nearestWorldCopy", () => {
+  it.each([
+    // [stored lng, view centre lng, lng to draw at]
+    [18.28, 0, 18.28],
+    [18.28, 370, 378.28],
+    [18.28, -350, -341.72],
+    [170, -170, -190],
+    [-170, 175, 190],
+    [10, 200, 370],
+  ])("draws %d near a view centred on %d at %d", (lng, center, expected) => {
+    expect(nearestWorldCopy(lng, center)).toBeCloseTo(expected, 9);
+  });
+
+  it("stays within half a world of the view centre", () => {
+    for (const center of [-700, -181, 0, 179, 540]) {
+      expect(Math.abs(nearestWorldCopy(-179, center) - center)).toBeLessThanOrEqual(180);
+    }
+  });
+});
 
 describe("wrapLongitude", () => {
   it.each([
