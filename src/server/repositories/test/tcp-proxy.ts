@@ -17,6 +17,8 @@ export type TcpProxy = {
   attempts: number[];
   /** Cuts every open connection, as a network drop or server restart would. */
   dropAll(): void;
+  /** Stops passing bytes on open connections without closing them, like a NAT that forgot them. */
+  freezeAll(): void;
   close(): Promise<void>;
 };
 
@@ -25,6 +27,7 @@ export type TcpProxy = {
 export async function startTcpProxy(databaseUrl: string): Promise<TcpProxy> {
   const target = new URL(databaseUrl);
   const sockets = new Set<net.Socket>();
+  const pairs = new Set<[net.Socket, net.Socket]>();
   const track = (socket: net.Socket) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
@@ -41,7 +44,12 @@ export async function startTcpProxy(databaseUrl: string): Promise<TcpProxy> {
       if (client.destroyed) return;
       const upstream = net.connect(Number(target.port || 5432), target.hostname);
       track(upstream);
-      upstream.on("close", () => client.destroy());
+      const pair: [net.Socket, net.Socket] = [client, upstream];
+      pairs.add(pair);
+      upstream.on("close", () => {
+        pairs.delete(pair);
+        client.destroy();
+      });
       client.on("close", () => upstream.destroy());
       client.pipe(upstream).pipe(client);
       client.resume();
@@ -60,6 +68,13 @@ export async function startTcpProxy(databaseUrl: string): Promise<TcpProxy> {
     delayMs: 0,
     attempts: [],
     dropAll: () => sockets.forEach((socket) => socket.destroy()),
+    freezeAll: () =>
+      pairs.forEach(([client, upstream]) => {
+        client.unpipe(upstream);
+        upstream.unpipe(client);
+        client.pause();
+        upstream.pause();
+      }),
     close: () => {
       proxy.dropAll();
       return new Promise((resolve) => server.close(() => resolve()));

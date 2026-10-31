@@ -254,4 +254,30 @@ describe("PostgresMessageSource behind a proxy", () => {
 
     expect(proxy!.attempts[attempts]! - dropped).toBeLessThan(40);
   });
+
+  it("gives up on a connection attempt that never answers (review #7)", async () => {
+    proxy!.mode = "hang";
+    source = new PostgresMessageSource(proxy!.connectionString, { ...options(), timeoutMs: 100 });
+
+    const started = Date.now();
+    await expect(source.start({ onMessage: () => {}, onReconnect: () => {} })).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("notices a connection that silently stops answering and reconnects (review #7)", async () => {
+    const received: Message[] = [];
+    const onReconnect = vi.fn();
+    source = new PostgresMessageSource(proxy!.connectionString, {
+      ...options(),
+      healthCheckMs: 50,
+      timeoutMs: 100,
+    });
+    await source.start({ onMessage: (m) => received.push(m), onReconnect });
+
+    proxy!.freezeAll();
+
+    await expect.poll(() => onReconnect, { timeout: 2_000 }).toHaveBeenCalledOnce();
+    const posted = await post("after the freeze");
+    await expect.poll(() => received).toEqual([posted]);
+  });
 });
