@@ -102,6 +102,59 @@ test.describe("desktop", () => {
     await expect(page.locator(".leaflet-marker-icon")).toHaveCount(1);
   });
 
+  test("picking a pin while a room is being created keeps that pick, and creating still works", async ({
+    page,
+  }) => {
+    const posts = countRoomPosts(page);
+    await openMap(page);
+    const first = await createRoomAt(page, 400, 300);
+    const firstUrl = page.url();
+
+    let slow = true;
+    await page.route("**/api/rooms", async (route) => {
+      if (route.request().method() === "POST" && slow) await new Promise((r) => setTimeout(r, 800));
+      await route.fallback();
+    });
+    const created = page.waitForResponse(
+      (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/rooms",
+    );
+    await page.mouse.click(600, 450);
+    await expect(panel(page).getByRole("status")).toHaveText("Creating a chatroom…");
+    await pin(page, first).click();
+    await created;
+    await page.waitForTimeout(300);
+    await expect(page).toHaveURL(firstUrl);
+    await expect(roomTitle(page)).toHaveText(first);
+
+    slow = false;
+    await createRoomAt(page, 800, 550);
+    expect(posts).toHaveLength(3);
+  });
+
+  test("clicking the selected pin again adds no history entry", async ({ page }) => {
+    await openMap(page);
+    const title = await createRoomAt(page, 400, 300);
+    const before = await page.evaluate(() => history.length);
+    await pin(page, title).click();
+    await pin(page, title).click();
+    expect(await page.evaluate(() => history.length)).toBe(before);
+  });
+
+  test("a creation error goes away when the selection changes", async ({ page }) => {
+    await openMap(page);
+    await createRoomAt(page, 400, 300);
+    await page.route("**/api/rooms", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "x" } } })
+        : route.fallback(),
+    );
+    await page.mouse.click(600, 450);
+    await expect(panel(page).getByRole("alert")).toHaveText("Couldn't create the chatroom. Please try again.");
+    await page.goBack();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+  });
+
   test("the second click of a slow double-click creates nothing", async ({ page }) => {
     const posts = countRoomPosts(page);
     await openMap(page);

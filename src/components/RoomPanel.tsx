@@ -61,8 +61,16 @@ function RoomContent({ roomId }: { roomId: string }) {
   );
 }
 
-export function RoomPanel({ creating, creationError }: { creating: boolean; creationError: Error | null }) {
+interface RoomPanelProps {
+  creating: boolean;
+  creationError: Error | null;
+  /** `?room` when the failed click happened; the error is hidden once the selection moves on. */
+  creationErrorSelection: string | null;
+}
+
+export function RoomPanel({ creating, creationError, creationErrorSelection }: RoomPanelProps) {
   const roomId = useSelectedRoomId();
+  const visibleError = creationErrorSelection === roomId ? creationError : null;
   return (
     <PanelFrame raised={roomId !== null}>
       {roomId !== null && <SheetHeader />}
@@ -71,9 +79,9 @@ export function RoomPanel({ creating, creationError }: { creating: boolean; crea
           Creating a chatroom…
         </p>
       )}
-      {creationError && (
+      {visibleError && (
         <p role="alert" className="mb-2 text-sm text-red-700 dark:text-red-400">
-          {createRoomErrorMessage(creationError)}
+          {createRoomErrorMessage(visibleError)}
         </p>
       )}
       {roomId === null ? <p>{EMPTY_STATE}</p> : <RoomContent roomId={roomId} />}

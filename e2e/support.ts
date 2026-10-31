@@ -1,7 +1,7 @@
 import { test as base, expect, type Page } from "@playwright/test";
 
-// The browser logs every non-2xx response; tests that expect a 404 or 429 would trip on those.
-const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded with a status of (404|429)/];
+// The browser logs every non-2xx response, and some tests trigger a 404, 429 or 500 on purpose.
+const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded with a status of (404|429|500)/];
 
 /**
  * Fails any test whose page throws or logs a console error, such as React's hydration mismatch,
