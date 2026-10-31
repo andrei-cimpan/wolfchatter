@@ -20,6 +20,20 @@ export function pendingMigrations(files: string[], applied: Set<string>): string
     .sort();
 }
 
+// The runner wraps each file in one transaction. A file that commits on its own would leave
+// half-applied changes with no schema_migrations row, and CONCURRENTLY cannot run in a transaction.
+// Statement-level `begin;` only: PL/pgSQL `begin` blocks have no semicolon and stay allowed.
+const SELF_MANAGED_TRANSACTION =
+  /^\s*(?:begin(?:\s+(?:work|transaction))?|start\s+transaction|commit|end(?:\s+(?:work|transaction))|rollback)\s*;|\bconcurrently\b/im;
+
+export function assertRunsInTransaction(name: string, sql: string): void {
+  if (SELF_MANAGED_TRANSACTION.test(sql)) {
+    throw new Error(
+      `${name} manages its own transaction or uses CONCURRENTLY; the runner already wraps each file in one transaction.`,
+    );
+  }
+}
+
 // `docker compose up -d` returns before Postgres accepts connections.
 async function connectWithRetry(connectionString: string): Promise<pg.Client> {
   for (let attempt = 1; ; attempt++) {
@@ -61,8 +75,13 @@ async function main(): Promise<void> {
       return;
     }
 
-    for (const name of pending) {
-      const sql = await readFile(join(MIGRATIONS_DIR, name), "utf8");
+    // Read and check every file first, so a bad one stops the run before anything is applied.
+    const migrations = await Promise.all(
+      pending.map(async (name) => ({ name, sql: await readFile(join(MIGRATIONS_DIR, name), "utf8") })),
+    );
+    for (const { name, sql } of migrations) assertRunsInTransaction(name, sql);
+
+    for (const { name, sql } of migrations) {
       // Each file and its bookkeeping row commit together, so a failure leaves no partial state.
       await client.query("begin");
       try {
@@ -71,7 +90,8 @@ async function main(): Promise<void> {
         await client.query("commit");
         console.log(`Applied ${name}`);
       } catch (error) {
-        await client.query("rollback");
+        // If the connection is gone, rollback throws too; keep the original error instead.
+        await client.query("rollback").catch(() => {});
         throw new Error(`Migration ${name} failed`, { cause: error });
       }
     }
