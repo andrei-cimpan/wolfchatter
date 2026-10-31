@@ -110,4 +110,13 @@ test.describe("narrow screen", () => {
     await expect(page.locator(".leaflet-control-attribution")).toContainText(/\|\s*\S/);
     await expectNoPageScroll(page);
   });
+
+  test("zoom buttons are at least 44 px touch targets", async ({ page }) => {
+    await page.goto("/");
+    for (const name of ["Zoom in", "Zoom out"]) {
+      const button = await page.getByRole("button", { name }).boundingBox();
+      expect(button?.width).toBeGreaterThanOrEqual(44);
+      expect(button?.height).toBeGreaterThanOrEqual(44);
+    }
+  });
 });
