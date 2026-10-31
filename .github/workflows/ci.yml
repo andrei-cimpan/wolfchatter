@@ -33,6 +33,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      # cacheComponents prerender errors only surface at build time.
+      - run: npm run build
       - run: npm run db:migrate
       - run: npm test
 
