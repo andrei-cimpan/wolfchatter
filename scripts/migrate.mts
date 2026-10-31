@@ -6,6 +6,8 @@ const MIGRATIONS_DIR = join(import.meta.dirname, "..", "db", "migrations");
 const MIGRATION_FILE = /^\d{4}_[a-z0-9_]+\.sql$/;
 const CONNECT_ATTEMPTS = 20;
 const CONNECT_DELAY_MS = 500;
+// Arbitrary constant shared by every runner; serializes instances migrating at startup.
+const MIGRATION_LOCK_KEY = 7_420_391;
 
 // Zero-padded names make lexical order the apply order.
 export function pendingMigrations(files: string[], applied: Set<string>): string[] {
@@ -41,6 +43,8 @@ async function main(): Promise<void> {
 
   const client = await connectWithRetry(connectionString);
   try {
+    // Taken before reading schema_migrations so a waiting runner sees what the first one applied.
+    await client.query("select pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
     await client.query(`
       create table if not exists schema_migrations (
         name text primary key,
@@ -72,6 +76,8 @@ async function main(): Promise<void> {
       }
     }
   } finally {
+    // Ending the session also releases the lock; unlocking first just makes that explicit.
+    await client.query("select pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY]).catch(() => {});
     await client.end();
   }
 }
