@@ -1,4 +1,4 @@
-import type { Room } from "./types";
+import type { Bbox, MapItem, Room } from "./types";
 
 /** A non-2xx API response, carrying the `{ error: { code, message } }` body when there is one. */
 export class ApiError extends Error {
@@ -63,4 +63,13 @@ export async function getRoom(id: string): Promise<Room | null> {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
+}
+
+/** Rooms and clusters for a viewport; longitudes may be unwrapped, since the API wraps them. */
+export function listMapItems({ bbox, zoom }: { bbox: Bbox; zoom: number }): Promise<MapItem[]> {
+  const params = new URLSearchParams({
+    bbox: [bbox.west, bbox.south, bbox.east, bbox.north].join(","),
+    zoom: String(zoom),
+  });
+  return request<MapItem[]>(`/api/rooms?${params}`);
 }

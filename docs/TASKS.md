@@ -38,7 +38,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 - [x] **T3.1** Responsive layout with Leaflet map and chat panel (floating card on the right on desktop, bottom sheet on narrow screens); empty state "Click on the map to start a chat".
 - [x] **T3.2** Click map to create a room and pin; panel switches to it; selection stored in `?room`.
-- [ ] **T3.3** Load pins for the current viewport (debounced on map move). Render rooms as markers and clusters as count bubbles. Clicking a marker switches the panel; clicking a cluster zooms in.
+- [x] **T3.3** Load pins for the current viewport (debounced on map move). Render rooms as markers and clusters as count bubbles. Clicking a marker switches the panel; clicking a cluster zooms in.
 - [ ] **T3.4** Message list and form (username + message + Submit); posted messages appear.
 - [ ] **T3.5** Reloading the page restores rooms, messages, and the selected room.
   *Check (all):* matches mockups 1 to 4.

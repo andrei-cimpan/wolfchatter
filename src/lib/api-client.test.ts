@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createRoom, getRoom } from "./api-client";
+import { ApiError, createRoom, getRoom, listMapItems } from "./api-client";
 import type { Room } from "./types";
 
 const ROOM: Room = {
@@ -83,5 +83,26 @@ describe("getRoom", () => {
   it("throws other errors", async () => {
     stubFetch(errorResponse(500, "internal_error", "Something went wrong"));
     await expect(getRoom(ROOM.id)).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+describe("listMapItems", () => {
+  it("asks for the viewport's rooms and clusters", async () => {
+    const items = [{ type: "cluster", lat: 47, lng: 19, count: 3 }];
+    const fetchMock = stubFetch(Response.json(items));
+    await expect(listMapItems({ bbox: { west: 170, south: -22.5, east: 191.25, north: 45 }, zoom: 5 })).resolves.toEqual(
+      items,
+    );
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "http://localhost");
+    expect(url.pathname).toBe("/api/rooms");
+    expect(url.searchParams.get("bbox")).toBe("170,-22.5,191.25,45");
+    expect(url.searchParams.get("zoom")).toBe("5");
+  });
+
+  it("throws API errors", async () => {
+    stubFetch(errorResponse(400, "validation_error", "bbox: Invalid"));
+    await expect(listMapItems({ bbox: { west: 0, south: 0, east: 1, north: 1 }, zoom: 5 })).rejects.toMatchObject({
+      status: 400,
+    });
   });
 });
