@@ -70,6 +70,12 @@ interface ChatRepository {
 }
 ```
 
+`Room`, `Message`, and `MapItem` live in `src/lib/types.ts` so the UI can use them without importing server code. The rules the implementation follows:
+
+- **Message cursors are message ids.** `before` returns the page just older than that message and `after` returns the messages newer than it, always oldest first. Messages are ordered by `(created_at, id)`, which keeps the order total when several rows share a `created_at` (as they do inside one transaction). It also avoids `created_at` cursors, which lose microseconds when they pass through a JavaScript `Date`. `limit` defaults to 50 and is capped at 100. Passing both `before` and `after` is an error.
+- **Malformed or unknown ids match nothing.** `getRoom` returns `null`, `listMessages` returns `[]`, and `postMessage` throws `RoomNotFoundError`, which the API maps to 404.
+- **Map items:** at zoom 16 and above, the newest 500 rooms in view. Below that, the 500 busiest grid cells.
+
 Live delivery is a separate concern (`server/realtime`), so v2 can replace it with Supabase Realtime without touching the repository contract.
 
 ## Database
@@ -138,7 +144,7 @@ The client keys the TanStack Query cache by bounds and zoom and keeps the previo
 2. Each app instance holds one `LISTEN messages` connection and keeps an in-memory map of `roomId -> SSE clients`.
 3. On notify, the hub pushes the message to the clients subscribed to that room.
 4. The stream sends a heartbeat comment every 25 seconds to keep proxies from closing it.
-5. On reconnect, the client refetches with `after=<last seen created_at>` to fill any gap, and de-duplicates by message id.
+5. On reconnect, the client refetches with `after=<last seen message id>` to fill any gap, and de-duplicates by message id.
 
 Because the trigger fires for every insert, messages posted through any instance reach every connected client.
 

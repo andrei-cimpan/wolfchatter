@@ -15,7 +15,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 - [x] **T1.1** Write the initial migration from `DESIGN.md`.
   *Check:* tables, indexes, and trigger exist.
-- [ ] **T1.2** Implement `ChatRepository` and `PostgresChatRepository` with tests.
+- [x] **T1.2** Implement `ChatRepository` and `PostgresChatRepository` with tests.
   *Check:* create room, post message, list with `before` and `after` paging, and `listMapItems` returns rooms and clusters correctly (including bounds that cross the antimeridian).
 - [ ] **T1.3** Add Zod schemas for room and message input, with shared types.
   *Check:* invalid lat/lng, empty or over-long author/body are rejected.
