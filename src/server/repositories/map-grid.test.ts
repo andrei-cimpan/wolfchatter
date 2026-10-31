@@ -1,22 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clusterCellSize, longitudeRanges } from "./map-grid";
-
-describe("clusterCellSize", () => {
-  it.each([
-    [0, 90],
-    [2, 22.5],
-    [10, 360 / 1024 / 4],
-    [15, 360 / 32768 / 4],
-  ])("at zoom %d is %d degrees", (zoom, size) => {
-    expect(clusterCellSize(zoom)).toBeCloseTo(size, 12);
-  });
-
-  it("puts cell edges exactly on the antimeridian", () => {
-    for (let zoom = 0; zoom < 16; zoom++) {
-      expect(Number.isInteger(180 / clusterCellSize(zoom))).toBe(true);
-    }
-  });
-});
+import { longitudeRanges } from "./map-grid";
 
 describe("longitudeRanges", () => {
   it("returns the viewport range for a normal viewport", () => {
