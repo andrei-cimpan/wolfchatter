@@ -7,6 +7,10 @@ export const STREAM_RETRY_MAX_MS = 30_000;
 // EventSource.CLOSED, spelled out so this module also loads where EventSource does not exist.
 const CLOSED = 2;
 
+// Reconnect errors in a row, with no ready between them, after which EventSource's own retry
+// (every second or two, for as long as the server is unreachable) is replaced by the backoff.
+const MAX_RECONNECT_ERRORS = 3;
+
 export type RoomStreamHandlers = {
   /** Live messages are flowing: catch up on anything sent before. Runs on every (re)connect. */
   onReady(): void;
@@ -20,27 +24,38 @@ export type EventSourceLike = {
   close(): void;
 };
 
+export type RoomStreamOptions = {
+  createEventSource?: (url: string) => EventSourceLike;
+  /** For tests: picks where in its upper half each backoff wait falls. */
+  random?: () => number;
+};
+
 /**
- * Opens the room's SSE stream and keeps it open until the returned function is called. EventSource
- * reconnects by itself after a stream ends, but gives up for good when a request fails (an error
- * status, or no connection at all); those are retried here, waiting 1 s, doubling to 30 s, until a
- * stream is ready again.
+ * Opens the room's SSE stream and keeps it open until the returned function is called. After a
+ * stream ends, EventSource reconnects by itself, which is left alone for a dropped stream that comes
+ * straight back. It gives up for good when a request gets an error status, and while the server is
+ * unreachable it keeps retrying at the server's short `retry` delay; both are handled here instead,
+ * waiting 1 s, doubling to 30 s, with jitter, until a stream is ready again.
  */
 export function connectRoomStream(
   roomId: string,
   handlers: RoomStreamHandlers,
-  createEventSource: (url: string) => EventSourceLike = (url) => new EventSource(url),
+  { createEventSource = (url) => new EventSource(url), random = Math.random }: RoomStreamOptions = {},
 ): () => void {
   const url = `/api/rooms/${encodeURIComponent(roomId)}/stream`;
   let source: EventSourceLike;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryMs = STREAM_RETRY_MIN_MS;
+  // Counted across EventSources, so once the backoff has taken over, each new one that cannot
+  // connect is handed back to it on its first error.
+  let errorsSinceReady = 0;
 
   function connect(): void {
     const current = createEventSource(url);
     source = current;
     current.addEventListener("ready", () => {
       retryMs = STREAM_RETRY_MIN_MS;
+      errorsSinceReady = 0;
       handlers.onReady();
     });
     current.addEventListener("message", (event) => {
@@ -48,10 +63,12 @@ export function connectRoomStream(
       if (message?.roomId === roomId) handlers.onMessage(message);
     });
     current.addEventListener("error", () => {
-      // While CONNECTING, EventSource is already retrying a stream that ended.
-      if (current.readyState !== CLOSED) return;
+      errorsSinceReady++;
+      // While CONNECTING, EventSource is already retrying; a stream that ended usually comes back.
+      if (current.readyState !== CLOSED && errorsSinceReady < MAX_RECONNECT_ERRORS) return;
       current.close();
-      retryTimer = setTimeout(connect, retryMs);
+      // Anywhere in the upper half of the wait, so clients dropped together do not return together.
+      retryTimer = setTimeout(connect, retryMs * (0.5 + random() / 2));
       retryMs = Math.min(retryMs * 2, STREAM_RETRY_MAX_MS);
     });
   }

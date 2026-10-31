@@ -181,7 +181,7 @@ test.describe("live messages", () => {
     const id = await newRoom(page.request);
     const send = (body: string) => page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
     await send("before");
-    // The stream fails until the route is removed, as it would while the server is unreachable.
+    // The stream request fails until the route is removed, as it would while the database is down.
     const isStream = (url: URL) => url.pathname === `/api/rooms/${id}/stream`;
     let refused = 0;
     await page.route(isStream, (route) => {

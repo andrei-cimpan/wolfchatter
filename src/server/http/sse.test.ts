@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "@/lib/types";
-import { sseHeartbeat, sseMessage, sseReady, sseRetry } from "./sse";
+import { SSE_RETRY_MS, sseHeartbeat, sseMessage, sseReady, sseRetry, sseRetryDelay } from "./sse";
 
 describe("SSE event text", () => {
   it("frames a message as one event with its JSON on a single data line", () => {
@@ -23,5 +23,10 @@ describe("SSE event text", () => {
     expect(sseReady()).toBe("event: ready\ndata: {}\n\n");
     expect(sseRetry(1000)).toBe("retry: 1000\n\n");
     expect(sseHeartbeat()).toMatch(/^:.*\n\n$/);
+  });
+
+  it("spreads the reconnect delay over one to two base delays (review #2)", () => {
+    expect(sseRetryDelay(() => 0)).toBe(SSE_RETRY_MS);
+    expect(sseRetryDelay(() => 0.999)).toBe(2 * SSE_RETRY_MS - 1);
   });
 });

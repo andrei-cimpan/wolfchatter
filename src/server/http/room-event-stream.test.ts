@@ -53,7 +53,8 @@ function collect(stream: ReadableStream<Uint8Array>) {
 }
 
 function open(hub: FakeHub, controller = new AbortController(), timeoutMs = 10_000) {
-  return { ...collect(openRoomEventStream(hub, "r1", controller.signal, timeoutMs)), controller };
+  const stream = openRoomEventStream(hub, "r1", controller.signal, { timeoutMs, retryMs: 1000 });
+  return { ...collect(stream), controller };
 }
 
 afterEach(() => {

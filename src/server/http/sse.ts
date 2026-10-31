@@ -1,7 +1,15 @@
 import type { Message } from "@/lib/types";
 
-// How long the browser waits before reconnecting after the server ends a stream.
+// How long the browser waits before reconnecting after the server ends a stream, at the least.
 export const SSE_RETRY_MS = 1000;
+
+/**
+ * A reconnect delay between one and two base delays. The hub ends every stream at once when the
+ * database drops, and the same delay everywhere would bring every client back in the same instant.
+ */
+export function sseRetryDelay(random: () => number = Math.random): number {
+  return SSE_RETRY_MS + Math.floor(random() * SSE_RETRY_MS);
+}
 
 export const SSE_HEADERS = {
   "Content-Type": "text/event-stream; charset=utf-8",
@@ -11,7 +19,7 @@ export const SSE_HEADERS = {
   "X-Accel-Buffering": "no",
 } as const;
 
-export function sseRetry(ms = SSE_RETRY_MS): string {
+export function sseRetry(ms: number): string {
   return `retry: ${ms}\n\n`;
 }
 

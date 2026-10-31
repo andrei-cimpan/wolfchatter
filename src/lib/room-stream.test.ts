@@ -41,12 +41,27 @@ class FakeEventSource implements EventSourceLike {
 let sources: FakeEventSource[];
 const handlers = { onReady: vi.fn(), onMessage: vi.fn() };
 
-function connect(): () => void {
-  return connectRoomStream(ROOM, handlers, (url) => {
-    const source = new FakeEventSource(url);
-    sources.push(source);
-    return source;
+// random() = 1 waits the full backoff, which keeps most waits exact.
+function connect(random = () => 1): () => void {
+  return connectRoomStream(ROOM, handlers, {
+    createEventSource: (url) => {
+      const source = new FakeEventSource(url);
+      sources.push(source);
+      return source;
+    },
+    random,
   });
+}
+
+/** How long until the next EventSource opens, in steps of 100 ms. */
+function waitForNextSource(): number {
+  const before = sources.length;
+  let waited = 0;
+  while (sources.length === before && waited < STREAM_RETRY_MAX_MS * 2) {
+    vi.advanceTimersByTime(100);
+    waited += 100;
+  }
+  return waited;
 }
 
 beforeEach(() => {
@@ -90,16 +105,40 @@ describe("connectRoomStream", () => {
     const waits: number[] = [];
     for (let attempt = 0; attempt < 7; attempt++) {
       sources.at(-1)!.fail();
-      const before = sources.length;
-      let waited = 0;
-      while (sources.length === before) {
-        vi.advanceTimersByTime(100);
-        waited += 100;
-      }
-      waits.push(waited);
+      waits.push(waitForNextSource());
     }
     expect(waits).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
     expect(sources.slice(0, -1).every((s) => s.closed)).toBe(true);
+  });
+
+  it("spreads each wait over its upper half, so clients dropped together do not return together", () => {
+    connect(() => 0);
+    sources[0]!.fail();
+    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS / 2);
+    sources[1]!.fail();
+    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS);
+  });
+
+  it("takes over with its own backoff when EventSource keeps failing to reconnect (review #2)", () => {
+    // An unreachable server: EventSource retries every second by itself, staying CONNECTING.
+    connect();
+    sources[0]!.emit("ready", "{}");
+    sources[0]!.drop();
+    sources[0]!.drop();
+    expect(sources[0]!.closed).toBe(false);
+    sources[0]!.drop();
+    expect(sources[0]!.closed).toBe(true);
+    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS);
+
+    // Still unreachable: the new EventSource is closed on its first error, and the wait doubles.
+    sources[1]!.drop();
+    expect(sources[1]!.closed).toBe(true);
+    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS * 2);
+
+    // Back: a ready resets the count, so a single drop is again left to EventSource.
+    sources[2]!.emit("ready", "{}");
+    sources[2]!.drop();
+    expect(sources[2]!.closed).toBe(false);
   });
 
   it("goes back to the shortest wait once a stream is ready", () => {

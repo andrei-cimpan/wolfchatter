@@ -1,5 +1,5 @@
 import type { RealtimeHub, Subscriber } from "@/server/realtime";
-import { sseHeartbeat, sseMessage, sseReady, sseRetry } from "./sse";
+import { sseHeartbeat, sseMessage, sseReady, sseRetry, sseRetryDelay } from "./sse";
 
 // subscribe waits out a database outage with no limit of its own. Ending the stream instead makes
 // the browser retry, rather than holding a connection that looks open but receives nothing.
@@ -14,7 +14,7 @@ export function openRoomEventStream(
   hub: RealtimeHub,
   roomId: string,
   signal: AbortSignal,
-  timeoutMs = STREAM_SUBSCRIBE_TIMEOUT_MS,
+  { timeoutMs = STREAM_SUBSCRIBE_TIMEOUT_MS, retryMs = sseRetryDelay() } = {},
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   let ended = false;
@@ -46,7 +46,7 @@ export function openRoomEventStream(
         close: () => end(),
       };
 
-      write(sseRetry());
+      write(sseRetry(retryMs));
       signal.addEventListener("abort", end);
       if (signal.aborted) return end();
       timer = setTimeout(() => {
