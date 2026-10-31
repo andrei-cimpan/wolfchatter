@@ -18,7 +18,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T1.2** Implement `ChatRepository` and `PostgresChatRepository` with tests.
   *Check:* create room, post message, list with `before` and `after` paging, and `listMapItems` returns rooms and clusters correctly (including bounds that cross the antimeridian).
 - [ ] **T1.3** Add Zod schemas for room and message input, with shared types.
-  *Check:* invalid lat/lng, empty or over-long author/body are rejected.
+  *Check:* invalid lat/lng, empty or over-long author/body are rejected; a bbox with unwrapped longitudes (for example `170,190`) is wrapped to ±180; non-finite bbox values, zoom, and limit are rejected.
 
 ## 2. API
 

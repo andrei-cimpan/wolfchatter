@@ -130,10 +130,10 @@ Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. Status
 
 ## Viewport loading and clustering
 
-1. The client sends the visible bounds and the integer zoom. Bounds are padded by about 20% and rounded, so small pans reuse the cached result.
+1. The client sends the visible bounds and the integer zoom. Bounds are padded by about 20% and rounded, so small pans reuse the cached result. After panning across the antimeridian, Leaflet reports longitudes outside ±180 (for example `west=170, east=190`). The API's bbox schema (T1.3) wraps both ends into [-180, 180], treats a span of 360° or more as the whole world, and rejects non-finite values. The repository therefore only sees wrapped bounds, where `west > east` means the viewport crosses the antimeridian.
 2. The server filters rooms to the bounds. A viewport that crosses the antimeridian is split into two longitude ranges.
 3. Below zoom 16, rooms are grouped into grid cells of `360 / 2^zoom * 0.25` degrees (about 64 px). A cell with one room returns that room. A cell with several returns a cluster at their average position, with its count. This is one grouped SQL query using `floor(lat / cell)` and `floor(lng / cell)`.
-4. Responses are capped at 500 items. Clustering keeps wide views small, and at zoom 16 and above the viewport is small enough that the cap is rarely reached.
+4. Responses are capped at 500 items. Below zoom 16 the busiest cells are kept; at zoom 16 and above, the newest rooms. A large, dense viewport can still reach the cap at normal zooms (a padded 1920×1080 view is about 720 cells), and then the sparsest cells are dropped (see Known limitations).
 5. Clicking a cluster zooms the map into its cell, which triggers a new request.
 
 The client keys the TanStack Query cache by bounds and zoom and keeps the previous result on screen while the next one loads, so pins do not flicker. A newly created room is added to the cache immediately. Rooms created by other users appear on the next pan or zoom, because real-time delivery covers messages only.
@@ -144,7 +144,7 @@ The client keys the TanStack Query cache by bounds and zoom and keeps the previo
 2. Each app instance holds one `LISTEN messages` connection and keeps an in-memory map of `roomId -> SSE clients`.
 3. On notify, the hub pushes the message to the clients subscribed to that room.
 4. The stream sends a heartbeat comment every 25 seconds to keep proxies from closing it.
-5. On reconnect, the client refetches with `after=<last seen message id>` to fill any gap, and de-duplicates by message id.
+5. On reconnect, the client refetches with `after=<an id a few messages before the last one it saw>` and de-duplicates by message id. The overlap matters because `created_at` is the inserting transaction's start time, not its commit time: a message can commit after a newer one yet sort before it, so `after=<last seen id>` could skip it for good.
 
 Because the trigger fires for every insert, messages posted through any instance reach every connected client.
 
@@ -158,5 +158,6 @@ Because the trigger fires for every insert, messages posted through any instance
 
 - New rooms created by other users appear only after the next pan or zoom (real-time covers messages only).
 - Clustering is grid-based over a plain `(lat, lng)` index. PostGIS with a GiST index is the next step at larger scale.
+- When a viewport has more than 500 occupied cells, the sparsest are dropped, so the shown counts can add up to fewer rooms than are in view. Merging the remainder into coarser clusters would fix it.
 - No authentication, so authorship is self-declared.
 - Basic per-IP rate limiting only.

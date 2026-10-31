@@ -4,8 +4,9 @@ import type { Bbox } from "@/lib/types";
 export const CLUSTER_MAX_ZOOM = 16;
 export const MAP_ITEMS_LIMIT = 500;
 
-// About 64 px of a 256 px tile at this zoom. 180 / size is always a whole number, so cell
-// edges fall exactly on ±180 and no cell spans the antimeridian.
+// About 64 px of a 256 px tile at this zoom. 180 / size is a whole number, so the cells at the
+// edge of the map are full width. (No cell can span the antimeridian at any size: grouping by
+// floor(lng / size) never puts 179.5 and -179.5 together.)
 export function clusterCellSize(zoom: number): number {
   return (360 / 2 ** zoom) * 0.25;
 }
