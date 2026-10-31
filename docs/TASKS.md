@@ -22,7 +22,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 ## 2. API
 
-- [ ] **T2.1** `GET /api/rooms?bbox=&zoom=` (viewport loading with grid clustering, capped at 500 items), `POST /api/rooms`, and `GET /api/rooms/:id`, with error shape and validation.
+- [x] **T2.1** `GET /api/rooms?bbox=&zoom=` (viewport loading with grid clustering, capped at 500 items), `POST /api/rooms`, and `GET /api/rooms/:id`, with error shape and validation.
   *Carried over from the PR #4 review:*
   - One shared mapper from Zod issues to `{ "error": { "code", "message" } }` with readable messages, plus one helper that turns `URLSearchParams` into schema input. Decide and test how empty values (`?before=&limit=`) and repeated keys are handled.
   - Reject author or body text that is only invisible characters (for example U+200B, U+0085), which JavaScript `trim()` keeps and which would render as a blank message.
