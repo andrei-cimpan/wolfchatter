@@ -20,7 +20,7 @@ type CreateRoomVariables = {
  * Creates a room where the map was clicked, caches it so the panel shows it without a refetch,
  * and selects it unless the user picked another room while it was being created.
  */
-export function useCreateRoom(onCreated: (room: Room) => void) {
+export function useCreateRoom(onCreated: (room: Room, clickedLng: number) => void) {
   const queryClient = useQueryClient();
   // A ref, not `isPending`: two clicks can land before React re-renders with the new state.
   const creatingRef = useRef(false);
@@ -28,9 +28,9 @@ export function useCreateRoom(onCreated: (room: Room) => void) {
 
   const mutation = useMutation({
     mutationFn: ({ lat, lng }: CreateRoomVariables) => createRoom({ lat, lng }),
-    onSuccess: (room, { selectedAtClick, picksAtClick }) => {
+    onSuccess: (room, { lng, selectedAtClick, picksAtClick }) => {
       queryClient.setQueryData(roomQueryKey(room.id), room);
-      onCreated(room);
+      onCreated(room, lng);
       const userMovedOn = currentSelectedRoomId() !== selectedAtClick || picksRef.current !== picksAtClick;
       if (!userMovedOn) selectRoom(room.id);
     },

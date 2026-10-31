@@ -6,10 +6,11 @@ import type { StaticImageData } from "next/image";
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { useRoom } from "@/hooks/useRoom";
 import { useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import { nearestWorldCopy } from "@/lib/bbox";
 import { INITIAL_VIEW, tileConfigFromEnv } from "@/lib/map-config";
 import type { Room } from "@/lib/types";
 
@@ -31,8 +32,12 @@ const pinIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
+/** The longitude a room was clicked at, possibly on a repeated copy of the world. */
+export type PinAnchor = { roomId: string; lng: number };
+
 export interface LeafletMapProps {
   createdRooms: Room[];
+  pinAnchor: PinAnchor | null;
   onMapClick: (lat: number, lng: number) => void;
   onRoomClick: (id: string) => void;
 }
@@ -60,7 +65,47 @@ function KeepSizeInSync() {
   return null;
 }
 
-export default function LeafletMap({ createdRooms, onMapClick, onRoomClick }: LeafletMapProps) {
+// Rooms store a wrapped longitude, but the map repeats the world sideways. Each pin is drawn on the
+// copy nearest the view's centre, recomputed after every move. At low zoom several copies are on
+// screen at once, so the room just created stays on the copy that was clicked until the user
+// drags or zooms. Not on any move: raising the mobile sheet moves the map too.
+function RoomPins({
+  rooms,
+  pinAnchor,
+  onRoomClick,
+}: Pick<LeafletMapProps, "pinAnchor" | "onRoomClick"> & { rooms: Room[] }) {
+  const map = useMap();
+  const [centerLng, setCenterLng] = useState(() => map.getCenter().lng);
+  const [releasedAnchor, setReleasedAnchor] = useState<PinAnchor | null>(null);
+  useMapEvents({
+    moveend: () => setCenterLng(map.getCenter().lng),
+    dragstart: () => setReleasedAnchor(pinAnchor),
+    zoomstart: () => setReleasedAnchor(pinAnchor),
+  });
+  const anchor = pinAnchor !== releasedAnchor ? pinAnchor : null;
+
+  return rooms.map((room) => (
+    <Marker
+      key={room.id}
+      position={[room.lat, nearestWorldCopy(room.lng, room.id === anchor?.roomId ? anchor.lng : centerLng)]}
+      icon={pinIcon}
+      title={room.title}
+      alt={room.title}
+      eventHandlers={{
+        click: () => onRoomClick(room.id),
+        // Leaflet makes pins focusable buttons but only handles Enter when a popup is bound.
+        keydown: (event) => {
+          const { key } = event.originalEvent;
+          if (key !== "Enter" && key !== " ") return;
+          event.originalEvent.preventDefault();
+          onRoomClick(room.id);
+        },
+      }}
+    />
+  ));
+}
+
+export default function LeafletMap({ createdRooms, pinAnchor, onMapClick, onRoomClick }: LeafletMapProps) {
   const { data: selectedRoom } = useRoom(useSelectedRoomId());
   const rooms =
     selectedRoom && !createdRooms.some((room) => room.id === selectedRoom.id)
@@ -79,25 +124,7 @@ export default function LeafletMap({ createdRooms, onMapClick, onRoomClick }: Le
       <TileLayer url={tileConfig.url} attribution={tileConfig.attribution} />
       <ClickToCreate onMapClick={onMapClick} />
       <KeepSizeInSync />
-      {rooms.map((room) => (
-        <Marker
-          key={room.id}
-          position={[room.lat, room.lng]}
-          icon={pinIcon}
-          title={room.title}
-          alt={room.title}
-          eventHandlers={{
-            click: () => onRoomClick(room.id),
-            // Leaflet makes pins focusable buttons but only handles Enter when a popup is bound.
-            keydown: (event) => {
-              const { key } = event.originalEvent;
-              if (key !== "Enter" && key !== " ") return;
-              event.originalEvent.preventDefault();
-              onRoomClick(room.id);
-            },
-          }}
-        />
-      ))}
+      <RoomPins rooms={rooms} pinAnchor={pinAnchor} onRoomClick={onRoomClick} />
     </MapContainer>
   );
 }

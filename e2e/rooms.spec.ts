@@ -27,6 +27,15 @@ async function createRoomAt(page: Page, x: number, y: number): Promise<string> {
   return (await roomTitle(page).textContent()) ?? "";
 }
 
+/** Zoom levels of the tiles on screen; tile URLs end in /{z}/{x}/{y}.png. The map opens at 5. */
+function tileZooms(page: Page) {
+  return page
+    .locator(".leaflet-tile")
+    .evaluateAll((tiles) => [
+      ...new Set(tiles.map((t) => new URL((t as HTMLImageElement).src).pathname.split("/")[1])),
+    ]);
+}
+
 function countRoomPosts(page: Page) {
   const posts: string[] = [];
   page.on("request", (request) => {
@@ -65,6 +74,24 @@ test.describe("desktop", () => {
     await expect(roomTitle(page)).toHaveText(second);
   });
 
+  test("a room created on a repeated copy of the world gets its pin where the click was", async ({
+    page,
+  }) => {
+    await openMap(page);
+    // From zoom 5 to 1: at 1280 px the view then spans more than one world, so x=1150 lies on
+    // the copy east of the antimeridian (longitude above 180).
+    for (const zoom of [4, 3, 2, 1]) {
+      await page.getByRole("button", { name: "Zoom out" }).click();
+      // Each click is ignored while the previous zoom animates, so wait for its tiles.
+      await expect.poll(() => tileZooms(page)).toEqual([String(zoom)]);
+    }
+    await page.waitForTimeout(400);
+
+    const title = await createRoomAt(page, 1150, 300);
+    const icon = await pin(page, title).boundingBox();
+    expect(Math.abs((icon?.x ?? 0) + (icon?.width ?? 0) / 2 - 1150)).toBeLessThan(15);
+  });
+
   test("dragging the map does not create a room", async ({ page }) => {
     const posts = countRoomPosts(page);
     await openMap(page);
@@ -80,18 +107,13 @@ test.describe("desktop", () => {
   test("double-clicking creates one room, not two, and does not zoom", async ({ page }) => {
     const posts = countRoomPosts(page);
     await openMap(page);
-    // Tile URLs carry the zoom level: /{z}/{x}/{y}.png, and the map opens at zoom 5.
-    const tileZooms = () =>
-      page.locator(".leaflet-tile").evaluateAll((tiles) =>
-        [...new Set(tiles.map((t) => new URL((t as HTMLImageElement).src).pathname.split("/")[1]))],
-      );
-    await expect.poll(tileZooms).toEqual(["5"]);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
 
     await page.locator(".leaflet-container").dblclick({ position: { x: 500, y: 400 } });
     await expect(page).toHaveURL(ROOM_URL);
     await page.waitForTimeout(500);
     expect(posts).toHaveLength(1);
-    expect(await tileZooms()).toEqual(["5"]);
+    expect(await tileZooms(page)).toEqual(["5"]);
   });
 
   test("clicks while a room is still being created are ignored", async ({ page }) => {
