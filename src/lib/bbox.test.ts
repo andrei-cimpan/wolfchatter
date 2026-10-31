@@ -13,7 +13,17 @@ describe("wrapLongitude", () => {
     [530, 170],
     [-540, -180],
   ])("wraps %d to %d", (input, expected) => {
-    expect(wrapLongitude(input)).toBeCloseTo(expected, 10);
+    expect(wrapLongitude(input)).toBe(expected);
+  });
+
+  // Modulo arithmetic turned 26.1 into 26.100000000000023, so rooms were saved slightly off.
+  it.each([26.1, -0.1, 1e-7, -179.999999, 179.123456789])("keeps the in-range longitude %d exactly", (lng) => {
+    expect(wrapLongitude(lng)).toBe(lng);
+  });
+
+  it("moves an out-of-range longitude by whole turns only", () => {
+    expect(wrapLongitude(200.5)).toBe(-159.5);
+    expect(wrapLongitude(-200.25)).toBe(159.75);
   });
 });
 

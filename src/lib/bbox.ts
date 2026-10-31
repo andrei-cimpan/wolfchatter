@@ -1,8 +1,12 @@
 import type { Bbox } from "./types";
 
 // Leaflet keeps counting longitude past ±180 as the map is panned around the world.
+// The range is half-open, [-180, 180), so the antimeridian has one spelling; normalizeBbox relies
+// on 180 becoming -180. In-range values are returned untouched, and others move by whole turns
+// in a single subtraction, because chained float arithmetic would turn 26.1 into 26.100000000000023.
 export function wrapLongitude(lng: number): number {
-  return ((((lng + 180) % 360) + 360) % 360) - 180;
+  if (lng >= -180 && lng < 180) return lng;
+  return lng - 360 * Math.floor((lng + 180) / 360);
 }
 
 function clampLatitude(lat: number): number {
