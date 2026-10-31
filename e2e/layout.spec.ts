@@ -2,17 +2,22 @@ import { expect, test, type Page } from "@playwright/test";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 
-// A 1x1 PNG served for every tile: the tests stay offline and off OpenStreetMap's servers (whose
-// tile policy forbids automated load), yet the map still has real tiles that could cover the panel.
+// A 1x1 PNG served for every off-site image, whichever basemap the dev server is configured with:
+// the tests stay offline and off tile providers' servers (whose policies forbid automated load),
+// yet the map still has real tiles that could cover the panel.
 const BLANK_TILE = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   "base64",
 );
 
 test.beforeEach(async ({ page }) => {
-  await page.route(/tile\.openstreetmap\.org/, (route) =>
-    route.fulfill({ contentType: "image/png", body: BLANK_TILE }),
-  );
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const offSite = new URL(request.url()).hostname !== "localhost";
+    return request.resourceType() === "image" && offSite
+      ? route.fulfill({ contentType: "image/png", body: BLANK_TILE })
+      : route.fallback();
+  });
 });
 
 async function box(page: Page, selector: string) {
@@ -101,7 +106,8 @@ test.describe("narrow screen", () => {
     expect(map.height).toBeGreaterThan(667 / 2);
 
     await expect(page.locator(".leaflet-control-attribution")).toBeInViewport();
-    await expect(page.locator(".leaflet-control-attribution")).toContainText("OpenStreetMap");
+    // Leaflet's own prefix, then " | " and the configured provider's credit.
+    await expect(page.locator(".leaflet-control-attribution")).toContainText(/\|\s*\S/);
     await expectNoPageScroll(page);
   });
 });
