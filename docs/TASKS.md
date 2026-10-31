@@ -45,7 +45,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 ## 4. Real-time
 
-- [ ] **T4.1** Realtime hub: one `LISTEN`, in-memory fan-out, heartbeat.
+- [x] **T4.1** Realtime hub: one `LISTEN`, in-memory fan-out, heartbeat.
 - [ ] **T4.2** `GET /api/rooms/:id/stream` and the `useRoomStream` hook with reconnect catch-up.
   *Check:* a message posted in one browser appears in another within about a second, with no duplicates after a reconnect.
 
