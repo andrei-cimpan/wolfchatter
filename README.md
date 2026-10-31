@@ -24,7 +24,7 @@ Next.js (App Router), TypeScript, Tailwind, react-leaflet (OpenStreetMap tiles),
 
 ## Run it locally
 
-You need Node.js 20 or newer and Docker. No accounts or API keys are required.
+You need Node.js 26 or newer and Docker. No accounts or API keys are required.
 
 ```bash
 git clone <repo-url> wolfchatter

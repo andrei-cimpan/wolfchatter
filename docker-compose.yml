@@ -1,0 +1,23 @@
+# Fixed so every checkout shares one container and volume name.
+name: wolfchatter
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wolfchatter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wolfchatter}
+      POSTGRES_DB: ${POSTGRES_DB:-wolfchatter}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # TCP, not the socket: during first-run init a temporary socket-only server answers too early.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  db-data:

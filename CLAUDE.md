@@ -20,7 +20,7 @@ Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · Post
 
 ## Architecture rules
 
-- UI and route handlers use the `ChatRepository` interface only. Never import the DB client outside `src/server/repositories/`.
+- UI and route handlers use the `ChatRepository` interface only. Application code never imports the DB client outside `src/server/repositories/`; tooling in `scripts/` (such as the migration runner) is the only exception.
 - Validate every API input with Zod at the route boundary.
 - Render user text as plain text. Never use `dangerouslySetInnerHTML`.
 - Server state lives in TanStack Query. The selected room lives in the URL (`?room=<id>`). No global store.
