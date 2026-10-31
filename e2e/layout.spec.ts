@@ -1,30 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { box, makeTilesHitTestable, serveBlankTiles } from "./support";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 
-// A 1x1 PNG served for every off-site image, whichever basemap the dev server is configured with:
-// the tests stay offline and off tile providers' servers (whose policies forbid automated load),
-// yet the map still has real tiles that could cover the panel.
-const BLANK_TILE = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-  "base64",
-);
-
 test.beforeEach(async ({ page }) => {
-  await page.route("**/*", (route) => {
-    const request = route.request();
-    const offSite = new URL(request.url()).hostname !== "localhost";
-    return request.resourceType() === "image" && offSite
-      ? route.fulfill({ contentType: "image/png", body: BLANK_TILE })
-      : route.fallback();
-  });
+  await serveBlankTiles(page);
 });
-
-async function box(page: Page, selector: string) {
-  const b = await page.locator(selector).boundingBox();
-  if (!b) throw new Error(`${selector} is not visible`);
-  return b;
-}
 
 async function expectNoPageScroll(page: Page) {
   const overflow = await page.evaluate(() => ({
@@ -55,8 +36,7 @@ test.describe("desktop", () => {
   test("panel stays above the map's tiles", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator(".leaflet-tile-loaded").first()).toBeVisible();
-    // Leaflet makes tiles ignore the pointer, which would hide them from elementFromPoint.
-    await page.addStyleTag({ content: ".leaflet-tile { pointer-events: auto !important; }" });
+    await makeTilesHitTestable(page);
     const card = await box(page, "aside");
     const panelOnTop = await page.evaluate(
       ({ x, y }) => document.elementFromPoint(x, y)?.closest("aside") != null,
