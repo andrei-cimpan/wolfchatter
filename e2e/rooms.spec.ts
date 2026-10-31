@@ -202,6 +202,17 @@ test.describe("desktop", () => {
     await expect(page.locator(".leaflet-marker-icon")).toHaveCount(0);
   });
 
+  test("a room that fails to load says so within a few seconds", async ({ page }) => {
+    await page.route("**/api/rooms/*", (route) =>
+      route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "x" } } }),
+    );
+    await openMap(page, "/?room=00000000-0000-4000-8000-000000000000");
+    await expect(panel(page).getByRole("alert")).toHaveText(
+      "Couldn't load this chatroom. Please try again.",
+      { timeout: 3000 },
+    );
+  });
+
   test("an unknown or malformed room id shows that the room does not exist", async ({ page }) => {
     await openMap(page, "/?room=00000000-0000-4000-8000-000000000000");
     await expect(panel(page)).toContainText("This chatroom doesn't exist.");
