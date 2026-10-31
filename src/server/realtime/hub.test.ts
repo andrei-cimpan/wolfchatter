@@ -131,17 +131,42 @@ describe("InMemoryRealtimeHub", () => {
     expect(healthy.sent).toEqual([message("a", "one"), message("a", "two")]);
   });
 
-  it("closes every subscriber when the source reconnects", async () => {
+  it("closes every subscriber as soon as the source disconnects (review #6)", async () => {
     const [a, b] = [subscriber(), subscriber()];
     await subscribe("a", a);
     await subscribe("b", b);
 
-    source.handlers!.onReconnect();
-    source.emit(message("a"));
+    source.handlers!.onDisconnect();
 
     expect(a.close).toHaveBeenCalledOnce();
     expect(b.close).toHaveBeenCalledOnce();
-    expect(a.sent).toEqual([]);
+  });
+
+  it("makes a subscribe during an outage wait until the source is back (review #6)", async () => {
+    await subscribe("a", subscriber());
+    source.handlers!.onDisconnect();
+
+    let resolved = false;
+    const s = subscriber();
+    const subscribed = hub.subscribe("a", s).then(() => (resolved = true));
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    source.handlers!.onReconnect();
+    await subscribed;
+    source.emit(message("a"));
+    expect(s.sent).toEqual([message("a")]);
+    expect(s.close).not.toHaveBeenCalled();
+  });
+
+  it("rejects a subscribe waiting out an outage when the hub stops (review #6)", async () => {
+    await subscribe("a", subscriber());
+    source.handlers!.onDisconnect();
+    const subscribed = hub.subscribe("a", subscriber());
+
+    await hub.stop();
+
+    await expect(subscribed).rejects.toThrow("stopped");
   });
 
   it("rejects subscribe when the source fails to start, and tries again on the next one", async () => {

@@ -185,7 +185,9 @@ export class PostgresMessageSource implements MessageSource {
     this.client = null;
     this.clearTimers();
     endWithin(client, this.options.timeoutMs).catch(() => {});
-    if (this.handlers) this.scheduleReconnect();
+    if (!this.handlers) return;
+    this.handlers.onDisconnect();
+    this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {

@@ -15,8 +15,9 @@ export type Subscriber = {
 
 export interface RealtimeHub {
   /**
-   * Resolves once live messages are flowing, so nothing posted after it resolves is missed.
-   * Returns the function that unsubscribes.
+   * Resolves once live messages are flowing, so nothing posted after it resolves is missed; while
+   * the source is down, it waits for it to come back. Returns the function that unsubscribes.
+   * Rejects if the source cannot start or the hub stops while waiting.
    */
   subscribe(roomId: string, subscriber: Subscriber): Promise<() => void>;
 }
@@ -28,6 +29,8 @@ export class InMemoryRealtimeHub implements RealtimeHub {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   // Bumped by stop(), so a subscribe that was waiting for the source cannot join afterwards.
   private generation = 0;
+  // Set while the source is down; subscribes wait on it.
+  private outage: PromiseWithResolvers<void> | null = null;
   private readonly source: MessageSource;
   private readonly heartbeatMs: number;
 
@@ -39,6 +42,7 @@ export class InMemoryRealtimeHub implements RealtimeHub {
   async subscribe(roomId: string, subscriber: Subscriber): Promise<() => void> {
     const generation = this.generation;
     await this.start();
+    while (this.outage && generation === this.generation) await this.outage.promise;
     if (generation !== this.generation) throw new Error("The realtime hub was stopped.");
     let subscribers = this.rooms.get(roomId);
     if (!subscribers) {
@@ -53,6 +57,9 @@ export class InMemoryRealtimeHub implements RealtimeHub {
   /** Closes every subscriber and stops the source. For shutdown and tests. */
   async stop(): Promise<void> {
     this.generation++;
+    // Wakes subscribes waiting out an outage; they see the new generation and reject.
+    this.outage?.resolve();
+    this.outage = null;
     this.closeAll();
     const wasStarted = this.started !== null;
     this.started = null;
@@ -65,7 +72,8 @@ export class InMemoryRealtimeHub implements RealtimeHub {
     if (!this.started) {
       const started = this.source.start({
         onMessage: (message) => this.deliver(message),
-        onReconnect: () => this.closeAll(),
+        onDisconnect: () => this.onSourceDown(),
+        onReconnect: () => this.onSourceBack(),
       });
       this.started = started;
       // Lets the next subscriber try again instead of inheriting the failure. A start from before
@@ -100,8 +108,20 @@ export class InMemoryRealtimeHub implements RealtimeHub {
     }
   }
 
-  // After a source reconnect, messages from the gap are gone. Closing every stream makes each
-  // client reconnect and catch up from its last message, the same path as any other drop.
+  // Messages sent while the source is down are gone. Closing every stream makes each client
+  // reconnect (waiting in subscribe until the source is back) and catch up from its last message,
+  // the same path as any other drop. Closing at once, not on reconnect, means no stream sits open
+  // looking healthy while nothing can reach it.
+  private onSourceDown(): void {
+    this.outage ??= Promise.withResolvers<void>();
+    this.closeAll();
+  }
+
+  private onSourceBack(): void {
+    this.outage?.resolve();
+    this.outage = null;
+  }
+
   private closeAll(): void {
     const subscribers = [...this.rooms.values()].flatMap((set) => [...set]);
     this.rooms.clear();

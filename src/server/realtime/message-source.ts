@@ -2,7 +2,9 @@ import type { Message } from "@/lib/types";
 
 export type MessageSourceHandlers = {
   onMessage(message: Message): void;
-  /** The feed was interrupted and is back. Messages sent during the gap were not delivered. */
+  /** The feed was interrupted. Nothing arrives until onReconnect, and what is sent meanwhile is lost. */
+  onDisconnect(): void;
+  /** The feed is back after onDisconnect. */
   onReconnect(): void;
 };
 

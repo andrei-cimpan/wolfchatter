@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/lib/types";
+import { InMemoryRealtimeHub, type Subscriber } from "@/server/realtime/hub";
 import { PostgresChatRepository } from "./postgres-chat-repository";
 import { PostgresMessageSource, parseMessageNotification } from "./postgres-message-source";
 import { startTcpProxy, type TcpProxy } from "./test/tcp-proxy";
@@ -32,10 +33,11 @@ afterEach(async () => {
 
 async function startSource() {
   const received: Message[] = [];
+  const onDisconnect = vi.fn();
   const onReconnect = vi.fn();
   source = new PostgresMessageSource(process.env.DATABASE_URL!, options());
-  await source.start({ onMessage: (m) => received.push(m), onReconnect });
-  return { received, onReconnect };
+  await source.start({ onMessage: (m) => received.push(m), onDisconnect, onReconnect });
+  return { received, onDisconnect, onReconnect };
 }
 
 async function listenerPids(): Promise<number[]> {
@@ -99,7 +101,7 @@ describe("PostgresMessageSource", () => {
   });
 
   it("reconnects after its connection is killed and keeps delivering", async () => {
-    const { received, onReconnect } = await startSource();
+    const { received, onDisconnect, onReconnect } = await startSource();
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const [pid] = await listenerPids();
 
@@ -109,6 +111,8 @@ describe("PostgresMessageSource", () => {
     // The poll passes on the first call; waiting past a few retry delays catches a second one.
     await sleep(100);
     expect(onReconnect).toHaveBeenCalledOnce();
+    expect(onDisconnect).toHaveBeenCalledOnce();
+    expect(onDisconnect.mock.invocationCallOrder[0]).toBeLessThan(onReconnect.mock.invocationCallOrder[0]!);
     const pids = await listenerPids();
     expect(pids).toHaveLength(1);
     expect(pids).not.toContain(pid);
@@ -120,14 +124,14 @@ describe("PostgresMessageSource", () => {
 
   it("rejects start when the database is unreachable, and can start again", async () => {
     const unreachable = new PostgresMessageSource("postgres://nobody@127.0.0.1:1/none", options());
-    await expect(unreachable.start({ onMessage: () => {}, onReconnect: () => {} })).rejects.toThrow();
+    await expect(unreachable.start({ onMessage: () => {}, onDisconnect: () => {}, onReconnect: () => {} })).rejects.toThrow();
 
     await startSource();
     expect(await listenerPids()).toHaveLength(1);
   });
 
   it("closes its connection on stop and does not reconnect", async () => {
-    const { onReconnect } = await startSource();
+    const { onDisconnect, onReconnect } = await startSource();
 
     await source!.stop();
 
@@ -135,6 +139,7 @@ describe("PostgresMessageSource", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(await listenerPids()).toEqual([]);
     expect(onReconnect).not.toHaveBeenCalled();
+    expect(onDisconnect).not.toHaveBeenCalled();
   });
 });
 
@@ -153,7 +158,7 @@ describe("PostgresMessageSource behind a proxy", () => {
     proxy!.delayMs = 100;
     source = new PostgresMessageSource(proxy!.connectionString, options());
 
-    const started = source.start({ onMessage: () => {}, onReconnect: () => {} });
+    const started = source.start({ onMessage: () => {}, onDisconnect: () => {}, onReconnect: () => {} });
     await source.stop();
 
     await expect(started).rejects.toThrow("stopped");
@@ -163,7 +168,7 @@ describe("PostgresMessageSource behind a proxy", () => {
   it("keeps one listener when stopped and started again during a reconnect (review #2)", async () => {
     const staleReconnect = vi.fn();
     source = new PostgresMessageSource(proxy!.connectionString, options());
-    await source.start({ onMessage: () => {}, onReconnect: staleReconnect });
+    await source.start({ onMessage: () => {}, onDisconnect: () => {}, onReconnect: staleReconnect });
     proxy!.delayMs = 200;
     const attempts = proxy!.attempts.length;
 
@@ -173,7 +178,7 @@ describe("PostgresMessageSource behind a proxy", () => {
     proxy!.delayMs = 0;
     const received: Message[] = [];
     const onReconnect = vi.fn();
-    await source.start({ onMessage: (m) => received.push(m), onReconnect });
+    await source.start({ onMessage: (m) => received.push(m), onDisconnect: () => {}, onReconnect });
     // Past the moment the stale reconnect's connection completes.
     await sleep(300);
 
@@ -194,7 +199,7 @@ describe("PostgresMessageSource behind a proxy", () => {
   it("doubles the wait between failed reconnects up to the cap, then reconnects once (review #8)", async () => {
     const onReconnect = vi.fn();
     source = new PostgresMessageSource(proxy!.connectionString, { ...options(), minRetryMs: 20, maxRetryMs: 80 });
-    await source.start({ onMessage: () => {}, onReconnect });
+    await source.start({ onMessage: () => {}, onDisconnect: () => {}, onReconnect });
     proxy!.mode = "refuse";
 
     const dropped = Date.now();
@@ -227,7 +232,7 @@ describe("PostgresMessageSource behind a proxy", () => {
   it("keeps backing off while the connection drops right after each reconnect (review #5)", async () => {
     const onReconnect = vi.fn();
     source = new PostgresMessageSource(proxy!.connectionString, { ...options(), minRetryMs: 20, maxRetryMs: 1_000 });
-    await source.start({ onMessage: () => {}, onReconnect });
+    await source.start({ onMessage: () => {}, onDisconnect: () => {}, onReconnect });
 
     const waits = await flap(4, onReconnect);
 
@@ -243,7 +248,7 @@ describe("PostgresMessageSource behind a proxy", () => {
       maxRetryMs: 1_000,
       stableMs,
     });
-    await source.start({ onMessage: () => {}, onReconnect });
+    await source.start({ onMessage: () => {}, onDisconnect: () => {}, onReconnect });
     await flap(3, onReconnect);
 
     await sleep(stableMs + 50);
@@ -260,7 +265,7 @@ describe("PostgresMessageSource behind a proxy", () => {
     source = new PostgresMessageSource(proxy!.connectionString, { ...options(), timeoutMs: 100 });
 
     const started = Date.now();
-    await expect(source.start({ onMessage: () => {}, onReconnect: () => {} })).rejects.toThrow();
+    await expect(source.start({ onMessage: () => {}, onDisconnect: () => {}, onReconnect: () => {} })).rejects.toThrow();
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
@@ -272,12 +277,39 @@ describe("PostgresMessageSource behind a proxy", () => {
       healthCheckMs: 50,
       timeoutMs: 100,
     });
-    await source.start({ onMessage: (m) => received.push(m), onReconnect });
+    await source.start({ onMessage: (m) => received.push(m), onDisconnect: () => {}, onReconnect });
 
     proxy!.freezeAll();
 
     await expect.poll(() => onReconnect, { timeout: 2_000 }).toHaveBeenCalledOnce();
     const posted = await post("after the freeze");
     await expect.poll(() => received).toEqual([posted]);
+  });
+
+  it("lets a hub subscribe made during an outage receive everything posted after it resolves (review #6)", async () => {
+    source = new PostgresMessageSource(proxy!.connectionString, { ...options(), minRetryMs: 50 });
+    const hub = new InMemoryRealtimeHub(source);
+    const room = await repo().createRoom({ lat: 1, lng: 2 });
+    const subscriber = (): Subscriber & { sent: Message[] } => {
+      const sent: Message[] = [];
+      return { sent, send: (m) => void sent.push(m), close: vi.fn() };
+    };
+    const first = subscriber();
+    await hub.subscribe(room.id, first);
+
+    proxy!.mode = "refuse";
+    proxy!.dropAll();
+    await expect.poll(() => first.close).toHaveBeenCalled();
+    const late = subscriber();
+    let resolved = false;
+    const subscribed = hub.subscribe(room.id, late).then(() => (resolved = true));
+    await sleep(150);
+    expect(resolved).toBe(false);
+    proxy!.mode = "forward";
+    await subscribed;
+
+    const posted = await repo().postMessage(room.id, { author: "ana", body: "after the outage" });
+    await expect.poll(() => late.sent).toEqual([posted]);
+    await hub.stop();
   });
 });
