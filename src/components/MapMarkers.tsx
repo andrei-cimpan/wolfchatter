@@ -53,7 +53,7 @@ function ClusterMarker({ cluster, zoom, centerLng }: { cluster: Cluster; zoom: n
       L.divIcon({
         // `text` is digits (and "k") built from a number, never user input. aria-hidden lets the
         // marker's title, "N chatrooms", be its accessible name instead of the bare number.
-        html: `<span aria-hidden="true">${text}</span>`,
+        html: `<span aria-hidden="true"${text.length > 2 ? ' class="long"' : ""}>${text}</span>`,
         className: "cluster-bubble",
         iconSize: [size, size],
       }),
