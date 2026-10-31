@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { ApiError, listMessages, postMessage, retryAfterPhrase } from "@/lib/api-client";
 import { mergeMessages } from "@/lib/messages";
@@ -24,6 +24,19 @@ export function useMessages(roomId: string) {
   });
 }
 
+/** Adds a message this tab posted to its room's cached list. */
+export function addPostedMessage(queryClient: QueryClient, message: Message): void {
+  const key = messagesQueryKey(message.roomId);
+  if (queryClient.getQueryData<Message[]>(key) !== undefined) {
+    queryClient.setQueryData<Message[]>(key, (messages) => mergeMessages(messages ?? [], [message]));
+  }
+  // A list that never loaded has nothing to add to, and a fetch that started before the post
+  // committed would overwrite the list without it; refetching (which cancels that fetch) covers both.
+  if (queryClient.getQueryData(key) === undefined || queryClient.isFetching({ queryKey: key }) > 0) {
+    void queryClient.invalidateQueries({ queryKey: key });
+  }
+}
+
 type PostMessageVariables = { roomId: string; author: string; body: string };
 
 /** What is wrong with the form's input before it is sent, or `null` when it can be posted. */
@@ -34,8 +47,8 @@ export function messageInputError(author: string, body: string): string | null {
 }
 
 /**
- * Posts to a room and adds the stored message to that room's list. The cache update is
- * hook-level, so it still lands if the user switches rooms before the response arrives.
+ * Posts to a room and adds the stored message to that room's list (keyed by the message's own
+ * room). The cache update is hook-level, so it still lands if the user switches rooms first.
  */
 export function usePostMessage(roomId: string) {
   const queryClient = useQueryClient();
@@ -44,17 +57,7 @@ export function usePostMessage(roomId: string) {
 
   const mutation = useMutation({
     mutationFn: ({ roomId: id, author, body }: PostMessageVariables) => postMessage(id, { author, body }),
-    onSuccess: (message, { roomId: id }) => {
-      const key = messagesQueryKey(id);
-      if (queryClient.getQueryData<Message[]>(key) !== undefined) {
-        queryClient.setQueryData<Message[]>(key, (messages) => mergeMessages(messages ?? [], [message]));
-      }
-      // A list that never loaded has nothing to add to, and a fetch that started before the post
-      // committed would overwrite the list without it; refetching (which cancels that fetch) covers both.
-      if (queryClient.getQueryData(key) === undefined || queryClient.isFetching({ queryKey: key }) > 0) {
-        void queryClient.invalidateQueries({ queryKey: key });
-      }
-    },
+    onSuccess: (message) => addPostedMessage(queryClient, message),
     onSettled: () => {
       sendingRef.current = false;
     },
