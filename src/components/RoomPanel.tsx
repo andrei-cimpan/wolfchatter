@@ -11,10 +11,11 @@ const EMPTY_STATE = "Click on the map to start a chat";
 // Narrow screens: a banner in the page flow below the map, so it never hides the map's
 // attribution, raised to half the screen once a room is open. From md up: a card floating over
 // the map's top-right corner, as in the mockups.
-function PanelFrame({ raised, children }: { raised: boolean; children: ReactNode }) {
+function PanelFrame({ raised, busy = false, children }: { raised: boolean; busy?: boolean; children: ReactNode }) {
   return (
     <aside
       aria-label="Chat"
+      aria-busy={busy || undefined}
       className={`flex flex-col rounded-t-2xl border-t border-foreground/15 bg-background px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgb(0_0_0/0.1)] md:absolute md:top-4 md:right-4 md:h-auto md:max-h-[calc(100dvh-2rem)] md:w-[380px] md:overflow-hidden md:rounded-md md:border md:border-foreground/30 md:pb-4 md:shadow-md ${raised ? "h-[50dvh]" : ""}`}
     >
       {children}
@@ -22,11 +23,14 @@ function PanelFrame({ raised, children }: { raised: boolean; children: ReactNode
   );
 }
 
-/** Shown while the search params are not known yet (prerendered HTML). */
+/**
+ * Shown while the search params are not known yet (the prerendered HTML). It may be a `?room` link,
+ * so it must not say "click the map"; an empty line keeps the banner its usual height meanwhile.
+ */
 export function RoomPanelFallback() {
   return (
-    <PanelFrame raised={false}>
-      <p>{EMPTY_STATE}</p>
+    <PanelFrame raised={false} busy>
+      <p aria-hidden>{"\u00a0"}</p>
     </PanelFrame>
   );
 }
