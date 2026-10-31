@@ -13,7 +13,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 ## 1. Data layer
 
-- [ ] **T1.1** Write the initial migration from `DESIGN.md`.
+- [x] **T1.1** Write the initial migration from `DESIGN.md`.
   *Check:* tables, indexes, and trigger exist.
 - [ ] **T1.2** Implement `ChatRepository` and `PostgresChatRepository` with tests.
   *Check:* create room, post message, list with `before` and `after` paging, and `listMapItems` returns rooms and clusters correctly (including bounds that cross the antimeridian).

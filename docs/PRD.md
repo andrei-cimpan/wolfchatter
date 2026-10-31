@@ -38,7 +38,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 
 | Table | Columns |
 |---|---|
-| `rooms` | `id` uuid PK, `title` text, `lat` double, `lng` double, `created_at` timestamptz |
+| `rooms` | `id` uuid PK, `title` text, `lat` double, `lng` double, `message_count` integer, `created_at` timestamptz |
 | `messages` | `id` uuid PK, `room_id` FK, `author` text (max 32), `body` text (max 1000), `created_at` timestamptz |
 
 Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles default to "Chatroom N", as in the mockups.
