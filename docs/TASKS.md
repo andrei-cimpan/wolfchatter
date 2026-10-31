@@ -46,12 +46,12 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 ## 4. Real-time
 
 - [x] **T4.1** Realtime hub: one `LISTEN`, in-memory fan-out, heartbeat.
-- [ ] **T4.2** `GET /api/rooms/:id/stream` and the `useRoomStream` hook with reconnect catch-up.
+- [x] **T4.2** `GET /api/rooms/:id/stream` and the `useRoomStream` hook with reconnect catch-up.
   *Check:* a message posted in one browser appears in another within about a second, with no duplicates after a reconnect.
   *Carried over from the PR #14 review:*
-  - If the request aborts while `subscribe` is still waiting (the source starting or in an outage), call the returned unsubscribe once it resolves, or the subscriber stays in the hub until its next failed write.
-  - `subscribe` waits out a source outage with no time limit. Put a timeout on it in the route if a stream should fail fast instead.
-  - Nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if a deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers.
+  - Done: if the request aborts while `subscribe` is still waiting, the route calls the returned unsubscribe once it resolves.
+  - Done: the route ends the stream if `subscribe` has not resolved after 10 seconds, and the browser retries.
+  - Moved to T6.2: wiring `stopRealtimeHub()` to shutdown.
 
 ## 5. Usability improvements
 
@@ -70,6 +70,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 - [ ] **T6.1** Playwright tests: create pin and post, reload persistence, two-browser live message, clusters appear when zoomed out and expand on click, and the bottom-sheet layout at a 375 px wide viewport.
 - [ ] **T6.2** Dockerfile for the app and a `/health` endpoint.
+  *Carried over from T4.2:* nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if the deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers, so check what actually reaches the clients.
 
 ## 7. Documents and review
 
