@@ -105,8 +105,13 @@ describe("PostgresMessageSource", () => {
 
     await db().query("select pg_terminate_backend($1)", [pid]);
 
-    await expect.poll(() => onReconnect).toHaveBeenCalledOnce();
-    expect(await listenerPids()).not.toContain(pid);
+    await expect.poll(() => onReconnect).toHaveBeenCalled();
+    // The poll passes on the first call; waiting past a few retry delays catches a second one.
+    await sleep(100);
+    expect(onReconnect).toHaveBeenCalledOnce();
+    const pids = await listenerPids();
+    expect(pids).toHaveLength(1);
+    expect(pids).not.toContain(pid);
     const room = await repo().createRoom({ lat: 1, lng: 2 });
     const posted = await repo().postMessage(room.id, { author: "ana", body: "back" });
     await expect.poll(() => received).toEqual([posted]);
@@ -179,5 +184,30 @@ describe("PostgresMessageSource behind a proxy", () => {
     expect(await listenerPids()).toHaveLength(1);
     expect(onReconnect).not.toHaveBeenCalled();
     expect(staleReconnect).not.toHaveBeenCalled();
+  });
+
+  // Gaps between connection attempts; each includes a failed attempt's own few milliseconds.
+  function gaps(from: number, attempts: number[]): number[] {
+    return attempts.map((at, i) => at - (i === 0 ? from : attempts[i - 1]!));
+  }
+
+  it("doubles the wait between failed reconnects up to the cap, then reconnects once (review #8)", async () => {
+    const onReconnect = vi.fn();
+    source = new PostgresMessageSource(proxy!.connectionString, { ...options(), minRetryMs: 20, maxRetryMs: 80 });
+    await source.start({ onMessage: () => {}, onReconnect });
+    proxy!.mode = "refuse";
+
+    const dropped = Date.now();
+    proxy!.dropAll();
+    await expect.poll(() => proxy!.attempts.length, { timeout: 2_000 }).toBeGreaterThanOrEqual(6);
+    proxy!.mode = "forward";
+    await expect.poll(() => onReconnect).toHaveBeenCalled();
+
+    const waits = gaps(dropped, proxy!.attempts.slice(1, 6));
+    [20, 40, 80, 80, 80].forEach((expected, i) => expect(waits[i]).toBeGreaterThanOrEqual(expected - 5));
+    expect(Math.max(...waits.slice(2))).toBeLessThan(150);
+    await sleep(100);
+    expect(onReconnect).toHaveBeenCalledOnce();
+    expect(await listenerPids()).toHaveLength(1);
   });
 });
