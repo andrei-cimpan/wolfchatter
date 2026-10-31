@@ -94,6 +94,9 @@ describe("postMessageSchema", () => {
     ["a word joiner and soft hyphen", "\u2060\u00AD"],
     ["Hangul fillers", "\u3164\u115F\uFFA0"],
     ["a braille blank", "\u2800"],
+    ["interlinear annotation marks", "\uFFF9\uFFFA\uFFFB"],
+    ["Egyptian hieroglyph format controls", "\u{13430}\u{1343F}"],
+    ["a Khitan filler", "\u{16FE4}"],
     ["a mix with ordinary spaces", " \u200B \u0085 "],
   ])("rejects text made only of invisible characters: %s", (_label, text) => {
     for (const input of [{ author: text, body: "hi" }, { author: "ana", body: text }]) {
@@ -106,6 +109,9 @@ describe("postMessageSchema", () => {
   it.each([
     ["an emoji built with a joiner", "👩\u200D💻"],
     ["a word next to a zero-width space", "\u200Bhi"],
+    // Format characters like the ones above, but drawn: they must not be swept up with them.
+    ["an Arabic number sign before a digit", "\u06001"],
+    ["an Arabic end-of-ayah sign before a digit", "\u06DD1"],
   ])("accepts visible text that contains invisible characters: %s", (_label, text) => {
     expect(postMessageSchema.safeParse({ author: text, body: text }).success).toBe(true);
   });
