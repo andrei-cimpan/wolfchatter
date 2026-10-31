@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page } from "@playwright/test";
-import { box, expect, serveBlankTiles, test } from "./support";
+import { box, dropRealtimeListener, expect, serveBlankTiles, test } from "./support";
 
 test.beforeEach(async ({ page }) => {
   await serveBlankTiles(page);
@@ -199,6 +199,38 @@ test.describe("live messages", () => {
 
     await send("after");
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/, /after/]);
+  });
+});
+
+test.describe("live messages after a drop", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test("a stream that drops after live messages catches up once, in order (review #3)", async ({ page, request }) => {
+    const id = await newRoom(request);
+    // The test's own request context, which going offline in the page does not affect.
+    const send = (body: string) => request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
+    const items = messages(page).getByRole("listitem");
+    await send("first");
+    let streams = 0;
+    page.on("request", (r) => {
+      if (r.url().endsWith(`/api/rooms/${id}/stream`)) streams++;
+    });
+    const streamOpened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    await openRoom(page, id);
+    await streamOpened;
+    await send("live");
+    await expect(items).toHaveText([/first/, /live/]);
+
+    const opened = streams;
+    await dropRealtimeListener();
+    await send("gap one");
+    await send("gap two");
+    await expect(items).toHaveText([/first/, /live/, /gap one/, /gap two/], { timeout: 10_000 });
+    // The gap messages came through a new stream's catch-up; the old stream had been closed.
+    expect(streams).toBeGreaterThan(opened);
+
+    await send("after");
+    await expect(items).toHaveText([/first/, /live/, /gap one/, /gap two/, /after/]);
   });
 });
 

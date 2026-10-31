@@ -1,4 +1,5 @@
 import { test as base, expect, type Page } from "@playwright/test";
+import pg from "pg";
 
 // The browser logs every non-2xx response, and some tests trigger a 404, 429 or 500 on purpose.
 const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded with a status of (404|429|500)/];
@@ -101,4 +102,23 @@ export async function box(page: Page, selector: string) {
   const b = await page.locator(selector).boundingBox();
   if (!b) throw new Error(`${selector} is not visible`);
   return b;
+}
+
+/**
+ * Ends the app server's LISTEN connection, as a database restart or a dropped network would. The
+ * hub then closes every stream, and the source reconnects after its 1 s backoff, so messages
+ * posted right after this never reach a stream and arrive only through catch-up.
+ */
+export async function dropRealtimeListener(): Promise<void> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      `select pg_terminate_backend(pid) from pg_stat_activity
+       where datname = current_database() and application_name = 'wolfchatter-realtime'`,
+    );
+    expect(rowCount, "the app's LISTEN connection").toBe(1);
+  } finally {
+    await client.end();
+  }
 }
