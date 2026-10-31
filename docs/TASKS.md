@@ -40,7 +40,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T3.2** Click map to create a room and pin; panel switches to it; selection stored in `?room`.
 - [x] **T3.3** Load pins for the current viewport (debounced on map move). Render rooms as markers and clusters as count bubbles. Clicking a marker switches the panel; clicking a cluster zooms in.
 - [x] **T3.4** Message list and form (username + message + Submit); posted messages appear.
-- [ ] **T3.5** Reloading the page restores rooms, messages, and the selected room.
+- [x] **T3.5** Reloading the page restores rooms, messages, and the selected room.
   *Check (all):* matches mockups 1 to 4.
 
 ## 4. Real-time
@@ -59,6 +59,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   - `messageInputError` maps every schema issue to "Enter a username." or "Enter a message.", and any 400 becomes "Enter a username and a message.". Neither path can be reached today, but use the issue's own message if the client and API rules ever differ.
 - [ ] **T5.3** Message count on each marker; fly the map to the selected room.
   *Carried over from T3.2:* on narrow screens, a room created near the bottom of the map ends up behind the raised sheet. Flying to the selected room should keep its pin in the part of the map left visible.
+  *Carried over from T3.5:* after a reload or on opening a `?room` link, the map starts on its default view, not on the selected room. Fly (or start) there on the first load too.
   *Carried over from the PR #11 review:* viewport cache keys keep Leaflet's unwrapped longitudes, so panning a full turn around the world refetches an area that is already cached. Shift `west` and `east` by the same whole number of turns into [-180, 180) before building the key (`viewportQuery` or `mapItemsQueryKey`), as flying to a room can also land on another copy of the world.
 
 ## 6. Quality
