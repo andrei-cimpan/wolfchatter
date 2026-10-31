@@ -128,6 +128,17 @@ create trigger messages_notify after insert on messages
 
 Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. Statuses: 400 validation, 404 unknown room, 429 rate limited.
 
+### Input validation
+
+Schemas live in `src/lib/schemas.ts`, and limits shared with the database and UI live in `src/lib/limits.ts`. Each route parses its input with these schemas before calling the repository.
+
+- **Room id and cursors:** UUIDs.
+- **New room:** `lat` is a finite number in [-90, 90]. `lng` is any finite number, wrapped into ±180, so a click on a repeated copy of the world creates the room in the right place.
+- **Message:** `author` (1 to 32 characters) and `body` (1 to 1000) are trimmed, and whitespace-only values are rejected. Line breaks inside the body are kept. Lengths count code points, as Postgres `char_length` does, so an emoji counts once.
+- **Viewport:** `bbox=west,south,east,north` must be four finite numbers with `south <= north`, and `zoom` an integer from 0 to 22. Bounds are then normalized (see Viewport loading, step 1).
+- **Message paging:** `limit` is an integer from 1 to 100 (anything else is a 400), and `before` and `after` cannot be combined.
+- **Query numbers:** parsed strictly. Empty strings, `NaN` and `Infinity` are rejected rather than coerced to 0.
+
 ## Viewport loading and clustering
 
 1. The client sends the visible bounds and the integer zoom. Bounds are padded by about 20% and rounded, so small pans reuse the cached result. After panning across the antimeridian, Leaflet reports longitudes outside ±180 (for example `west=170, east=190`). The API's bbox schema (T1.3) wraps both ends into [-180, 180], treats a span of 360° or more as the whole world, and rejects non-finite values. The repository therefore only sees wrapped bounds, where `west > east` means the viewport crosses the antimeridian.
