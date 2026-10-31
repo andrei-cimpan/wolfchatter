@@ -34,6 +34,18 @@ export function assertRunsInTransaction(name: string, sql: string): void {
   }
 }
 
+// Socket errors while the server is not listening yet, and SQLSTATE 57P03 ("the database system
+// is starting up"). Anything else, such as a wrong password or unknown database, will not fix itself.
+const TRANSIENT_CONNECT_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "57P03"]);
+
+export function isTransientConnectError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = "code" in error ? error.code : undefined;
+  if (typeof code === "string" && TRANSIENT_CONNECT_CODES.has(code)) return true;
+  // pg reports a server that closes the socket during startup with this message and no code.
+  return error.message.startsWith("Connection terminated unexpectedly");
+}
+
 // `docker compose up -d` returns before Postgres accepts connections.
 async function connectWithRetry(connectionString: string): Promise<pg.Client> {
   for (let attempt = 1; ; attempt++) {
@@ -43,7 +55,7 @@ async function connectWithRetry(connectionString: string): Promise<pg.Client> {
       return client;
     } catch (error) {
       await client.end().catch(() => {});
-      if (attempt >= CONNECT_ATTEMPTS) throw error;
+      if (attempt >= CONNECT_ATTEMPTS || !isTransientConnectError(error)) throw error;
       await new Promise((resolve) => setTimeout(resolve, CONNECT_DELAY_MS));
     }
   }

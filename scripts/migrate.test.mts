@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { assertRunsInTransaction, pendingMigrations } from "./migrate.mts";
+import { assertRunsInTransaction, isTransientConnectError, pendingMigrations } from "./migrate.mts";
+
+function errorWithCode(code: string, message = "boom"): Error {
+  return Object.assign(new Error(message), { code });
+}
 
 describe("pendingMigrations", () => {
   it("returns unapplied migrations in name order", () => {
@@ -44,5 +48,25 @@ describe("assertRunsInTransaction", () => {
     expect(() => assertRunsInTransaction("0002_bad.sql", sql)).toThrow(
       /0002_bad\.sql manages its own transaction/,
     );
+  });
+});
+
+describe("isTransientConnectError", () => {
+  it.each([
+    errorWithCode("ECONNREFUSED"),
+    errorWithCode("ECONNRESET"),
+    errorWithCode("57P03", "the database system is starting up"),
+    new Error("Connection terminated unexpectedly"),
+  ])("retries %s", (error) => {
+    expect(isTransientConnectError(error)).toBe(true);
+  });
+
+  it.each([
+    errorWithCode("28P01", "password authentication failed"),
+    errorWithCode("3D000", 'database "nope" does not exist'),
+    errorWithCode("ENOTFOUND"),
+    "not an error",
+  ])("does not retry %s", (error) => {
+    expect(isTransientConnectError(error)).toBe(false);
   });
 });
