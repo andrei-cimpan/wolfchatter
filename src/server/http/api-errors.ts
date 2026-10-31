@@ -4,7 +4,9 @@ export type ApiErrorCode =
   | "validation_error"
   | "invalid_json"
   | "payload_too_large"
+  | "unsupported_media_type"
   | "room_not_found"
+  | "rate_limited"
   | "internal_error";
 
 /** Every API error uses this one shape, so the client has a single parser. */
@@ -24,6 +26,12 @@ export function roomNotFound(): Response {
   return apiError(404, "room_not_found", "Room not found");
 }
 
+export function rateLimited(retryAfterSeconds: number): Response {
+  const response = apiError(429, "rate_limited", "Too many requests, try again shortly");
+  response.headers.set("Retry-After", String(retryAfterSeconds));
+  return response;
+}
+
 // The largest valid input, a 1000-character message, is under 8 KB even with every character
 // escaped as \uXXXX, so 16 KB leaves headroom while stopping one request from making the server
 // buffer and parse megabytes.
@@ -31,8 +39,19 @@ export const JSON_BODY_MAX_BYTES = 16 * 1024;
 
 type ReadJsonResult = { ok: true; value: unknown } | { ok: false; response: Response };
 
-/** Reads a JSON body of at most JSON_BODY_MAX_BYTES, or returns the error response to send. */
+/**
+ * Reads a JSON body of at most JSON_BODY_MAX_BYTES, or returns the error response to send.
+ * The body must be labelled `application/json`: a cross-site `<form enctype="text/plain">` can
+ * send a JSON-looking body with no CORS preflight, from each visitor's own IP, and the label is
+ * what a form cannot fake.
+ */
 export async function readJson(request: Request): Promise<ReadJsonResult> {
+  if (!isJsonMediaType(request.headers.get("content-type"))) {
+    return {
+      ok: false,
+      response: apiError(415, "unsupported_media_type", "Content-Type must be application/json"),
+    };
+  }
   const text = await readTextWithin(request, JSON_BODY_MAX_BYTES);
   if (text === null) {
     return {
@@ -45,6 +64,12 @@ export async function readJson(request: Request): Promise<ReadJsonResult> {
   } catch {
     return { ok: false, response: apiError(400, "invalid_json", "Request body must be valid JSON") };
   }
+}
+
+// Parameters such as `; charset=utf-8` are allowed. `+json` types are not: our client never sends
+// them, and the stricter the match, the less a cross-site request can slip through.
+function isJsonMediaType(header: string | null): boolean {
+  return header?.split(";")[0]?.trim().toLowerCase() === "application/json";
 }
 
 // request.text() would buffer the whole body first. Content-Length is checked up front, but it can

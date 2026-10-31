@@ -29,7 +29,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T2.2** `GET/POST /api/rooms/:id/messages` with paging and 404 handling.
   *Carried over from the PR #6 review:*
   - A few rare characters that draw nothing still pass the "visible text" rule on their own (U+FFF9 to U+FFFB, U+13430 to U+1343F, U+16FE4). Add them explicitly; don't add all of `\p{Cf}`, which would also reject visible Arabic signs (U+0600 to U+0605).
-- [ ] **T2.3** Basic per-IP rate limiting on POST routes.
+- [x] **T2.3** Basic per-IP rate limiting on POST routes.
   *Carried over from the PR #6 review:*
   - Require `Content-Type: application/json` on POST routes (415 `unsupported_media_type`). Without it, a cross-site `<form enctype="text/plain">` can post from visitors' browsers with no CORS preflight, spreading requests across their IPs and around the per-IP limit.
   *Check (all):* API tests cover success, 400, 404, and 429.

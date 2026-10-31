@@ -1,5 +1,6 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { MapItem, Room } from "@/lib/types";
+import { roomCreationLimiter } from "@/server/http/rate-limit";
 import { getPool } from "@/server/repositories/db";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { GET, POST } from "./route";
@@ -7,13 +8,21 @@ import { GET, POST } from "./route";
 setupTestDatabase();
 // The routes use the app's shared pool; leaving it open keeps the test worker alive.
 afterAll(() => getPool().end());
+// The limiter is module state shared by every test in this file.
+beforeEach(() => roomCreationLimiter.reset());
 
 function getRooms(query: string): Promise<Response> {
   return GET(new Request(`http://test/api/rooms${query}`));
 }
 
-function postRoom(body: string): Promise<Response> {
-  return POST(new Request("http://test/api/rooms", { method: "POST", body }));
+function postRoom(body: string, headers: Record<string, string> = {}): Promise<Response> {
+  return POST(
+    new Request("http://test/api/rooms", {
+      method: "POST",
+      body,
+      headers: { "content-type": "application/json", ...headers },
+    }),
+  );
 }
 
 async function createRoom(lat: number, lng: number): Promise<Room> {
@@ -63,6 +72,45 @@ describe("POST /api/rooms", () => {
 
   it.each(["", "{lat: 1}", "lat=1&lng=2"])("rejects the non-JSON body %j with 400", async (body) => {
     await expectError(await postRoom(body), 400, "invalid_json");
+  });
+
+  it.each(["", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data"])(
+    "rejects Content-Type %j with 415",
+    async (contentType) => {
+      const response = await postRoom(JSON.stringify({ lat: 0, lng: 0 }), { "content-type": contentType });
+      await expectError(response, 415, "unsupported_media_type");
+    },
+  );
+
+  it("accepts application/json with a charset parameter", async () => {
+    const response = await postRoom(JSON.stringify({ lat: 0, lng: 0 }), { "content-type": "Application/JSON; charset=utf-8" });
+    expect(response.status).toBe(201);
+  });
+
+  describe("rate limiting", () => {
+    const LIMIT = 10;
+    const send = (ip: string) => postRoom(JSON.stringify({ lat: 0, lng: 0 }), { "x-forwarded-for": ip });
+
+    it("answers the request after the per-IP budget with 429 and Retry-After", async () => {
+      for (let i = 0; i < LIMIT; i++) expect((await send("203.0.113.7")).status).toBe(201);
+
+      const response = await send("203.0.113.7");
+      await expectError(response, 429, "rate_limited");
+      expect(Number(response.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+      const items: MapItem[] = await (await getRooms("?bbox=-180,-90,180,90&zoom=16")).json();
+      expect(items).toHaveLength(LIMIT);
+    });
+
+    it("keys on the rightmost X-Forwarded-For entry, which the client cannot choose", async () => {
+      for (let i = 0; i < LIMIT; i++) await send(`10.0.0.${i}, 203.0.113.7`);
+      await expectError(await send("10.0.0.99, 203.0.113.7"), 429, "rate_limited");
+      expect((await send("203.0.113.8")).status).toBe(201);
+    });
+
+    it("counts invalid requests against the budget", async () => {
+      for (let i = 0; i < LIMIT; i++) await postRoom("not json", { "x-forwarded-for": "203.0.113.7" });
+      await expectError(await send("203.0.113.7"), 429, "rate_limited");
+    });
   });
 });
 

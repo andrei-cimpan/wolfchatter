@@ -1,5 +1,6 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { Message, Room } from "@/lib/types";
+import { messagePostLimiter } from "@/server/http/rate-limit";
 import { getChatRepository } from "@/server/repositories";
 import { getPool } from "@/server/repositories/db";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
@@ -8,6 +9,8 @@ import { GET, POST } from "./route";
 setupTestDatabase();
 // The routes use the app's shared pool; leaving it open keeps the test worker alive.
 afterAll(() => getPool().end());
+// The limiter is module state shared by every test in this file.
+beforeEach(() => messagePostLimiter.reset());
 
 const UNKNOWN_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -19,8 +22,13 @@ function getMessages(roomId: string, query = ""): Promise<Response> {
   return GET(new Request(`http://test/api/rooms/${roomId}/messages${query}`), context(roomId));
 }
 
-function postMessage(roomId: string, body: string): Promise<Response> {
-  return POST(new Request(`http://test/api/rooms/${roomId}/messages`, { method: "POST", body }), context(roomId));
+function postMessage(roomId: string, body: string, headers: Record<string, string> = {}): Promise<Response> {
+  const request = new Request(`http://test/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    body,
+    headers: { "content-type": "application/json", ...headers },
+  });
+  return POST(request, context(roomId));
 }
 
 function createRoom(): Promise<Room> {
@@ -98,6 +106,43 @@ describe("POST /api/rooms/:id/messages", () => {
   // Existence is a database question, so it is asked only once the body is valid.
   it("answers an invalid body for an unknown room with 400", async () => {
     await expectError(await postMessage(UNKNOWN_ID, "{}"), 400, "validation_error");
+  });
+
+  it.each([
+    ["no Content-Type", { "content-type": "" }],
+    ["text/plain, as a cross-site form sends", { "content-type": "text/plain" }],
+  ])("rejects %s with 415 before writing", async (_label, headers) => {
+    const room = await createRoom();
+    const response = await postMessage(room.id, JSON.stringify({ author: "ana", body: "hi" }), headers);
+    await expectError(response, 415, "unsupported_media_type");
+    expect((await getChatRepository().getRoom(room.id))?.messageCount).toBe(0);
+  });
+
+  describe("rate limiting", () => {
+    const LIMIT = 30;
+    const send = (roomId: string, ip: string) =>
+      postMessage(roomId, JSON.stringify({ author: "ana", body: "hi" }), { "x-forwarded-for": ip });
+
+    it("answers the post after the per-IP budget with 429 and Retry-After", async () => {
+      const room = await createRoom();
+      for (let i = 0; i < LIMIT; i++) expect((await send(room.id, "203.0.113.7")).status).toBe(201);
+
+      const response = await send(room.id, "203.0.113.7");
+      await expectError(response, 429, "rate_limited");
+      expect(Number(response.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+      expect((await getChatRepository().getRoom(room.id))?.messageCount).toBe(LIMIT);
+    });
+
+    it("keeps each IP's budget separate", async () => {
+      const room = await createRoom();
+      for (let i = 0; i < LIMIT; i++) await send(room.id, "203.0.113.7");
+      expect((await send(room.id, "203.0.113.8")).status).toBe(201);
+    });
+
+    it("counts invalid requests, and limits before checking the room", async () => {
+      for (let i = 0; i < LIMIT; i++) await postMessage("not-a-uuid", "{}", { "x-forwarded-for": "203.0.113.7" });
+      await expectError(await send("not-a-uuid", "203.0.113.7"), 429, "rate_limited");
+    });
   });
 });
 
