@@ -114,6 +114,21 @@ describe("GET /api/rooms/:id/messages", () => {
     expect(await bodies(await getMessages(room.id, "?limit=2"))).toEqual(["two", "three"]);
   });
 
+  // Literal numbers, not the constants: this pins the documented API, so changing a constant
+  // should fail here rather than silently change what clients get.
+  it("returns 50 messages without a limit and 100 with limit=100", async () => {
+    const room = await createRoom();
+    const repository = getChatRepository();
+    for (let i = 1; i <= 101; i++) {
+      await repository.postMessage(room.id, { author: "ana", body: `m${i}` });
+    }
+
+    const latest = await bodies(await getMessages(room.id));
+    expect(latest).toHaveLength(50);
+    expect(latest.at(-1)).toBe("m101");
+    expect(await bodies(await getMessages(room.id, "?limit=100"))).toHaveLength(100);
+  });
+
   it("pages with before and after", async () => {
     const room = await createRoom();
     const one = await post(room.id, "one");

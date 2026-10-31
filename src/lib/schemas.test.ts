@@ -197,6 +197,13 @@ describe("listMessagesQuerySchema", () => {
     expect(listMessagesQuerySchema.parse({ after: ID })).toEqual({ after: ID });
   });
 
+  it.each([
+    ["1", 1],
+    ["100", 100],
+  ])("accepts limit %j at the bounds", (limit, expected) => {
+    expect(listMessagesQuerySchema.parse({ limit })).toEqual({ limit: expected });
+  });
+
   it.each(["0", "101", "2.5", "abc", "NaN", "Infinity", "", "   "])("rejects limit %j", (limit) => {
     expect(listMessagesQuerySchema.safeParse({ limit }).success).toBe(false);
   });
