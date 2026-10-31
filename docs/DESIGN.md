@@ -121,12 +121,21 @@ create trigger messages_notify after insert on messages
 |---|---|---|
 | `GET /api/rooms?bbox=w,s,e,n&zoom=z` | Rooms and clusters in the viewport (max 500 items) | 200 `MapItem[]` |
 | `GET /api/rooms/:id` | One room | 200 `Room` |
-| `POST /api/rooms` | Create a room `{lat, lng}` | 201 `Room` |
+| `POST /api/rooms` | Create a room `{lat, lng}` | 201 `Room`, with `Location: /api/rooms/:id` |
 | `GET /api/rooms/:id/messages?before=&after=&limit=` | Page of messages, oldest first | 200 `Message[]` |
 | `POST /api/rooms/:id/messages` | Post `{author, body}` | 201 `Message` |
 | `GET /api/rooms/:id/stream` | SSE stream of new messages | 200 `text/event-stream` |
 
-Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. Statuses: 400 validation, 404 unknown room, 429 rate limited.
+Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The helpers live in `src/server/http/`.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `validation_error` | A query or body fails its schema. `message` is the first issue, prefixed with its field, such as `bbox: south must not exceed north`. |
+| 400 | `invalid_json` | A POST body that is not JSON. Any body that parses is accepted; `Content-Type` is not checked. |
+| 413 | `payload_too_large` | A POST body over 16 KB (`JSON_BODY_MAX_BYTES`). Checked against `Content-Length` and while reading, so an unlabelled stream is cut off too. |
+| 404 | `room_not_found` | Unknown or malformed room id. |
+| 429 | `rate_limited` | Too many POSTs from one IP (T2.3). |
+| 500 | `internal_error` | Anything unexpected. The cause is logged to stdout, never returned. |
 
 ### Input validation
 
@@ -135,9 +144,10 @@ Schemas live in `src/lib/schemas.ts`, and limits shared with the database and UI
 - **Room id in the path** (`/api/rooms/:id`): a value that fails `roomIdSchema` gets the same **404** as an unknown room, because to the caller both are "no such room".
 - **Cursors** (`before`, `after`): must be UUIDs; a malformed cursor is a **400**, since it can only come from a broken client.
 - **New room:** `lat` is a finite number in [-90, 90]. `lng` is any finite number, wrapped into ±180, so a click on a repeated copy of the world creates the room in the right place.
-- **Message:** `author` (1 to 32 characters) and `body` (1 to 1000) are trimmed, and whitespace-only values are rejected. Line breaks inside the body are kept. Lengths count code points, as Postgres `char_length` does, so an emoji counts once.
+- **Message:** `author` (1 to 32 characters) and `body` (1 to 1000) are trimmed, and values with nothing visible are rejected: whitespace, control characters, zero-width and filler characters (Unicode `Default_Ignorable_Code_Point`, such as U+200B and U+3164) and U+2800, which `trim()` mostly keeps. Line breaks inside the body are kept. Lengths count code points, as Postgres `char_length` does, so an emoji counts once.
 - **Viewport:** `bbox=west,south,east,north` must be four finite numbers with `south <= north`, and `zoom` an integer from 0 to 22. `west > east` is accepted only when both are within ±180 (already-wrapped bounds that cross the antimeridian). Bounds are then normalized (see Viewport loading, step 1), which clamps latitudes to ±90 after the `south <= north` check.
 - **Message paging:** `limit` is an integer from 1 to 100 (anything else is a 400), and `before` and `after` cannot be combined.
+- **Query strings:** routes read only their own keys (`queryInput`). A missing key is absent, an empty value (`?limit=`) is kept as `""` so the schema rejects it, a repeated key uses its first value, and unknown keys are ignored.
 - **Query numbers:** plain decimals only, optionally with an exponent (`1e-7`), and surrounding whitespace is ignored. Empty strings, hex, binary, a leading `+`, `NaN` and values that overflow to `Infinity` are rejected rather than coerced.
 
 ## Viewport loading and clustering

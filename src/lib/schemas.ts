@@ -8,11 +8,20 @@ function codePointLength(text: string): number {
   return [...text].length;
 }
 
+// Characters that draw nothing. trim() keeps most of them (U+200B, U+0085, U+3164...), so text
+// made only of these would pass and render as a blank message. Default_Ignorable_Code_Point covers
+// zero-width and filler characters; U+2800 (braille blank) is drawn as empty space but is not in it.
+const INVISIBLE = /[\p{White_Space}\p{Cc}\p{Default_Ignorable_Code_Point}⠀]/gu;
+
+function hasVisibleText(text: string): boolean {
+  return text.replace(INVISIBLE, "").length > 0;
+}
+
 function requiredText(label: string, max: number) {
   return z
     .string()
     .trim()
-    .refine((text) => codePointLength(text) >= 1, `${label} is required`)
+    .refine(hasVisibleText, `${label} is required`)
     .refine((text) => codePointLength(text) <= max, `${label} must be at most ${max} characters`)
     // Postgres text rejects NUL outright (a 500, not a 400) and stores a lone surrogate as U+FFFD,
     // so the saved message would differ from what was sent.
