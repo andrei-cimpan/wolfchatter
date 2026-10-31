@@ -72,6 +72,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   *Carried over from the PR #15 review:* `useRoomStream` itself (the effect, and closing the stream on unmount or a room change) has no unit test, because hooks are tested here without React Testing Library or jsdom. The e2e tests cover it; add a hook test if those tools are ever added (ask first: new dependencies).
 - [ ] **T6.2** Dockerfile for the app and a `/health` endpoint.
   *Carried over from T4.2:* nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if the deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers, so check what actually reaches the clients.
+  *Carried over from the PR #15 review:* the stream writes with `controller.enqueue` without checking `desiredSize`, so for a client whose connection has stalled (a backgrounded phone, a NAT that forgot it) messages pile up in server memory until TCP gives up. Ending the stream past a small backlog would let the client reconnect and catch up, but first check that Next reads the body with backpressure (otherwise the backlog sits in the socket buffer and `desiredSize` never drops), under the production server.
 
 ## 7. Documents and review
 
