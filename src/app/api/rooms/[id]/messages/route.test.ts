@@ -62,7 +62,7 @@ describe("POST /api/rooms/:id/messages", () => {
   it.each([
     ["a missing author", { body: "hi" }, /^author: /],
     ["an empty body", { author: "ana", body: "" }, /^body: /],
-    ["a body of zero-width spaces", { author: "ana", body: "​​" }, /^body: Message is required$/],
+    ["a body of zero-width spaces", { author: "ana", body: "\u200B\u200B" }, /^body: Message is required$/],
     ["an author over 32 characters", { author: "a".repeat(33), body: "hi" }, /^author: /],
     ["a body over 1000 characters", { author: "ana", body: "a".repeat(1001) }, /^body: /],
     ["a non-string body", { author: "ana", body: 5 }, /^body: /],

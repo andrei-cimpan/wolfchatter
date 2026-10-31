@@ -16,7 +16,7 @@ function codePointLength(text: string): number {
 // Khitan filler (U+16FE4). They are listed by name because all of \p{Cf} would also reject visible
 // Arabic signs such as U+0600-0605.
 const INVISIBLE =
-  /[\p{White_Space}\p{Cc}\p{Default_Ignorable_Code_Point}⠀￹-￻\u{13430}-\u{1343F}\u{16FE4}]/gu;
+  /[\p{White_Space}\p{Cc}\p{Default_Ignorable_Code_Point}\u2800\uFFF9-\uFFFB\u{13430}-\u{1343F}\u{16FE4}]/gu;
 
 function hasVisibleText(text: string): boolean {
   return text.replace(INVISIBLE, "").length > 0;
