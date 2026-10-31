@@ -42,6 +42,24 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: wolfchatter
+          POSTGRES_PASSWORD: wolfchatter
+          POSTGRES_DB: wolfchatter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U wolfchatter -d wolfchatter"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter
+      # Playwright's global setup creates and migrates it; the dev server writes rooms there.
+      E2E_DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter_e2e
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
