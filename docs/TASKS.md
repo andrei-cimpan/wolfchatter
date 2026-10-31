@@ -8,7 +8,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   *Check:* `npm run dev` shows the default page.
 - [x] **T0.2** Add Docker Compose with Postgres, `.env.example`, and a migration runner (`npm run db:migrate`).
   *Check:* `docker compose up -d db && npm run db:migrate` succeeds on a clean machine.
-- [ ] **T0.3** Add Vitest, Playwright, and a GitHub Actions workflow running lint, typecheck, and tests.
+- [x] **T0.3** Add Vitest, Playwright, and a GitHub Actions workflow running lint, typecheck, and tests.
   *Check:* CI passes on a trivial test.
 
 ## 1. Data layer
