@@ -102,6 +102,16 @@ describe("GET /api/rooms", () => {
     expect(ids.sort()).toEqual([east.id, west.id].sort());
   });
 
+  it("accepts already-wrapped bounds that cross the antimeridian (west > east)", async () => {
+    const east = await createRoom(0, 175);
+    const west = await createRoom(0, -175);
+    await createRoom(0, 0);
+    const response = await getRooms("?bbox=170,-10,-170,10&zoom=16");
+    expect(response.status).toBe(200);
+    const ids = ((await response.json()) as MapItem[]).map((i) => (i.type === "room" ? i.id : null));
+    expect(ids.sort()).toEqual([east.id, west.id].sort());
+  });
+
   it.each([
     ["missing bbox", "?zoom=3", /^bbox: /],
     ["missing zoom", "?bbox=0,0,1,1", /^zoom: /],

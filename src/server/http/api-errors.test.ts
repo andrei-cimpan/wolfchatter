@@ -28,7 +28,8 @@ describe("validationError", () => {
   it("omits the prefix for a root-level issue", async () => {
     const result = z.object({}).safeParse([]);
     const body = await validationError(result.error!).json();
-    expect(body.error.message).not.toMatch(/^: /);
+    expect(body.error.message).toBe(result.error!.issues[0]!.message);
+    expect(body.error.message).not.toBe("");
   });
 });
 
