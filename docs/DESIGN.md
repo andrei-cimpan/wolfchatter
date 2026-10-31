@@ -24,8 +24,8 @@ src/
   hooks/                  # useRooms, useMessages, useRoomStream
   lib/                    # shared types, zod schemas, api client
   server/
-    repositories/         # ChatRepository interface + PostgresChatRepository
-    realtime/             # pg LISTEN + in-memory fan-out to SSE clients
+    repositories/         # ChatRepository + PostgresChatRepository, PostgresMessageSource (pg LISTEN)
+    realtime/             # MessageSource interface, RealtimeHub (in-memory fan-out, heartbeat)
 supabase/ (v2 only)
 db/migrations/            # SQL migrations
 ```
@@ -182,12 +182,21 @@ The client keys the TanStack Query cache by bounds and zoom and keeps the previo
 ## Real-time delivery
 
 1. A Postgres trigger sends `NOTIFY messages` with the new row as JSON on every insert.
-2. Each app instance holds one `LISTEN messages` connection and keeps an in-memory map of `roomId -> SSE clients`.
-3. On notify, the hub pushes the message to the clients subscribed to that room.
-4. The stream sends a heartbeat comment every 25 seconds to keep proxies from closing it.
-5. On reconnect, the client refetches with `after=<an id a few messages before the last one it saw>` and de-duplicates by message id. The overlap matters because `created_at` is the inserting transaction's start time, not its commit time: a message can commit after a newer one yet sort before it, so `after=<last seen id>` could skip it for good.
+2. Each app instance holds one `LISTEN messages` connection (`PostgresMessageSource`) on its own `pg.Client`, not a pool client, since a pool may close or reuse the session that holds the `LISTEN`. It checks each payload with Zod and turns it into the API's `Message` shape (`createdAt` cut to milliseconds by `toISOString()`, as the REST API does), so a live message equals a refetched one. A malformed payload is logged and dropped. A connection dropped without an error (a NAT or load balancer forgetting it) would leave `LISTEN` silent for good, so the source runs `select 1` every 30 seconds and treats a failure as a drop; connecting, that check, and closing each give up after 10 seconds, and TCP keepalive is on. It lives in `repositories/` because only that folder may import the DB client.
+3. The hub (`RealtimeHub`, `src/server/realtime/`) keeps an in-memory map of `roomId -> subscribers` and pushes each message to that room's subscribers. One hub per process (`getRealtimeHub()`, kept on `globalThis` like the pool). Because the hub survives Next dev's module reloads, edits to the hub or the source take effect only after restarting `npm run dev`. `stopRealtimeHub()` closes every stream and the `LISTEN` connection for a graceful shutdown; nothing calls it yet (see T4.2). It starts the source on the first `subscribe`, which resolves only while `LISTEN` is active (waiting out an outage if there is one), so a stream that opens before a post cannot miss it. If the first connection fails, `subscribe` rejects and the next one tries again. A subscriber whose `send` or `heartbeat` throws is dropped and closed without affecting the others.
+4. While anyone is subscribed, one shared timer calls each subscriber's `heartbeat` every 25 seconds; the SSE stream writes a comment to keep proxies from closing it.
+5. If the `LISTEN` connection drops, the source reconnects with backoff (1 s doubling to 30 s). The wait drops back to 1 s only after a connection has stayed up for 30 s, so a database that keeps dropping connections right after accepting them is not retried at the shortest wait, with every stream closed each time. Messages sent during the gap never reach the hub, so the moment the connection drops, the hub closes every subscriber rather than leaving streams open that look healthy (heartbeats keep coming) but cannot receive anything. Each client then reconnects; its `subscribe` waits until `LISTEN` is back, and it catches up as below, the same path as any other dropped stream.
+6. On reconnect, the client refetches with `after=<an id a few messages before the last one it saw>` and de-duplicates by message id. The overlap matters because `created_at` is the inserting transaction's start time, not its commit time: a message can commit after a newer one yet sort before it, so `after=<last seen id>` could skip it for good.
 
 Because the trigger fires for every insert, messages posted through any instance reach every connected client.
+
+### Swapping the real-time layer
+
+Two interfaces keep the hub independent of where messages come from and how they reach the browser:
+
+- **A new source** (Redis pub/sub, NATS) implements `MessageSource` (`start({ onMessage, onDisconnect, onReconnect })`, `stop()`) and is picked in `createMessageSource()`. The hub and routes do not change.
+- **A new transport** (WebSockets, Socket.IO) wraps each connection as a `Subscriber` (`send`, `close`, and `heartbeat` only if it has no keepalive of its own) and calls `getRealtimeHub().subscribe`. Routes depend on the `RealtimeHub` interface, not the class. Socket.IO brings its own rooms and multi-instance adapters, so with it the hub would shrink to forwarding the source to `io.to(roomId)`.
+- **Supabase Realtime (v2)** replaces both: the browser subscribes directly, and no hub runs on our server. The seam that matters there is the client hook `useRoomStream` (T4.2), whose catch-up (refetch with `after=`, de-duplicate by id) is the same for any transport.
 
 ## Testing approach
 

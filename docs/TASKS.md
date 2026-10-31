@@ -45,9 +45,13 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 ## 4. Real-time
 
-- [ ] **T4.1** Realtime hub: one `LISTEN`, in-memory fan-out, heartbeat.
+- [x] **T4.1** Realtime hub: one `LISTEN`, in-memory fan-out, heartbeat.
 - [ ] **T4.2** `GET /api/rooms/:id/stream` and the `useRoomStream` hook with reconnect catch-up.
   *Check:* a message posted in one browser appears in another within about a second, with no duplicates after a reconnect.
+  *Carried over from the PR #14 review:*
+  - If the request aborts while `subscribe` is still waiting (the source starting or in an outage), call the returned unsubscribe once it resolves, or the subscriber stays in the hub until its next failed write.
+  - `subscribe` waits out a source outage with no time limit. Put a timeout on it in the route if a stream should fail fast instead.
+  - Nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if a deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers.
 
 ## 5. Usability improvements
 
