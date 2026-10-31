@@ -78,8 +78,10 @@ function toRoomItem(row: Pick<RoomRow, "id" | "title" | "lat" | "lng" | "message
   };
 }
 
+// NaN would reach Postgres as the text "NaN" and fail the query, so it means "use the default".
 function clampLimit(limit: number | undefined): number {
-  return Math.min(Math.max(Math.trunc(limit ?? DEFAULT_MESSAGE_LIMIT), 1), MAX_MESSAGE_LIMIT);
+  if (limit === undefined || Number.isNaN(limit)) return DEFAULT_MESSAGE_LIMIT;
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_MESSAGE_LIMIT);
 }
 
 // Shared viewport filter: $1..$2 latitude, $3..$6 the two longitude ranges.

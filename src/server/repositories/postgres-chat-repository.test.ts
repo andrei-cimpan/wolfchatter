@@ -121,6 +121,15 @@ describe("listMessages", () => {
     expect(await repo().listMessages(room.id, { limit: 0 })).toHaveLength(1);
   });
 
+  it("uses the default limit when the limit is not a number", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    await db().query(
+      `insert into messages (room_id, author, body) select $1, 'ana', 'x' from generate_series(1, 60)`,
+      [room.id],
+    );
+    expect(await repo().listMessages(room.id, { limit: Number.NaN })).toHaveLength(50);
+  });
+
   it("returns nothing for an unknown room or malformed ids", async () => {
     expect(await repo().listMessages(UNKNOWN_ID)).toEqual([]);
     expect(await repo().listMessages("not-a-uuid")).toEqual([]);
