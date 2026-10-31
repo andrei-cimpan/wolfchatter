@@ -105,7 +105,10 @@ export class PostgresMessageSource implements MessageSource {
       this.onDisconnect(client);
     });
     client.on("end", () => this.onDisconnect(client));
-    client.on("notification", (notification) => this.onNotification(notification));
+    client.on("notification", (notification) => {
+      // A client replaced by a newer one may still be open for a moment; only one may deliver.
+      if (client === this.client) this.onNotification(notification);
+    });
     try {
       await client.connect();
       await client.query(`listen ${CHANNEL}`);
@@ -135,12 +138,13 @@ export class PostgresMessageSource implements MessageSource {
   }
 
   private scheduleReconnect(): void {
+    const generation = this.generation;
     this.retryTimer = setTimeout(async () => {
       this.retryTimer = null;
       try {
         const client = await this.connect();
-        if (!this.handlers) {
-          // Stopped while connecting.
+        // Stopped while connecting, and perhaps started again with a client of its own.
+        if (generation !== this.generation || !this.handlers) {
           await client.end();
           return;
         }
@@ -150,7 +154,7 @@ export class PostgresMessageSource implements MessageSource {
       } catch (error) {
         console.error("Postgres message source: reconnect failed", error);
         this.retryMs = Math.min(this.retryMs * 2, this.options.maxRetryMs);
-        if (this.handlers) this.scheduleReconnect();
+        if (generation === this.generation && this.handlers) this.scheduleReconnect();
       }
     }, this.retryMs);
   }

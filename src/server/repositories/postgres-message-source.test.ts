@@ -16,6 +16,8 @@ const options = () => ({ minRetryMs: 10, maxRetryMs: 40, applicationName });
 let source: PostgresMessageSource | undefined;
 let proxy: TcpProxy | undefined;
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 beforeEach(() => {
   applicationName = `wolfchatter-test-${randomUUID()}`;
 });
@@ -137,6 +139,11 @@ describe("PostgresMessageSource behind a proxy", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
+  async function post(body: string): Promise<Message> {
+    const room = await repo().createRoom({ lat: 1, lng: 2 });
+    return repo().postMessage(room.id, { author: "ana", body });
+  }
+
   it("rejects start and leaves no connection when stopped while connecting (review #1)", async () => {
     proxy!.delayMs = 100;
     source = new PostgresMessageSource(proxy!.connectionString, options());
@@ -146,5 +153,31 @@ describe("PostgresMessageSource behind a proxy", () => {
 
     await expect(started).rejects.toThrow("stopped");
     await expect.poll(listenerPids).toEqual([]);
+  });
+
+  it("keeps one listener when stopped and started again during a reconnect (review #2)", async () => {
+    const staleReconnect = vi.fn();
+    source = new PostgresMessageSource(proxy!.connectionString, options());
+    await source.start({ onMessage: () => {}, onReconnect: staleReconnect });
+    proxy!.delayMs = 200;
+    const attempts = proxy!.attempts.length;
+
+    proxy!.dropAll();
+    await expect.poll(() => proxy!.attempts.length).toBe(attempts + 1);
+    await source.stop();
+    proxy!.delayMs = 0;
+    const received: Message[] = [];
+    const onReconnect = vi.fn();
+    await source.start({ onMessage: (m) => received.push(m), onReconnect });
+    // Past the moment the stale reconnect's connection completes.
+    await sleep(300);
+
+    const posted = await post("once");
+    await expect.poll(() => received).toEqual([posted]);
+    await sleep(50);
+    expect(received).toEqual([posted]);
+    expect(await listenerPids()).toHaveLength(1);
+    expect(onReconnect).not.toHaveBeenCalled();
+    expect(staleReconnect).not.toHaveBeenCalled();
   });
 });
