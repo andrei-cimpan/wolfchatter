@@ -37,8 +37,14 @@ export function resolveTileConfig(env: { url?: string; attribution?: string }): 
   };
 }
 
-// Next.js inlines NEXT_PUBLIC_* only when each variable is written out literally.
-export const tileConfig = resolveTileConfig({
-  url: process.env.NEXT_PUBLIC_MAP_TILE_URL,
-  attribution: process.env.NEXT_PUBLIC_MAP_ATTRIBUTION,
-});
+/**
+ * Reads the basemap from the environment. `next.config.ts` calls it at startup, so a bad
+ * value stops `next dev` and `next build` before any page can crash in the browser.
+ */
+export function tileConfigFromEnv(): TileConfig {
+  // Next.js inlines NEXT_PUBLIC_* into client code only when each variable is written out literally.
+  return resolveTileConfig({
+    url: process.env.NEXT_PUBLIC_MAP_TILE_URL,
+    attribution: process.env.NEXT_PUBLIC_MAP_ATTRIBUTION,
+  });
+}

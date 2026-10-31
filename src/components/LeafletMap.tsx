@@ -2,7 +2,9 @@
 
 import "leaflet/dist/leaflet.css";
 import { MapContainer, TileLayer } from "react-leaflet";
-import { INITIAL_VIEW, tileConfig } from "@/lib/map-config";
+import { INITIAL_VIEW, tileConfigFromEnv } from "@/lib/map-config";
+
+const tileConfig = tileConfigFromEnv();
 
 export default function LeafletMap() {
   return (
