@@ -61,6 +61,28 @@ test.describe("desktop", () => {
   });
 });
 
+test.describe("desktop card height", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test("tall content stays inside the card instead of spilling over the map", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".leaflet-container")).toBeVisible();
+    await page.locator("aside").evaluate((aside) => {
+      const filler = document.createElement("div");
+      filler.style.height = "2000px";
+      aside.append(filler);
+    });
+
+    const card = await box(page, "aside");
+    expect(card.y + card.height).toBe(720 - 16);
+    const spillsBelow = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.closest("aside") != null,
+      { x: card.x + card.width / 2, y: card.y + card.height + 8 },
+    );
+    expect(spillsBelow).toBe(false);
+  });
+});
+
 test.describe("narrow screen", () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
