@@ -17,5 +17,11 @@ export default defineConfig({
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // Every test browser posts from the same address, so the per-IP limits would turn busy tests
+    // (such as creating enough rooms to cluster) into 429s. A reused local server keeps its own env.
+    env: {
+      RATE_LIMIT_ROOMS_PER_MINUTE: "10000",
+      RATE_LIMIT_MESSAGES_PER_MINUTE: "10000",
+    },
   },
 });

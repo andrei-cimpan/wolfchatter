@@ -77,10 +77,32 @@ export function createRateLimiter(options: {
 
 const MINUTE = 60_000;
 
+/**
+ * A per-minute limit from the environment, or `fallback` when unset. Anything but a positive
+ * integer throws, so a typo fails at startup instead of silently changing the limit.
+ */
+export function limitFromEnv(
+  name: string,
+  fallback: number,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const value = env[name]?.trim();
+  if (!value) return fallback;
+  if (!/^[1-9]\d*$/.test(value)) throw new Error(`${name} must be a positive integer, got "${value}"`);
+  return Number(value);
+}
+
 // Creating rooms litters the map for everyone, so it gets the tighter budget. Messages allow a
 // lively conversation (one every two seconds) while stopping a script from flooding a room.
-export const roomCreationLimiter = createRateLimiter({ limit: 10, windowMs: MINUTE });
-export const messagePostLimiter = createRateLimiter({ limit: 30, windowMs: MINUTE });
+// Both can be raised for end-to-end tests, where every browser shares one address.
+export const roomCreationLimiter = createRateLimiter({
+  limit: limitFromEnv("RATE_LIMIT_ROOMS_PER_MINUTE", 10),
+  windowMs: MINUTE,
+});
+export const messagePostLimiter = createRateLimiter({
+  limit: limitFromEnv("RATE_LIMIT_MESSAGES_PER_MINUTE", 30),
+  windowMs: MINUTE,
+});
 
 /** Counts the request against its IP, and returns the 429 to send once the budget is spent. */
 export function enforceRateLimit(limiter: RateLimiter, request: Request): Response | null {

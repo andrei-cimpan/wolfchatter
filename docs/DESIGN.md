@@ -142,6 +142,8 @@ Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The he
 
 Both POST routes are limited per client IP, in fixed one-minute windows: **10 rooms** (`POST /api/rooms`) and **30 messages** (`POST /api/rooms/:id/messages`). Creating rooms gets the tighter budget because every room litters the shared map. The limiters live in `src/server/http/rate-limit.ts`.
 
+- **Configuration:** `RATE_LIMIT_ROOMS_PER_MINUTE` and `RATE_LIMIT_MESSAGES_PER_MINUTE` override the defaults. Unset or empty means the default; anything but a positive integer throws when the module loads, so a typo cannot silently change or disable a limit. Playwright sets both to 10,000 for its dev server, because every test browser posts from one address.
+
 - **Order:** the limit is checked first, before the room id, `Content-Type`, and body. Every attempt spends budget, so a flood of invalid requests is limited too. GET routes are not limited.
 - **Client IP:** route handlers cannot see the socket, so the IP is the **rightmost** `X-Forwarded-For` entry (`src/server/http/client-ip.ts`). Next.js sets that header to the socket address only when it is absent (`??=` in its base server), and a proxy such as the ALB appends the address it saw, so the rightmost entry is written by our side. Entries to its left are client-supplied and ignored. Requests with no usable address share one `unknown` key.
 - **Budget key:** an IPv4 address is its own budget. An IPv6 address is keyed by its **/64** (`2001:db8:1:2::/64`), since one subscriber usually holds a whole /64 and could otherwise rotate through it for a fresh budget per request. IPv4-mapped IPv6 (`::ffff:203.0.113.7`) shares the IPv4 budget.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRateLimiter, enforceRateLimit } from "./rate-limit";
+import { createRateLimiter, enforceRateLimit, limitFromEnv } from "./rate-limit";
 
 function setup(limit = 3, windowMs = 60_000) {
   let time = 1_000_000;
@@ -116,6 +116,27 @@ describe("createRateLimiter", () => {
     limiter.check("a");
     limiter.reset();
     expect(limiter.check("a").allowed).toBe(true);
+  });
+});
+
+describe("limitFromEnv", () => {
+  const NAME = "RATE_LIMIT_TEST_PER_MINUTE";
+
+  it.each([{}, { [NAME]: "" }, { [NAME]: "  " }])("uses the default when unset or empty (%j)", (env) => {
+    expect(limitFromEnv(NAME, 10, env)).toBe(10);
+  });
+
+  it.each([
+    ["1", 1],
+    ["1000", 1000],
+    [" 25 ", 25],
+  ])("reads %j as %i", (value, limit) => {
+    expect(limitFromEnv(NAME, 10, { [NAME]: value })).toBe(limit);
+  });
+
+  // A typo should stop the server at startup, not silently fall back or disable the limit.
+  it.each(["0", "-1", "1.5", "abc", "1e3", "0x10", "Infinity", "10 rooms"])("rejects %j, naming the variable", (value) => {
+    expect(() => limitFromEnv(NAME, 10, { [NAME]: value })).toThrow(NAME);
   });
 });
 
