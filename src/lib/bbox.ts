@@ -6,7 +6,11 @@ import type { Bbox } from "./types";
 // in a single subtraction, because chained float arithmetic would turn 26.1 into 26.100000000000023.
 export function wrapLongitude(lng: number): number {
   if (lng >= -180 && lng < 180) return lng;
-  return lng - 360 * Math.floor((lng + 180) / 360);
+  const wrapped = lng - 360 * Math.floor((lng + 180) / 360);
+  // Just below a boundary, the division can round up to a whole number and overshoot by one turn.
+  if (wrapped < -180) return wrapped + 360;
+  if (wrapped >= 180) return wrapped - 360;
+  return wrapped;
 }
 
 function clampLatitude(lat: number): number {

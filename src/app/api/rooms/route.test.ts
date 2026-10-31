@@ -41,6 +41,11 @@ describe("POST /api/rooms", () => {
     expect(room.lng).toBe(-160);
   });
 
+  it("creates a room for a longitude just below a wrap boundary", async () => {
+    const response = await postRoom(JSON.stringify({ lat: 0, lng: 899.9999999999999 }));
+    expect(response.status).toBe(201);
+  });
+
   it.each([
     ["lat out of range", { lat: 91, lng: 0 }, /^lat: /],
     ["missing lng", { lat: 0 }, /^lng: /],

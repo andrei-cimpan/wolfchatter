@@ -25,7 +25,35 @@ describe("wrapLongitude", () => {
     expect(wrapLongitude(200.5)).toBe(-159.5);
     expect(wrapLongitude(-200.25)).toBe(159.75);
   });
+
+  // Next to a wrap boundary, (lng + 180) / 360 can round up to a whole number, which used to give
+  // -180.0000000000001: outside the database's check constraint, so creating the room was a 500.
+  it("stays within [-180, 180) right next to every wrap boundary", () => {
+    for (let turn = -5; turn <= 5; turn++) {
+      const boundary = turn * 360 + 180;
+      for (const lng of [nextDown(boundary), boundary, nextUp(boundary)]) {
+        const wrapped = wrapLongitude(lng);
+        expect(wrapped, `wrapLongitude(${lng})`).toBeGreaterThanOrEqual(-180);
+        expect(wrapped, `wrapLongitude(${lng})`).toBeLessThan(180);
+      }
+    }
+    expect(wrapLongitude(899.9999999999999)).toBeGreaterThanOrEqual(-180);
+  });
 });
+
+// The neighbouring doubles, so boundary tests probe the exact values where rounding flips.
+function nextUp(x: number): number {
+  return stepDouble(x, 1);
+}
+function nextDown(x: number): number {
+  return stepDouble(x, -1);
+}
+function stepDouble(x: number, direction: 1 | -1): number {
+  if (x === 0) return direction * Number.MIN_VALUE;
+  const bits = new BigInt64Array(new Float64Array([x]).buffer);
+  bits[0] = bits[0]! + BigInt(Math.sign(x) * direction);
+  return new Float64Array(bits.buffer)[0]!;
+}
 
 describe("normalizeBbox", () => {
   it("returns in-range decimal bounds bit-for-bit unchanged", () => {
