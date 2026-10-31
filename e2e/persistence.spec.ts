@@ -66,8 +66,9 @@ test.describe("desktop", () => {
     const secondUrl = page.url();
 
     await page.reload();
-    await expect(page).toHaveURL(secondUrl);
     await expect(roomTitle(page)).toHaveText(second.title);
+    // Checked once the panel has rendered, so an app that dropped `?room` on load would fail here.
+    await expect(page).toHaveURL(secondUrl);
     await expect(messages(page).getByRole("listitem")).toHaveText([/ana:[\s\S]*Before the reload, second room/]);
     await expect(pin(page, first.title)).toBeVisible();
     await expect(pin(page, second.title)).toBeVisible();
