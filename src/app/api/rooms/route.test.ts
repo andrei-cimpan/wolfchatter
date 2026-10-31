@@ -101,6 +101,8 @@ describe("GET /api/rooms", () => {
     ["zoom above 22", "?bbox=0,0,1,1&zoom=23", /^zoom: /],
     ["a fractional zoom", "?bbox=0,0,1,1&zoom=2.5", /^zoom: /],
     ["an empty zoom", "?bbox=0,0,1,1&zoom=", /^zoom: /],
+    ["an empty bbox", "?bbox=&zoom=3", /^bbox/],
+    ["a bad first value of a repeated key", "?bbox=0,0,1,1&zoom=x&zoom=3", /^zoom: /],
   ])("rejects %s with 400", async (_label, query, message) => {
     expect(await expectError(await getRooms(query), 400, "validation_error")).toMatch(message);
   });

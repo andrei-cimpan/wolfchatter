@@ -1,15 +1,12 @@
 import { createRoomSchema, mapItemsQuerySchema } from "@/lib/schemas";
 import { readJson, validationError, withErrorHandling } from "@/server/http/api-errors";
+import { queryInput } from "@/server/http/query-input";
 import { getChatRepository } from "@/server/repositories";
 
 /** Rooms and clusters in the viewport: `?bbox=west,south,east,north&zoom=z`. */
 export const GET = withErrorHandling(async (request: Request) => {
   const params = new URL(request.url).searchParams;
-  // A missing param is passed as undefined so the schema reports it as required.
-  const query = mapItemsQuerySchema.safeParse({
-    bbox: params.get("bbox") ?? undefined,
-    zoom: params.get("zoom") ?? undefined,
-  });
+  const query = mapItemsQuerySchema.safeParse(queryInput(params, ["bbox", "zoom"]));
   if (!query.success) return validationError(query.error);
 
   return Response.json(await getChatRepository().listMapItems(query.data));
