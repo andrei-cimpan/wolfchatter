@@ -117,17 +117,25 @@ describe("listMessages", () => {
       `insert into messages (room_id, author, body) select $1, 'ana', 'x' from generate_series(1, $2::int)`,
       [room.id, MAX_MESSAGE_LIMIT + 10],
     );
-    expect(await repo().listMessages(room.id, { limit: 10_000 })).toHaveLength(MAX_MESSAGE_LIMIT);
+    // Literal, not MAX_MESSAGE_LIMIT, so changing the constant is a visible test change.
+    expect(await repo().listMessages(room.id, { limit: 10_000 })).toHaveLength(100);
     expect(await repo().listMessages(room.id, { limit: 0 })).toHaveLength(1);
   });
 
-  it("uses the default limit when the limit is not a number", async () => {
+  it("returns 50 messages by default, and when the limit is not a number", async () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });
     await db().query(
       `insert into messages (room_id, author, body) select $1, 'ana', 'x' from generate_series(1, 60)`,
       [room.id],
     );
+    expect(await repo().listMessages(room.id)).toHaveLength(50);
     expect(await repo().listMessages(room.id, { limit: Number.NaN })).toHaveLength(50);
+  });
+
+  it("applies the limit to after, starting from the oldest newer message", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    const ids = await postMany(room.id, 5);
+    expect(bodies(await repo().listMessages(room.id, { after: ids[0], limit: 2 }))).toEqual(["m2", "m3"]);
   });
 
   it("returns nothing for an unknown room or malformed ids", async () => {
@@ -183,6 +191,14 @@ describe("listMapItems", () => {
     expect(items.map((i) => i.type)).toEqual(["room", "room"]);
   });
 
+  it("still clusters at zoom 15", async () => {
+    await repo().createRoom({ lat: 44.4, lng: 26.1 });
+    await repo().createRoom({ lat: 44.4, lng: 26.1 });
+    expect(await repo().listMapItems({ bbox: WORLD, zoom: 15 })).toEqual([
+      { type: "cluster", lat: 44.4, lng: 26.1, count: 2 },
+    ]);
+  });
+
   it("includes the message count on room items", async () => {
     const room = await repo().createRoom({ lat: 10, lng: 10 });
     await postMany(room.id, 2);
@@ -193,6 +209,8 @@ describe("listMapItems", () => {
 
   it("excludes rooms outside the viewport", async () => {
     const { bucharest1, bucharest2 } = await seedCities();
+    // Inside the longitude range, north of the viewport: only the latitude filter excludes it.
+    await repo().createRoom({ lat: 50, lng: 25 });
     const items = await repo().listMapItems({ bbox: { west: 20, south: 40, east: 30, north: 46 }, zoom: 16 });
     expect(items.map((i) => (i.type === "room" ? i.id : null)).sort()).toEqual(
       [bucharest1.id, bucharest2.id].sort(),
@@ -221,5 +239,30 @@ describe("listMapItems", () => {
     );
     const items = await repo().listMapItems({ bbox: { west: 19, south: 9, east: 21, north: 80 }, zoom });
     expect(items).toHaveLength(500);
+  });
+
+  it("keeps the newest rooms when capping at zoom 16", async () => {
+    // r1 is the newest and r501 the oldest.
+    await db().query(
+      `insert into rooms (title, lat, lng, created_at)
+       select 'r' || i, 10 + i * 0.00001, 20, now() - i * interval '1 second' from generate_series(1, 501) i`,
+    );
+    const titles = (await repo().listMapItems({ bbox: { west: 19, south: 9, east: 21, north: 11 }, zoom: 16 })).map(
+      (i) => (i.type === "room" ? i.title : "cluster"),
+    );
+    expect(titles).toHaveLength(500);
+    expect(titles[0]).toBe("r1");
+    expect(titles).not.toContain("r501");
+  });
+
+  it("keeps the busiest cells when capping clustered results", async () => {
+    // 500 single-room cells plus one cell holding three rooms: 501 cells for 500 slots.
+    await db().query(
+      "insert into rooms (lat, lng) select 10 + i * 0.1, 20 from generate_series(1, 500) i",
+    );
+    await db().query("insert into rooms (lat, lng) select 5, 25 from generate_series(1, 3)");
+    const items = await repo().listMapItems({ bbox: { west: 19, south: 4, east: 26, north: 80 }, zoom: 10 });
+    expect(items).toHaveLength(500);
+    expect(items[0]).toEqual({ type: "cluster", lat: 5, lng: 25, count: 3 });
   });
 });
