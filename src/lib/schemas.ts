@@ -13,7 +13,10 @@ function requiredText(label: string, max: number) {
     .string()
     .trim()
     .refine((text) => codePointLength(text) >= 1, `${label} is required`)
-    .refine((text) => codePointLength(text) <= max, `${label} must be at most ${max} characters`);
+    .refine((text) => codePointLength(text) <= max, `${label} must be at most ${max} characters`)
+    // Postgres text rejects NUL outright (a 500, not a 400) and stores a lone surrogate as U+FFFD,
+    // so the saved message would differ from what was sent.
+    .refine((text) => !text.includes("\u0000") && text.isWellFormed(), `${label} contains invalid characters`);
 }
 
 // Query values arrive as strings. z.coerce.number() would read "" as 0 and "1e400" as

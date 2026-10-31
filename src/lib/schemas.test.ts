@@ -78,6 +78,14 @@ describe("postMessageSchema", () => {
     expect(postMessageSchema.safeParse({ author: emoji.repeat(32), body: "hi" }).success).toBe(true);
   });
 
+  it.each([
+    ["a NUL character", "a\u0000b"],
+    ["a lone surrogate", "a\uD800b"],
+  ])("rejects text Postgres cannot store as sent: %s", (_label, text) => {
+    expect(postMessageSchema.safeParse({ author: "ana", body: text }).success).toBe(false);
+    expect(postMessageSchema.safeParse({ author: text, body: "hi" }).success).toBe(false);
+  });
+
   it("names the field in the error message", () => {
     const result = postMessageSchema.safeParse({ author: "", body: "hi" });
     expect(result.error?.issues[0]).toMatchObject({ path: ["author"], message: "Author is required" });
