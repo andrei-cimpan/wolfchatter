@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/lib/types";
 import { PostgresChatRepository } from "./postgres-chat-repository";
 import { PostgresMessageSource, parseMessageNotification } from "./postgres-message-source";
+import { startTcpProxy, type TcpProxy } from "./test/tcp-proxy";
 import { setupTestDatabase } from "./test/test-db";
 
 const db = setupTestDatabase();
@@ -13,6 +14,7 @@ let applicationName = "";
 const options = () => ({ minRetryMs: 10, maxRetryMs: 40, applicationName });
 
 let source: PostgresMessageSource | undefined;
+let proxy: TcpProxy | undefined;
 
 beforeEach(() => {
   applicationName = `wolfchatter-test-${randomUUID()}`;
@@ -21,6 +23,9 @@ beforeEach(() => {
 afterEach(async () => {
   await source?.stop();
   source = undefined;
+  await proxy?.close();
+  proxy = undefined;
+  vi.restoreAllMocks();
 });
 
 async function startSource() {
@@ -123,5 +128,23 @@ describe("PostgresMessageSource", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(await listenerPids()).toEqual([]);
     expect(onReconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe("PostgresMessageSource behind a proxy", () => {
+  beforeEach(async () => {
+    proxy = await startTcpProxy(process.env.DATABASE_URL!);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("rejects start and leaves no connection when stopped while connecting (review #1)", async () => {
+    proxy!.delayMs = 100;
+    source = new PostgresMessageSource(proxy!.connectionString, options());
+
+    const started = source.start({ onMessage: () => {}, onReconnect: () => {} });
+    await source.stop();
+
+    await expect(started).rejects.toThrow("stopped");
+    await expect.poll(listenerPids).toEqual([]);
   });
 });

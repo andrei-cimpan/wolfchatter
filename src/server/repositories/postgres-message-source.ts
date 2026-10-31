@@ -55,6 +55,8 @@ export class PostgresMessageSource implements MessageSource {
   private handlers: MessageSourceHandlers | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryMs: number;
+  // Bumped by stop(), so a connection that finishes after it is closed instead of adopted.
+  private generation = 0;
   private readonly connectionString: string;
   private readonly options: MessageSourceOptions;
 
@@ -67,15 +69,23 @@ export class PostgresMessageSource implements MessageSource {
   async start(handlers: MessageSourceHandlers): Promise<void> {
     if (this.handlers) throw new Error("PostgresMessageSource is already started.");
     this.handlers = handlers;
+    const generation = this.generation;
+    let client: pg.Client;
     try {
-      this.client = await this.connect();
+      client = await this.connect();
     } catch (error) {
-      this.handlers = null;
+      if (generation === this.generation) this.handlers = null;
       throw error;
     }
+    if (generation !== this.generation) {
+      await client.end();
+      throw new Error("PostgresMessageSource was stopped while starting.");
+    }
+    this.client = client;
   }
 
   async stop(): Promise<void> {
+    this.generation++;
     this.handlers = null;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
