@@ -41,3 +41,14 @@ export async function createDatabaseIfMissing(url: string, name: string): Promis
   }
 }
 
+/** Deletes every room (and, by cascade, every message) in a database scratchDatabaseName accepted. */
+export async function emptyScratchDatabase(url: string): Promise<void> {
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  try {
+    await client.query("truncate rooms cascade");
+  } finally {
+    await client.end();
+  }
+}
+

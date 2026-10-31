@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import pg from "pg";
 import {
   createDatabaseIfMissing,
+  emptyScratchDatabase,
   scratchDatabaseName,
 } from "../src/server/repositories/test/scratch-database";
 
@@ -17,11 +17,5 @@ export default async function globalSetup(): Promise<void> {
     env: { ...process.env, DATABASE_URL: url },
     stdio: "inherit",
   });
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    await client.query("truncate rooms cascade");
-  } finally {
-    await client.end();
-  }
+  await emptyScratchDatabase(url!);
 }
