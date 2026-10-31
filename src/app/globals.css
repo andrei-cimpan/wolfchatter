@@ -82,6 +82,15 @@ body {
     0 0 0 6px #f59e0b;
 }
 
+/* Forced-colours mode (such as Windows High Contrast) drops box-shadow, so the ring above would
+   vanish; a system-coloured outline survives. */
+@media (forced-colors: active) {
+  .leaflet-container .cluster-bubble:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .leaflet-container .cluster-bubble > span {
     transition: none;

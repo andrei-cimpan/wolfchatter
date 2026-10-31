@@ -83,16 +83,36 @@ test("a cluster shows its count, and clicking it zooms into its cell", async ({ 
   await expect(page).not.toHaveURL(/\?room=/);
 });
 
-test("a focused cluster zooms in with Enter", async ({ page }) => {
+async function serveOneCluster(page: Page) {
   await page.route(isViewportRequest, (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ json: [{ type: "cluster", lat: 40.7, lng: -4.2, count: 12 }] })
       : route.fallback(),
   );
+}
+
+test("a focused cluster zooms in with Enter, and focus moves to the map", async ({ page }) => {
+  await serveOneCluster(page);
   await openMap(page);
   await page.getByRole("button", { name: "12 chatrooms", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => tileZooms(page)).toEqual(["8"]);
+  // The bubble is gone after the zoom; without this, focus would fall back to the page's start.
+  await expect(page.locator(".leaflet-container")).toBeFocused();
+});
+
+test("a focused cluster keeps a visible focus ring in forced-colours mode", async ({ page }) => {
+  await page.emulateMedia({ forcedColors: "active" });
+  await serveOneCluster(page);
+  await openMap(page);
+  const bubble = page.getByRole("button", { name: "12 chatrooms", exact: true });
+  // Focused from the keyboard, so :focus-visible applies.
+  await bubble.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(bubble).toBeFocused();
+  // Forced colours drop box-shadow, so the ring must be an outline.
+  expect(await bubble.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
 });
 
 test("when a viewport fails to load, the pins already shown stay", async ({ page }) => {

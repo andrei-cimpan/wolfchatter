@@ -69,13 +69,19 @@ function ClusterMarker({ cluster, zoom, centerLng }: { cluster: Cluster; zoom: n
       { maxZoom: CLUSTER_MAX_ZOOM },
     );
   };
+  // The zoom replaces this bubble, and focus on a removed element falls back to the page's start.
+  // The map container is focusable (Leaflet's keyboard panning), so keyboard users stay on the map.
+  const zoomInFromKeyboard = () => {
+    zoomIn();
+    map.getContainer().focus({ preventScroll: true });
+  };
 
   return (
     <Marker
       position={[cluster.lat, nearestWorldCopy(cluster.lng, centerLng)]}
       icon={icon}
       title={label}
-      eventHandlers={{ click: zoomIn, keydown: onEnterOrSpace(zoomIn) }}
+      eventHandlers={{ click: zoomIn, keydown: onEnterOrSpace(zoomInFromKeyboard) }}
     />
   );
 }
