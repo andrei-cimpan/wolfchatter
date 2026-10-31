@@ -140,7 +140,8 @@ test.describe("desktop", () => {
       (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/rooms",
     );
     await page.mouse.click(600, 450);
-    await expect(panel(page).getByRole("status")).toHaveText("Creating a chatroom…");
+    // The open room may still be loading its messages, which is a status of its own.
+    await expect(panel(page).getByRole("status").filter({ hasText: "Creating a chatroom…" })).toBeVisible();
     await pin(page, first).click();
     await created;
     await page.waitForTimeout(300);

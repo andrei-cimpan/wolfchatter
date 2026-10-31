@@ -1,4 +1,4 @@
-import type { Bbox, MapItem, Room } from "./types";
+import type { Bbox, MapItem, Message, Room } from "./types";
 
 /** A non-2xx API response, carrying the `{ error: { code, message } }` body when there is one. */
 export class ApiError extends Error {
@@ -14,6 +14,12 @@ export class ApiError extends Error {
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/** "in 30 seconds" for a 429 with `Retry-After`, otherwise "in a minute" (the limiters' window). */
+export function retryAfterPhrase(error: ApiError): string {
+  const wait = error.retryAfterSeconds;
+  return wait === undefined ? "in a minute" : `in ${wait} second${wait === 1 ? "" : "s"}`;
 }
 
 function isErrorBody(body: unknown): body is { error: { code: string; message: string } } {
@@ -58,7 +64,7 @@ export function createRoom(input: { lat: number; lng: number }): Promise<Room> {
 /** Resolves to `null` for an unknown room, so callers can show "not found" without a catch. */
 export async function getRoom(id: string): Promise<Room | null> {
   try {
-    return await request<Room>(`/api/rooms/${encodeURIComponent(id)}`);
+    return await request<Room>(roomPath(id));
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
@@ -72,4 +78,21 @@ export function listMapItems({ bbox, zoom }: { bbox: Bbox; zoom: number }): Prom
     zoom: String(zoom),
   });
   return request<MapItem[]>(`/api/rooms?${params}`);
+}
+
+function roomPath(roomId: string): string {
+  return `/api/rooms/${encodeURIComponent(roomId)}`;
+}
+
+/** The room's latest page of messages, oldest first. */
+export function listMessages(roomId: string): Promise<Message[]> {
+  return request<Message[]>(`${roomPath(roomId)}/messages`);
+}
+
+export function postMessage(roomId: string, input: { author: string; body: string }): Promise<Message> {
+  return request<Message>(`${roomPath(roomId)}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }

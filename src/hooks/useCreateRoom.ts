@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import { ApiError, createRoom } from "@/lib/api-client";
+import { ApiError, createRoom, retryAfterPhrase } from "@/lib/api-client";
 import type { Room } from "@/lib/types";
 import { MAP_ITEMS_KEY } from "./useMapItems";
 import { roomQueryKey } from "./useRoom";
@@ -69,9 +69,7 @@ export function useCreateRoom(onCreated: (room: Room, clickedLng: number) => voi
 
 export function createRoomErrorMessage(error: Error): string {
   if (error instanceof ApiError && error.status === 429) {
-    const wait = error.retryAfterSeconds;
-    const when = wait === undefined ? "in a minute" : `in ${wait} second${wait === 1 ? "" : "s"}`;
-    return `You're creating chatrooms too quickly. Try again ${when}.`;
+    return `You're creating chatrooms too quickly. Try again ${retryAfterPhrase(error)}.`;
   }
   return "Couldn't create the chatroom. Please try again.";
 }
