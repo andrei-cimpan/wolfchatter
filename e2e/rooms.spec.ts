@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { box, makeTilesHitTestable, serveBlankTiles } from "./support";
+import type { Page } from "@playwright/test";
+import { box, expect, makeTilesHitTestable, serveBlankTiles, test } from "./support";
 
 const ROOM_URL = /\?room=[0-9a-f-]{36}$/;
 const ROOM_TITLE = /^Chatroom \d+$/;

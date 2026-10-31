@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { box, makeTilesHitTestable, serveBlankTiles } from "./support";
+import type { Page } from "@playwright/test";
+import { box, expect, makeTilesHitTestable, serveBlankTiles, test } from "./support";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 

@@ -1,4 +1,30 @@
-import type { Page } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
+
+// The browser logs every non-2xx response; tests that expect a 404 or 429 would trip on those.
+const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded with a status of (404|429)/];
+
+/**
+ * Fails any test whose page throws or logs a console error, such as React's hydration mismatch,
+ * which otherwise only shows in the dev server log while the test passes.
+ */
+export const test = base.extend<{ failOnBrowserErrors: void }>({
+  failOnBrowserErrors: [
+    async ({ page }, use) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+      page.on("console", (message) => {
+        if (message.type() !== "error") return;
+        const text = message.text();
+        if (!EXPECTED_CONSOLE_ERRORS.some((pattern) => pattern.test(text))) errors.push(`console.error: ${text}`);
+      });
+      await use();
+      expect(errors, "browser errors during the test").toEqual([]);
+    },
+    { auto: true },
+  ],
+});
+
+export { expect };
 
 // A 1x1 PNG served for every off-site image, whichever basemap the dev server is configured with:
 // the tests stay offline and off tile providers' servers (whose policies forbid automated load),
