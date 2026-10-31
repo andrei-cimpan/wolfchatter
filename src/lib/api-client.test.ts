@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createRoom, getRoom, listMapItems } from "./api-client";
-import type { Room } from "./types";
+import { ApiError, createRoom, getRoom, listMapItems, listMessages, postMessage } from "./api-client";
+import type { Message, Room } from "./types";
 
 const ROOM: Room = {
   id: "0b9f8c4e-2f7a-4d55-9a53-1f3e2d4c5b6a",
@@ -103,6 +103,47 @@ describe("listMapItems", () => {
     stubFetch(errorResponse(400, "validation_error", "bbox: Invalid"));
     await expect(listMapItems({ bbox: { west: 0, south: 0, east: 1, north: 1 }, zoom: 5 })).rejects.toMatchObject({
       status: 400,
+    });
+  });
+});
+
+const MESSAGE: Message = {
+  id: "5d7c1a2b-3e4f-4a5b-8c6d-7e8f9a0b1c2d",
+  roomId: ROOM.id,
+  author: "ana",
+  body: "Hello",
+  createdAt: "2026-10-31T12:01:00.000Z",
+};
+
+describe("listMessages", () => {
+  it("asks for the room's latest messages", async () => {
+    const fetchMock = stubFetch(Response.json([MESSAGE]));
+    await expect(listMessages(ROOM.id)).resolves.toEqual([MESSAGE]);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM.id}/messages`, undefined);
+  });
+
+  it("throws a 404 rather than returning an empty list", async () => {
+    stubFetch(errorResponse(404, "room_not_found", "Room not found"));
+    await expect(listMessages(ROOM.id)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("postMessage", () => {
+  it("posts JSON and returns the stored message", async () => {
+    const fetchMock = stubFetch(Response.json(MESSAGE, { status: 201 }));
+    await expect(postMessage(ROOM.id, { author: "ana", body: "Hello" })).resolves.toEqual(MESSAGE);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM.id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "ana", body: "Hello" }),
+    });
+  });
+
+  it("turns a 429 into an ApiError with the Retry-After seconds", async () => {
+    stubFetch(errorResponse(429, "rate_limited", "Too many requests", { "Retry-After": "12" }));
+    await expect(postMessage(ROOM.id, { author: "ana", body: "Hi" })).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 12,
     });
   });
 });
