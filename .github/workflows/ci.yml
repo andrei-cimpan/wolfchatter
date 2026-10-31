@@ -24,6 +24,7 @@ jobs:
           --health-retries 15
     env:
       DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter
+      TEST_DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter_test
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

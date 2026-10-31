@@ -56,6 +56,7 @@ All configuration is through environment variables. See `.env.example`.
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
+| `TEST_DATABASE_URL` | Database used by `npm test`; created and migrated automatically, emptied between tests. Must end in `_test` |
 
 ## Project structure
 

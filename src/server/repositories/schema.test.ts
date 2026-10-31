@@ -1,29 +1,20 @@
 import pg from "pg";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { setupTestDatabase } from "./test/test-db";
 
-const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
-const createdRoomIds: string[] = [];
+const db = setupTestDatabase();
 
 async function createRoom(lat = 44.43, lng = 26.1): Promise<{ id: string; title: string }> {
-  const { rows } = await db.query<{ id: string; title: string }>(
+  const { rows } = await db().query<{ id: string; title: string }>(
     "insert into rooms (lat, lng) values ($1, $2) returning id, title",
     [lat, lng],
   );
-  const room = rows[0]!;
-  createdRoomIds.push(room.id);
-  return room;
+  return rows[0]!;
 }
-
-beforeAll(() => db.connect());
-afterEach(async () => {
-  // Messages go with their rooms via on delete cascade.
-  await db.query("delete from rooms where id = any($1::uuid[])", [createdRoomIds.splice(0)]);
-});
-afterAll(() => db.end());
 
 describe("initial schema", () => {
   it("creates the tables and indexes", async () => {
-    const tables = await db.query<{ name: string }>(
+    const tables = await db().query<{ name: string }>(
       "select to_regclass(n)::text as name from unnest($1::text[]) as n",
       [["rooms", "messages", "messages_room_created_idx", "rooms_location_idx"]],
     );
@@ -59,7 +50,7 @@ describe("initial schema", () => {
   ])("rejects an out-of-range author or body (case %#)", async (author, body) => {
     const room = await createRoom();
     await expect(
-      db.query("insert into messages (room_id, author, body) values ($1, $2, $3)", [room.id, author, body]),
+      db().query("insert into messages (room_id, author, body) values ($1, $2, $3)", [room.id, author, body]),
     ).rejects.toThrow(/check constraint/);
   });
 
@@ -71,11 +62,11 @@ describe("initial schema", () => {
       await listener.query("listen messages");
       const notified = new Promise<pg.Notification>((resolve) => listener.once("notification", resolve));
 
-      await db.query("insert into messages (room_id, author, body) values ($1, 'ana', 'hello')", [room.id]);
+      await db().query("insert into messages (room_id, author, body) values ($1, 'ana', 'hello')", [room.id]);
 
       const payload: unknown = JSON.parse((await notified).payload ?? "null");
       expect(payload).toMatchObject({ room_id: room.id, author: "ana", body: "hello" });
-      const { rows } = await db.query<{ message_count: number }>(
+      const { rows } = await db().query<{ message_count: number }>(
         "select message_count from rooms where id = $1",
         [room.id],
       );

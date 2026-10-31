@@ -61,12 +61,11 @@ async function connectWithRetry(connectionString: string): Promise<pg.Client> {
   }
 }
 
-async function main(): Promise<void> {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("DATABASE_URL is not set. Copy .env.example to .env.");
-  }
-
+// Exported so the test setup migrates its own database with exactly the same code path.
+export async function migrate(
+  connectionString: string,
+  log: (line: string) => void = console.log,
+): Promise<void> {
   const client = await connectWithRetry(connectionString);
   try {
     // Taken before reading schema_migrations so a waiting runner sees what the first one applied.
@@ -83,7 +82,7 @@ async function main(): Promise<void> {
     );
 
     if (pending.length === 0) {
-      console.log("No pending migrations.");
+      log("No pending migrations.");
       return;
     }
 
@@ -100,7 +99,7 @@ async function main(): Promise<void> {
         await client.query(sql);
         await client.query("insert into schema_migrations (name) values ($1)", [name]);
         await client.query("commit");
-        console.log(`Applied ${name}`);
+        log(`Applied ${name}`);
       } catch (error) {
         // If the connection is gone, rollback throws too; keep the original error instead.
         await client.query("rollback").catch(() => {});
@@ -112,6 +111,14 @@ async function main(): Promise<void> {
     await client.query("select pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY]).catch(() => {});
     await client.end();
   }
+}
+
+async function main(): Promise<void> {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not set. Copy .env.example to .env.");
+  }
+  await migrate(connectionString);
 }
 
 if (import.meta.main) {
