@@ -50,6 +50,14 @@ describe("mergeCaughtUp", () => {
     expect(ids(merged)).toEqual(["a", "x", "c"]);
   });
 
+  it("does not repeat a message the list holds before the cursor in another order (review #1)", () => {
+    // "C" began its transaction first but "X" committed first: the list got X then C live, while
+    // the server sorts C before X, so the page after C still holds X.
+    const listed = [message("m1"), message("X"), message("C"), message("m4"), message("m5")];
+    const merged = mergeCaughtUp(listed, "C", [message("X"), message("m4"), message("m5"), message("m6")]);
+    expect(ids(merged)).toEqual(["m1", "C", "X", "m4", "m5", "m6"]);
+  });
+
   it("merges a latest page into a short list when there is no cursor", () => {
     const merged = mergeCaughtUp([message("a"), message("e")], undefined, [message("a"), message("b")]);
     expect(ids(merged)).toEqual(["a", "b", "e"]);
