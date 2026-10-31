@@ -155,6 +155,53 @@ test.describe("desktop", () => {
   });
 });
 
+test.describe("live messages", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test("a message posted in one browser appears in another within a second, once", async ({ page, browser }) => {
+    const id = await newRoom(page.request);
+    const other = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const reader = await other.newPage();
+    await serveBlankTiles(reader);
+    const streamReady = reader.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    await openRoom(reader, id);
+    await streamReady;
+    await openRoom(page, id);
+
+    await post(page, "ana", "Live from the other tab");
+    await expect(newest(reader)).toContainText("Live from the other tab", { timeout: 1500 });
+    await post(page, "ana", "And another");
+    await expect(messages(reader).getByRole("listitem")).toHaveText([/Live from the other tab/, /And another/], {
+      timeout: 1500,
+    });
+    await other.close();
+  });
+
+  test("after the stream reconnects, messages sent meanwhile appear once and in order", async ({ page }) => {
+    const id = await newRoom(page.request);
+    const send = (body: string) => page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
+    await send("before");
+    // The stream fails until the route is removed, as it would while the server is unreachable.
+    const isStream = (url: URL) => url.pathname === `/api/rooms/${id}/stream`;
+    let refused = 0;
+    await page.route(isStream, (route) => {
+      refused++;
+      return route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } });
+    });
+    await openRoom(page, id);
+    await expect(messages(page).getByRole("listitem")).toHaveText([/before/]);
+    await expect.poll(() => refused).toBeGreaterThan(0);
+
+    await send("during one");
+    await send("during two");
+    await page.unroute(isStream);
+    await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/]);
+
+    await send("after");
+    await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/, /after/]);
+  });
+});
+
 test.describe("narrow screen", () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
