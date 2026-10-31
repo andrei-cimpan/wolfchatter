@@ -95,6 +95,26 @@ test("a focused cluster zooms in with Enter", async ({ page }) => {
   await expect.poll(() => tileZooms(page)).toEqual(["8"]);
 });
 
+test("when a viewport fails to load, the pins already shown stay", async ({ page }) => {
+  await page.route(isViewportRequest, (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const zoom = new URL(route.request().url()).searchParams.get("zoom");
+    return zoom === "5"
+      ? route.fulfill({ json: [{ type: "cluster", lat: 48, lng: 20, count: 7 }] })
+      : route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "x" } } });
+  });
+  const failed = page.waitForResponse((r) => isViewportRequest(new URL(r.url())) && r.status() === 500);
+  await openMap(page);
+  const bubble = page.getByRole("button", { name: "7 chatrooms", exact: true });
+  await expect(bubble).toBeVisible();
+
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await failed;
+  // Past the one retry (about a second), when the query settles as an error.
+  await page.waitForTimeout(2500);
+  await expect(bubble).toHaveCount(1);
+});
+
 test("a small pan reuses the loaded pins instead of asking again", async ({ page }) => {
   const requests = countViewportRequests(page);
   await openMap(page);

@@ -1,6 +1,7 @@
 "use client";
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { listMapItems } from "@/lib/api-client";
 import type { ViewportQuery } from "@/lib/viewport";
 import { shouldRetryRoomQuery } from "./useRoom";
@@ -18,7 +19,7 @@ export function mapItemsQueryKey({ bbox, zoom }: ViewportQuery) {
  * it was clustered at, which a kept-on-screen result does not share with the current query.
  */
 export function useMapItems(query: ViewportQuery | null) {
-  return useQuery({
+  const result = useQuery({
     queryKey: query ? mapItemsQueryKey(query) : MAP_ITEMS_KEY,
     queryFn: async () => ({ zoom: query!.zoom, items: await listMapItems(query!) }),
     enabled: query !== null,
@@ -27,4 +28,10 @@ export function useMapItems(query: ViewportQuery | null) {
     // Other users' new rooms show up when the user comes back to an area after this long.
     staleTime: 30_000,
   });
+  // keepPreviousData covers only a pending query; once the new one fails, `data` is undefined and
+  // the map would look empty. So remember the last result that loaded (React's "adjust state
+  // during render" pattern) and show it instead.
+  const [lastLoaded, setLastLoaded] = useState(result.data);
+  if (result.data !== undefined && result.data !== lastLoaded) setLastLoaded(result.data);
+  return result.data ?? lastLoaded;
 }

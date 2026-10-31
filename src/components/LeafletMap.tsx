@@ -89,7 +89,7 @@ export default function LeafletMap({ pinAnchor, onMapClick, onRoomClick }: Leafl
     (bounds: Bbox, zoom: number) => setViewport((current) => nextViewportQuery(current, bounds, zoom)),
     [],
   );
-  const { data } = useMapItems(viewport);
+  const data = useMapItems(viewport);
   const { rooms, clusters } = splitItems(data?.items ?? []);
   // The open room always gets a pin, even when it is clustered, out of view, or not loaded yet.
   const { data: selectedRoom } = useRoom(useSelectedRoomId());
