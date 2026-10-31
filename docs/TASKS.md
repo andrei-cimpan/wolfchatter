@@ -26,7 +26,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   *Carried over from the PR #4 review:*
   - One shared mapper from Zod issues to `{ "error": { "code", "message" } }` with readable messages, plus one helper that turns `URLSearchParams` into schema input. Decide and test how empty values (`?before=&limit=`) and repeated keys are handled.
   - Reject author or body text that is only invisible characters (for example U+200B, U+0085), which JavaScript `trim()` keeps and which would render as a blank message.
-- [ ] **T2.2** `GET/POST /api/rooms/:id/messages` with paging and 404 handling.
+- [x] **T2.2** `GET/POST /api/rooms/:id/messages` with paging and 404 handling.
   *Carried over from the PR #6 review:*
   - A few rare characters that draw nothing still pass the "visible text" rule on their own (U+FFF9 to U+FFFB, U+13430 to U+1343F, U+16FE4). Add them explicitly; don't add all of `\p{Cf}`, which would also reject visible Arabic signs (U+0600 to U+0605).
 - [ ] **T2.3** Basic per-IP rate limiting on POST routes.

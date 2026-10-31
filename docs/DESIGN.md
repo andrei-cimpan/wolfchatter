@@ -123,7 +123,7 @@ create trigger messages_notify after insert on messages
 | `GET /api/rooms/:id` | One room | 200 `Room` |
 | `POST /api/rooms` | Create a room `{lat, lng}` | 201 `Room`, with `Location: /api/rooms/:id` |
 | `GET /api/rooms/:id/messages?before=&after=&limit=` | Page of messages, oldest first | 200 `Message[]` |
-| `POST /api/rooms/:id/messages` | Post `{author, body}` | 201 `Message` |
+| `POST /api/rooms/:id/messages` | Post `{author, body}` | 201 `Message` (no `Location`: there is no single-message endpoint) |
 | `GET /api/rooms/:id/stream` | SSE stream of new messages | 200 `text/event-stream` |
 
 Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The helpers live in `src/server/http/`.
@@ -141,10 +141,10 @@ Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The he
 
 Schemas live in `src/lib/schemas.ts`, and limits shared with the database and UI live in `src/lib/limits.ts`. Each route parses its input with these schemas before calling the repository.
 
-- **Room id in the path** (`/api/rooms/:id`): a value that fails `roomIdSchema` gets the same **404** as an unknown room, because to the caller both are "no such room".
-- **Cursors** (`before`, `after`): must be UUIDs; a malformed cursor is a **400**, since it can only come from a broken client.
+- **Room id in the path** (`/api/rooms/:id` and `/api/rooms/:id/messages`): a value that fails `roomIdSchema` gets the same **404** as an unknown room, because to the caller both are "no such room". The id's format is checked before the query or body, so a malformed id is a 404 whatever else is wrong. Whether the room exists is checked only after the query or body validates, since that needs the database: invalid input to a well-formed but unknown room is a **400**. `GET .../messages` then looks the room up before listing, because `listMessages` answers `[]` for an unknown room; `POST` maps `RoomNotFoundError` to the 404.
+- **Cursors** (`before`, `after`): must be UUIDs; a malformed cursor is a **400**, since it can only come from a broken client. A well-formed cursor that matches no message in the room (unknown, or from another room) returns **200 `[]`**, as the repository does; checking it would cost a query on every page for a case only a broken client reaches.
 - **New room:** `lat` is a finite number in [-90, 90]. `lng` is any finite number, wrapped into ±180, so a click on a repeated copy of the world creates the room in the right place.
-- **Message:** `author` (1 to 32 characters) and `body` (1 to 1000) are trimmed, and values with nothing visible are rejected: whitespace, control characters, zero-width and filler characters (Unicode `Default_Ignorable_Code_Point`, such as U+200B and U+3164) and U+2800, which `trim()` mostly keeps. Line breaks inside the body are kept. Lengths count code points, as Postgres `char_length` does, so an emoji counts once.
+- **Message:** `author` (1 to 32 characters) and `body` (1 to 1000) are trimmed, and values with nothing visible are rejected: whitespace, control characters, zero-width and filler characters (Unicode `Default_Ignorable_Code_Point`, such as U+200B and U+3164), U+2800, and a few format characters that draw nothing on their own (U+FFF9 to U+FFFB, U+13430 to U+1343F, U+16FE4), which `trim()` mostly keeps. Those format characters are listed by name rather than as all of `\p{Cf}`, which would also reject visible Arabic signs such as U+0600 to U+0605. Line breaks inside the body are kept. Lengths count code points, as Postgres `char_length` does, so an emoji counts once.
 - **Viewport:** `bbox=west,south,east,north` must be four finite numbers with `south <= north`, and `zoom` an integer from 0 to 22. `west > east` is accepted only when both are within ±180 (already-wrapped bounds that cross the antimeridian). Bounds are then normalized (see Viewport loading, step 1), which clamps latitudes to ±90 after the `south <= north` check.
 - **Message paging:** `limit` is an integer from 1 to 100 (anything else is a 400), and `before` and `after` cannot be combined.
 - **Query strings:** routes read only their own keys (`queryInput`). A missing key is absent, an empty value (`?limit=`) is kept as `""` so the schema rejects it, a repeated key uses its first value, and unknown keys are ignored.
