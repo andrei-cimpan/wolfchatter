@@ -88,6 +88,15 @@ export const listMessagesQuerySchema = z
     path: ["after"],
   });
 
+/** A stored message as the API sends it; the client checks live events with it. */
+export const messageSchema = z.object({
+  id: z.string(),
+  roomId: z.string(),
+  author: z.string(),
+  body: z.string(),
+  createdAt: z.string(),
+});
+
 export type CreateRoomInput = z.output<typeof createRoomSchema>;
 export type PostMessageInput = z.output<typeof postMessageSchema>;
 export type MapItemsQuery = z.output<typeof mapItemsQuerySchema>;

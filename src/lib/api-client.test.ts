@@ -122,6 +122,12 @@ describe("listMessages", () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM.id}/messages`, undefined);
   });
 
+  it("asks for the messages after one, up to a limit", async () => {
+    const fetchMock = stubFetch(Response.json([MESSAGE]));
+    await listMessages(ROOM.id, { after: MESSAGE.id, limit: 100 });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM.id}/messages?after=${MESSAGE.id}&limit=100`, undefined);
+  });
+
   it("throws a 404 rather than returning an empty list", async () => {
     stubFetch(errorResponse(404, "room_not_found", "Room not found"));
     await expect(listMessages(ROOM.id)).rejects.toMatchObject({ status: 404 });

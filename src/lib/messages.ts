@@ -16,6 +16,22 @@ export function mergeMessages(existing: readonly Message[], incoming: readonly M
   return [...existing, ...added];
 }
 
+/**
+ * Merges a catch-up page (every message after `cursorId`, in server order) into the list. The page
+ * replaces what the list holds after the cursor, so messages it fills in land in their place rather
+ * than after live ones that arrived first; listed messages missing from the page arrived after it
+ * was read, and stay at the end. Without a cursor in the list, the page is merged as usual.
+ */
+export function mergeCaughtUp(
+  existing: readonly Message[],
+  cursorId: string | undefined,
+  page: readonly Message[],
+): Message[] {
+  const cut = cursorId === undefined ? 0 : existing.findIndex((message) => message.id === cursorId) + 1;
+  if (cursorId !== undefined && cut === 0) return mergeMessages(existing, page);
+  return [...existing.slice(0, cut), ...mergeMessages(page, existing.slice(cut))];
+}
+
 /** Date and time in the reader's locale and time zone; the options exist for tests. */
 export function formatMessageTime(iso: string, options: { locale?: string; timeZone?: string } = {}): string {
   return new Intl.DateTimeFormat(options.locale, {

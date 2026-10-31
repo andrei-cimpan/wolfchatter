@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { useMessages } from "@/hooks/useMessages";
+import { useRoomStream } from "@/hooks/useRoomStream";
 import { formatMessageTime } from "@/lib/messages";
 import type { Message } from "@/lib/types";
 
@@ -54,6 +55,7 @@ function MessageListBody({ query }: { query: MessagesQuery }) {
 /** Scrolls inside the card or sheet, so the form below it stays in view. Mount one per room. */
 export function MessageList({ roomId }: { roomId: string }) {
   const query = useMessages(roomId);
+  useRoomStream(roomId);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const newestId = query.data?.at(-1)?.id;
 
