@@ -18,10 +18,16 @@ async function openMap(page: Page) {
   await expect(page.locator(".leaflet-container")).toBeVisible();
 }
 
-/** Creates a room by clicking the map, posts one message in it, and returns the room's title. */
-async function createRoomWithMessage(page: Page, x: number, y: number, body: string): Promise<string> {
+type CreatedRoom = { id: string; title: string; lat: number; lng: number };
+
+/** Creates a room by clicking the map, posts one message in it, and returns the room. */
+async function createRoomWithMessage(page: Page, x: number, y: number, body: string): Promise<CreatedRoom> {
   const before = page.url();
+  const created = page.waitForResponse(
+    (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/rooms",
+  );
   await page.locator(".leaflet-container").click({ position: { x, y } });
+  const room = (await (await created).json()) as CreatedRoom;
   await expect(page).not.toHaveURL(before);
   await expect(page).toHaveURL(ROOM_URL);
   await expect(messages(page)).toBeAttached();
@@ -29,11 +35,25 @@ async function createRoomWithMessage(page: Page, x: number, y: number, body: str
   await panel(page).getByRole("textbox", { name: "Message" }).fill(body);
   await panel(page).getByRole("button", { name: "Submit" }).click();
   await expect(messages(page)).toContainText(body);
-  return (await roomTitle(page).textContent()) ?? "";
+  return room;
 }
 
-// The ownRoomsOnly fixture keeps the rooms this page created across a reload, so the pins drawn
-// afterwards come from a fresh viewport request whose answer the fixture replaces. The panel's
+/**
+ * Asks the server itself for the room's surroundings, at zoom 16 where nothing is clustered.
+ * page.request skips the page's routes, so the ownRoomsOnly fixture cannot answer for it.
+ */
+async function expectServerListsRoom(page: Page, room: CreatedRoom) {
+  const d = 0.001;
+  const bbox = [room.lng - d, room.lat - d, room.lng + d, room.lat + d].join(",");
+  const response = await page.request.get(`/api/rooms?bbox=${bbox}&zoom=16`);
+  expect(response.ok()).toBe(true);
+  const ids = ((await response.json()) as { id?: string }[]).map((item) => item.id);
+  expect(ids).toContain(room.id);
+}
+
+// The ownRoomsOnly fixture keeps the rooms this page created across a reload and answers the
+// fresh viewport request with them, so the pins drawn afterwards only show that the client asks
+// again and draws the answer; expectServerListsRoom checks the server still has them. The panel's
 // room and messages are the server's own: the reload empties the query cache.
 test.describe("desktop", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
@@ -47,16 +67,18 @@ test.describe("desktop", () => {
 
     await page.reload();
     await expect(page).toHaveURL(secondUrl);
-    await expect(roomTitle(page)).toHaveText(second);
+    await expect(roomTitle(page)).toHaveText(second.title);
     await expect(messages(page).getByRole("listitem")).toHaveText([/ana:[\s\S]*Before the reload, second room/]);
-    await expect(pin(page, first)).toBeVisible();
-    await expect(pin(page, second)).toBeVisible();
+    await expect(pin(page, first.title)).toBeVisible();
+    await expect(pin(page, second.title)).toBeVisible();
+    await expectServerListsRoom(page, first);
+    await expectServerListsRoom(page, second);
     // Kept only in memory until T5.1 saves it.
     await expect(usernameField(page)).toHaveValue("");
 
-    await pin(page, first).click();
+    await pin(page, first.title).click();
     await expect(page).toHaveURL(firstUrl);
-    await expect(roomTitle(page)).toHaveText(first);
+    await expect(roomTitle(page)).toHaveText(first.title);
     await expect(messages(page).getByRole("listitem")).toHaveText([/Before the reload, first room/]);
   });
 
@@ -68,7 +90,7 @@ test.describe("desktop", () => {
     await page.reload();
     await expect(messages(page)).toContainText("Two");
     await page.goBack();
-    await expect(roomTitle(page)).toHaveText(first);
+    await expect(roomTitle(page)).toHaveText(first.title);
     await expect(messages(page)).toContainText("One");
   });
 });
@@ -78,10 +100,10 @@ test.describe("narrow screen", () => {
 
   test("reloading keeps the sheet raised on the selected room", async ({ page }) => {
     await openMap(page);
-    const title = await createRoomWithMessage(page, 180, 250, "From my phone");
+    const room = await createRoomWithMessage(page, 180, 250, "From my phone");
 
     await page.reload();
-    await expect(roomTitle(page)).toHaveText(title);
+    await expect(roomTitle(page)).toHaveText(room.title);
     await expect(messages(page)).toContainText("From my phone");
     await expect(page.getByRole("button", { name: "Close chat" })).toBeVisible();
     const sheet = await panel(page).boundingBox();
