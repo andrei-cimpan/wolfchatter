@@ -7,5 +7,6 @@ export const BODY_MAX = 1000;
 export const MESSAGE_LIMIT_DEFAULT = 50;
 export const MESSAGE_LIMIT_MAX = 100;
 
-// Highest zoom OpenStreetMap tiles are served at.
+// Upper bound accepted by the API, matching Leaflet's practical maximum. The standard
+// OpenStreetMap tile server stops at 19, so the map's own maxZoom will be lower.
 export const MAX_ZOOM = 22;
