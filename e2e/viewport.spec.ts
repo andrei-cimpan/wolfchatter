@@ -149,6 +149,23 @@ test("a small pan reuses the loaded pins instead of asking again", async ({ page
   expect(requests).toHaveLength(1);
 });
 
+test("quick successive zooms make one request, once the map settles", async ({ page }) => {
+  const requests = countViewportRequests(page);
+  await openMap(page);
+  await expect.poll(() => requests.length).toBe(1);
+
+  // Each wheel notch zooms one level and ends with a moveend, all within the 250 ms debounce.
+  await page.mouse.move(640, 360);
+  for (let i = 0; i < 3; i++) {
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(800);
+  const finalZoom = (await tileZooms(page)).at(-1);
+  expect(Number(finalZoom)).toBeGreaterThan(6);
+  expect(requests.map((r) => r.get("zoom"))).toEqual(["5", finalZoom]);
+});
+
 test("a zoom loads the new viewport once the map settles", async ({ page }) => {
   const requests = countViewportRequests(page);
   await openMap(page);
