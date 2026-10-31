@@ -35,9 +35,18 @@ export function parseMessageNotification(payload: string): Message | null {
   };
 }
 
-export type RetryOptions = { minRetryMs: number; maxRetryMs: number };
+export type MessageSourceOptions = {
+  minRetryMs: number;
+  maxRetryMs: number;
+  /** Names the session in pg_stat_activity, so the listener can be told apart from pool clients. */
+  applicationName: string;
+};
 
-const DEFAULT_RETRY: RetryOptions = { minRetryMs: 1_000, maxRetryMs: 30_000 };
+const DEFAULTS: MessageSourceOptions = {
+  minRetryMs: 1_000,
+  maxRetryMs: 30_000,
+  applicationName: "wolfchatter-realtime",
+};
 
 // Holds its own client rather than borrowing from the pool: a pool may close or reuse an idle
 // client, and LISTEN lives and dies with its session.
@@ -47,12 +56,12 @@ export class PostgresMessageSource implements MessageSource {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryMs: number;
   private readonly connectionString: string;
-  private readonly retry: RetryOptions;
+  private readonly options: MessageSourceOptions;
 
-  constructor(connectionString: string, retry: RetryOptions = DEFAULT_RETRY) {
+  constructor(connectionString: string, options: Partial<MessageSourceOptions> = {}) {
     this.connectionString = connectionString;
-    this.retry = retry;
-    this.retryMs = retry.minRetryMs;
+    this.options = { ...DEFAULTS, ...options };
+    this.retryMs = this.options.minRetryMs;
   }
 
   async start(handlers: MessageSourceHandlers): Promise<void> {
@@ -76,7 +85,10 @@ export class PostgresMessageSource implements MessageSource {
   }
 
   private async connect(): Promise<pg.Client> {
-    const client = new pg.Client({ connectionString: this.connectionString });
+    const client = new pg.Client({
+      connectionString: this.connectionString,
+      application_name: this.options.applicationName,
+    });
     // Unhandled, a dropped connection's 'error' event kills the process.
     client.on("error", (error) => {
       console.error("Postgres message source: connection error", error);
@@ -123,11 +135,11 @@ export class PostgresMessageSource implements MessageSource {
           return;
         }
         this.client = client;
-        this.retryMs = this.retry.minRetryMs;
+        this.retryMs = this.options.minRetryMs;
         this.handlers.onReconnect();
       } catch (error) {
         console.error("Postgres message source: reconnect failed", error);
-        this.retryMs = Math.min(this.retryMs * 2, this.retry.maxRetryMs);
+        this.retryMs = Math.min(this.retryMs * 2, this.options.maxRetryMs);
         if (this.handlers) this.scheduleReconnect();
       }
     }, this.retryMs);

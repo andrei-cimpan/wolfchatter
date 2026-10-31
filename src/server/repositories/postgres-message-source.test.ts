@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/lib/types";
 import { PostgresChatRepository } from "./postgres-chat-repository";
 import { PostgresMessageSource, parseMessageNotification } from "./postgres-message-source";
@@ -7,9 +8,15 @@ import { setupTestDatabase } from "./test/test-db";
 const db = setupTestDatabase();
 const repo = () => new PostgresChatRepository(db());
 
-const FAST_RETRY = { minRetryMs: 10, maxRetryMs: 40 };
+// Each test names its listener, so test runs sharing the database never see or kill each other's.
+let applicationName = "";
+const options = () => ({ minRetryMs: 10, maxRetryMs: 40, applicationName });
 
 let source: PostgresMessageSource | undefined;
+
+beforeEach(() => {
+  applicationName = `wolfchatter-test-${randomUUID()}`;
+});
 
 afterEach(async () => {
   await source?.stop();
@@ -19,14 +26,15 @@ afterEach(async () => {
 async function startSource() {
   const received: Message[] = [];
   const onReconnect = vi.fn();
-  source = new PostgresMessageSource(process.env.DATABASE_URL!, FAST_RETRY);
+  source = new PostgresMessageSource(process.env.DATABASE_URL!, options());
   await source.start({ onMessage: (m) => received.push(m), onReconnect });
   return { received, onReconnect };
 }
 
 async function listenerPids(): Promise<number[]> {
   const { rows } = await db().query<{ pid: number }>(
-    "select pid from pg_stat_activity where datname = current_database() and query = 'listen messages'",
+    "select pid from pg_stat_activity where application_name = $1",
+    [applicationName],
   );
   return rows.map((r) => r.pid);
 }
@@ -99,7 +107,7 @@ describe("PostgresMessageSource", () => {
   });
 
   it("rejects start when the database is unreachable, and can start again", async () => {
-    const unreachable = new PostgresMessageSource("postgres://nobody@127.0.0.1:1/none", FAST_RETRY);
+    const unreachable = new PostgresMessageSource("postgres://nobody@127.0.0.1:1/none", options());
     await expect(unreachable.start({ onMessage: () => {}, onReconnect: () => {} })).rejects.toThrow();
 
     await startSource();
