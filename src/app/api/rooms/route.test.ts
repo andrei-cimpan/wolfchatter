@@ -56,6 +56,11 @@ describe("POST /api/rooms", () => {
     expect(await expectError(await postRoom(JSON.stringify(body)), 400, "validation_error")).toMatch(message);
   });
 
+  it("rejects an oversized body with 413", async () => {
+    const body = JSON.stringify({ lat: 0, lng: 0, pad: "x".repeat(20_000) });
+    await expectError(await postRoom(body), 413, "payload_too_large");
+  });
+
   it.each(["", "{lat: 1}", "lat=1&lng=2"])("rejects the non-JSON body %j with 400", async (body) => {
     await expectError(await postRoom(body), 400, "invalid_json");
   });
