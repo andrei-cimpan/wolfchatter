@@ -5,9 +5,6 @@ import { SSE_HEADERS } from "@/server/http/sse";
 import { getRealtimeHub } from "@/server/realtime";
 import { getChatRepository } from "@/server/repositories";
 
-// A stream is never cached or prerendered.
-export const dynamic = "force-dynamic";
-
 type Context = RouteContext<"/api/rooms/[id]/stream">;
 
 /** Server-Sent Events: `ready` once subscribed, then a `message` event per new message in the room. */
