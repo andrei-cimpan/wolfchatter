@@ -23,6 +23,8 @@ export function MessageItems({ messages }: { messages: readonly Message[] }) {
   );
 }
 
+// Only messages go in the log, which screen readers announce as it grows: status text there would
+// be read out, and so would a whole history arriving in a log already on screen.
 function MessageListBody({ roomId }: { roomId: string }) {
   const { data: messages, isPending, isError, refetch } = useMessages(roomId);
   if (isPending) return <p role="status" className="text-sm text-foreground/60">Loading messages…</p>;
@@ -36,14 +38,20 @@ function MessageListBody({ roomId }: { roomId: string }) {
       </p>
     );
   }
-  if (messages.length === 0) return <p className="text-center text-sm text-foreground/60">No messages yet</p>;
-  return <MessageItems messages={messages} />;
+  return (
+    <>
+      {messages.length === 0 && <p className="text-center text-sm text-foreground/60">No messages yet</p>}
+      <div role="log" aria-label="Messages">
+        <MessageItems messages={messages} />
+      </div>
+    </>
+  );
 }
 
-/** Scrolls inside the card or sheet, so the form below it stays in view. */
+/** Scrolls inside the card or sheet, so the form below it stays in view. Mount one per room. */
 export function MessageList({ roomId }: { roomId: string }) {
   return (
-    <div role="log" aria-label="Messages" className="mt-4 flex-auto overflow-y-auto">
+    <div className="mt-4 flex-auto overflow-y-auto">
       <MessageListBody roomId={roomId} />
     </div>
   );

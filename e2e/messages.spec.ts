@@ -10,6 +10,9 @@ const messages = (page: Page) => panel(page).getByRole("log", { name: "Messages"
 const usernameField = (page: Page) => panel(page).getByRole("textbox", { name: "Username" });
 const messageField = (page: Page) => panel(page).getByRole("textbox", { name: "Message" });
 const submit = (page: Page) => panel(page).getByRole("button", { name: "Submit" });
+// The list scrolls in the log's parent, which also holds the loading and empty states.
+const scroller = (page: Page) => messages(page).locator("..");
+const noMessages = (page: Page) => panel(page).getByText("No messages yet");
 const isMessagePost = (url: URL, method: string) => method === "POST" && url.pathname.endsWith("/messages");
 
 async function newRoom(request: APIRequestContext): Promise<string> {
@@ -19,7 +22,7 @@ async function newRoom(request: APIRequestContext): Promise<string> {
 
 async function openRoom(page: Page, id: string) {
   await page.goto(`/?room=${id}`);
-  await expect(messages(page)).toBeVisible();
+  await expect(messages(page)).toBeAttached();
 }
 
 async function post(page: Page, author: string, body: string) {
@@ -33,7 +36,7 @@ test.describe("desktop", () => {
 
   test("a posted message appears with author, body and time; the username is kept", async ({ page }) => {
     await openRoom(page, await newRoom(page.request));
-    await expect(messages(page)).toHaveText("No messages yet");
+    await expect(noMessages(page)).toBeVisible();
 
     await post(page, "ana", "Hello from the map");
     const item = messages(page).getByRole("listitem");
@@ -89,7 +92,7 @@ test.describe("desktop", () => {
       "You're sending messages too quickly. Try again in 20 seconds.",
     );
     await expect(messageField(page)).toHaveValue("Too fast");
-    await expect(messages(page)).toHaveText("No messages yet");
+    await expect(noMessages(page)).toBeVisible();
   });
 
   test("the username carries over to another room; each room shows its own messages", async ({ page }) => {
@@ -101,11 +104,31 @@ test.describe("desktop", () => {
 
     // pushState, as a pin click does, so the panel stays mounted rather than reloading the page.
     await page.evaluate((id) => window.history.pushState(null, "", `/?room=${id}`), second);
-    await expect(messages(page)).toHaveText("No messages yet");
+    await expect(noMessages(page)).toBeVisible();
     await expect(usernameField(page)).toHaveValue("ana");
 
     await page.goBack();
     await expect(messages(page)).toContainText("Only in the first room");
+  });
+
+  test("the announced log holds only messages, and each room gets a fresh one", async ({ page }) => {
+    const first = await newRoom(page.request);
+    const second = await newRoom(page.request);
+    await page.request.post(`/api/rooms/${second}/messages`, { data: { author: "bo", body: "Old news" } });
+    await openRoom(page, first);
+    // Screen readers announce what is added to a log, so status text there would be read out.
+    await expect(noMessages(page)).toBeVisible();
+    await expect(messages(page)).toHaveText("");
+
+    await page.evaluate((id) => window.history.pushState(null, "", `/?room=${id}`), second);
+    await expect(messages(page)).toContainText("Old news");
+
+    // A room's history arriving in a log that is already on screen would be read out in full.
+    // Going back to a cached room swaps the content without a loading state in between.
+    await messages(page).evaluate((log) => log.setAttribute("data-second-room", ""));
+    await page.goBack();
+    await expect(noMessages(page)).toBeVisible();
+    await expect(messages(page)).not.toHaveAttribute("data-second-room");
   });
 
   test("a long conversation scrolls inside the card and the form stays in view", async ({ page }) => {
@@ -120,7 +143,7 @@ test.describe("desktop", () => {
     expect(card.y + card.height).toBe(720 - 16);
     const button = await submit(page).boundingBox();
     expect((button?.y ?? 0) + (button?.height ?? 0)).toBeLessThanOrEqual(card.y + card.height);
-    expect(await messages(page).evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    expect(await scroller(page).evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   });
 });
 
@@ -143,6 +166,6 @@ test.describe("narrow screen", () => {
       expect(b?.height).toBeGreaterThanOrEqual(44);
       expect((b?.y ?? 0) + (b?.height ?? 0)).toBeLessThanOrEqual(667);
     }
-    expect(await messages(page).evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    expect(await scroller(page).evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   });
 });

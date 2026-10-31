@@ -69,8 +69,7 @@ function RoomContent({ roomId, author, onAuthorChange }: RoomContentProps) {
     <>
       <h2 className="text-center font-medium">{room.title}</h2>
       <MessageList roomId={room.id} />
-      {/* Keyed so a half-written message stays with its room instead of following the user. */}
-      <MessageForm key={room.id} roomId={room.id} author={author} onAuthorChange={onAuthorChange} />
+      <MessageForm roomId={room.id} author={author} onAuthorChange={onAuthorChange} />
     </>
   );
 }
@@ -99,7 +98,11 @@ export function RoomPanel({ creating, creationError, creationErrorSelection }: R
           {createRoomErrorMessage(visibleError)}
         </p>
       )}
-      {roomId === null ? <p>{EMPTY_STATE}</p> : <RoomContent roomId={roomId} author={author} onAuthorChange={setAuthor} />}
+      {roomId === null ? <p>{EMPTY_STATE}</p> : (
+        // Keyed so each room mounts its own message log, which then does not read out the history
+        // it opens with, and its own form, so a half-written message stays with its room.
+        <RoomContent key={roomId} roomId={roomId} author={author} onAuthorChange={setAuthor} />
+      )}
     </PanelFrame>
   );
 }
