@@ -85,7 +85,16 @@ export default function LeafletMap({ createdRooms, onMapClick, onRoomClick }: Le
           icon={pinIcon}
           title={room.title}
           alt={room.title}
-          eventHandlers={{ click: () => onRoomClick(room.id) }}
+          eventHandlers={{
+            click: () => onRoomClick(room.id),
+            // Leaflet makes pins focusable buttons but only handles Enter when a popup is bound.
+            keydown: (event) => {
+              const { key } = event.originalEvent;
+              if (key !== "Enter" && key !== " ") return;
+              event.originalEvent.preventDefault();
+              onRoomClick(room.id);
+            },
+          }}
         />
       ))}
     </MapContainer>

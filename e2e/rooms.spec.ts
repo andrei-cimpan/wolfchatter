@@ -131,6 +131,20 @@ test.describe("desktop", () => {
     expect(posts).toHaveLength(3);
   });
 
+  test("a focused pin opens its room with Enter or Space", async ({ page }) => {
+    await openMap(page);
+    const first = await createRoomAt(page, 400, 300);
+    const second = await createRoomAt(page, 600, 450);
+
+    await pin(page, first).focus();
+    await page.keyboard.press("Enter");
+    await expect(roomTitle(page)).toHaveText(first);
+
+    await pin(page, second).focus();
+    await page.keyboard.press("Space");
+    await expect(roomTitle(page)).toHaveText(second);
+  });
+
   test("clicking the selected pin again adds no history entry", async ({ page }) => {
     await openMap(page);
     const title = await createRoomAt(page, 400, 300);
