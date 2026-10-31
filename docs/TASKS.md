@@ -4,7 +4,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 ## 0. Foundation
 
-- [ ] **T0.1** Create the repo, scaffold Next.js (TypeScript, Tailwind, ESLint), commit `CLAUDE.md` and `docs/`.
+- [x] **T0.1** Create the repo, scaffold Next.js (TypeScript, Tailwind, ESLint), commit `CLAUDE.md` and `docs/`.
   *Check:* `npm run dev` shows the default page.
 - [ ] **T0.2** Add Docker Compose with Postgres, `.env.example`, and a migration runner (`npm run db:migrate`).
   *Check:* `docker compose up -d db && npm run db:migrate` succeeds on a clean machine.
