@@ -88,13 +88,13 @@ describe("postMessageSchema", () => {
 
   // trim() keeps these, and a message made only of them renders as a blank bubble.
   it.each([
-    ["zero-width spaces", "​​"],
+    ["zero-width spaces", "\u200B\u200B"],
     ["a next-line control", "\u0085"],
-    ["a zero-width joiner and BOM", "‍﻿"],
-    ["a word joiner and soft hyphen", "⁠­"],
-    ["Hangul fillers", "ㅤᅟﾠ"],
-    ["a braille blank", "⠀"],
-    ["a mix with ordinary spaces", " ​ \u0085 "],
+    ["a zero-width joiner and BOM", "\u200D\uFEFF"],
+    ["a word joiner and soft hyphen", "\u2060\u00AD"],
+    ["Hangul fillers", "\u3164\u115F\uFFA0"],
+    ["a braille blank", "\u2800"],
+    ["a mix with ordinary spaces", " \u200B \u0085 "],
   ])("rejects text made only of invisible characters: %s", (_label, text) => {
     for (const input of [{ author: text, body: "hi" }, { author: "ana", body: text }]) {
       const result = postMessageSchema.safeParse(input);
@@ -104,8 +104,8 @@ describe("postMessageSchema", () => {
   });
 
   it.each([
-    ["an emoji built with a joiner", "👩‍💻"],
-    ["a word next to a zero-width space", "​hi"],
+    ["an emoji built with a joiner", "👩\u200D💻"],
+    ["a word next to a zero-width space", "\u200Bhi"],
   ])("accepts visible text that contains invisible characters: %s", (_label, text) => {
     expect(postMessageSchema.safeParse({ author: text, body: text }).success).toBe(true);
   });
