@@ -26,6 +26,8 @@ export class InMemoryRealtimeHub implements RealtimeHub {
   private readonly rooms = new Map<string, Set<Subscriber>>();
   private started: Promise<void> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  // Bumped by stop(), so a subscribe that was waiting for the source cannot join afterwards.
+  private generation = 0;
   private readonly source: MessageSource;
   private readonly heartbeatMs: number;
 
@@ -35,7 +37,9 @@ export class InMemoryRealtimeHub implements RealtimeHub {
   }
 
   async subscribe(roomId: string, subscriber: Subscriber): Promise<() => void> {
+    const generation = this.generation;
     await this.start();
+    if (generation !== this.generation) throw new Error("The realtime hub was stopped.");
     let subscribers = this.rooms.get(roomId);
     if (!subscribers) {
       subscribers = new Set();
@@ -48,6 +52,7 @@ export class InMemoryRealtimeHub implements RealtimeHub {
 
   /** Closes every subscriber and stops the source. For shutdown and tests. */
   async stop(): Promise<void> {
+    this.generation++;
     this.closeAll();
     const started = this.started;
     this.started = null;

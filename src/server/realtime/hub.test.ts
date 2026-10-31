@@ -10,6 +10,8 @@ class FakeSource implements MessageSource {
   private pending: { resolve: () => void; reject: (error: Error) => void } | null = null;
 
   start(handlers: MessageSourceHandlers): Promise<void> {
+    // Like PostgresMessageSource, which holds one set of handlers at a time.
+    if (this.handlers) throw new Error("already started");
     this.starts++;
     this.handlers = handlers;
     return new Promise((resolve, reject) => (this.pending = { resolve, reject }));
@@ -17,6 +19,7 @@ class FakeSource implements MessageSource {
 
   async stop(): Promise<void> {
     this.stops++;
+    this.handlers = null;
   }
 
   ready(): void {
@@ -24,6 +27,7 @@ class FakeSource implements MessageSource {
   }
 
   fail(): void {
+    this.handlers = null;
     this.pending?.reject(new Error("database down"));
   }
 
@@ -205,5 +209,19 @@ describe("InMemoryRealtimeHub", () => {
 
     expect(s.close).toHaveBeenCalledOnce();
     expect(source.stops).toBe(1);
+  });
+
+  it("rejects a subscribe still waiting for the source when the hub stops (review #3)", async () => {
+    vi.useFakeTimers();
+    const s = subscriber();
+    const subscribed = hub.subscribe("a", s);
+
+    const stopped = hub.stop();
+    source.ready();
+    await stopped;
+
+    await expect(subscribed).rejects.toThrow("stopped");
+    expect(vi.getTimerCount()).toBe(0);
+    expect(s.heartbeat).not.toHaveBeenCalled();
   });
 });
