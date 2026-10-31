@@ -12,9 +12,11 @@ export const metadata: Metadata = {
   description: "Click the map to drop a pin and chat with anyone at that place.",
 };
 
+// `cover` lets the map run under notches; the mobile sheet pads itself by the safe-area inset.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

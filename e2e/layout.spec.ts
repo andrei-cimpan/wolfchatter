@@ -111,6 +111,16 @@ test.describe("narrow screen", () => {
     await expectNoPageScroll(page);
   });
 
+  // Without viewport-fit=cover, env(safe-area-inset-bottom) is always 0 and the sheet's
+  // padding cannot clear the home indicator on notched phones.
+  test("viewport extends under the safe areas", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
+      "content",
+      /viewport-fit=cover/,
+    );
+  });
+
   test("zoom buttons are at least 44 px touch targets", async ({ page }) => {
     await page.goto("/");
     for (const name of ["Zoom in", "Zoom out"]) {
