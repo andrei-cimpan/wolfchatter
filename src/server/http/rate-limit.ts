@@ -1,5 +1,5 @@
 import { rateLimited } from "./api-errors";
-import { clientIp } from "./client-ip";
+import { clientIp, rateLimitKey } from "./client-ip";
 
 export type RateLimitResult = { allowed: true } | { allowed: false; retryAfterSeconds: number };
 
@@ -12,6 +12,9 @@ export interface RateLimiter {
 
 type Window = { start: number; count: number };
 
+// About 1 MB per limiter, and far more distinct IPs than one instance sees in a minute.
+const DEFAULT_MAX_KEYS = 10_000;
+
 /**
  * Fixed-window counter per key, held in this process's memory. Each app instance counts on its
  * own, so N instances allow N times the limit; production adds a per-IP rule at the WAF.
@@ -19,9 +22,13 @@ type Window = { start: number; count: number };
 export function createRateLimiter(options: {
   limit: number;
   windowMs: number;
+  /** Most keys held at once; past it the oldest window is dropped. */
+  maxKeys?: number;
   now?: () => number;
 }): RateLimiter {
-  const { limit, windowMs, now = Date.now } = options;
+  const { limit, windowMs, maxKeys = DEFAULT_MAX_KEYS, now = Date.now } = options;
+  // Insertion order is window start order (a restarted window is re-inserted), so the first entry
+  // is always the oldest window and eviction is O(1).
   const windows = new Map<string, Window>();
   let nextSweep = 0;
 
@@ -41,6 +48,14 @@ export function createRateLimiter(options: {
       sweep(time);
       const window = windows.get(key);
       if (!window || time - window.start >= windowMs) {
+        windows.delete(key);
+        // Many source addresses inside one window (a botnet, or an IPv6 range) would otherwise
+        // grow the map without bound. Dropping the oldest window frees its key early, which only
+        // matters to a client that is already spreading itself across thousands of addresses.
+        if (windows.size >= maxKeys) {
+          const oldest = windows.keys().next();
+          if (!oldest.done) windows.delete(oldest.value);
+        }
         windows.set(key, { start: time, count: 1 });
         return { allowed: true };
       }
@@ -69,6 +84,6 @@ export const messagePostLimiter = createRateLimiter({ limit: 30, windowMs: MINUT
 
 /** Counts the request against its IP, and returns the 429 to send once the budget is spent. */
 export function enforceRateLimit(limiter: RateLimiter, request: Request): Response | null {
-  const result = limiter.check(clientIp(request));
+  const result = limiter.check(rateLimitKey(clientIp(request)));
   return result.allowed ? null : rateLimited(result.retryAfterSeconds);
 }

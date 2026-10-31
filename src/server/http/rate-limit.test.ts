@@ -75,6 +75,42 @@ describe("createRateLimiter", () => {
     expect(limiter.check("b").allowed).toBe(false);
   });
 
+  it("never tracks more than maxKeys within one window", () => {
+    const limiter = createRateLimiter({ limit: 1, windowMs: 60_000, maxKeys: 100, now: () => 0 });
+    for (let i = 0; i < 1000; i++) limiter.check(`k${i}`);
+    expect(limiter.size()).toBe(100);
+  });
+
+  it("evicts the oldest window first when full", () => {
+    let time = 0;
+    const limiter = createRateLimiter({ limit: 1, windowMs: 60_000, maxKeys: 2, now: () => time });
+    limiter.check("a");
+    time = 1;
+    limiter.check("b");
+    time = 2;
+    limiter.check("c");
+    // "a" was evicted, so it starts over; "c" keeps its spent budget.
+    expect(limiter.check("c").allowed).toBe(false);
+    expect(limiter.check("a").allowed).toBe(true);
+  });
+
+  it("moves a key to the back of the eviction order when its window restarts", () => {
+    let time = 0;
+    const limiter = createRateLimiter({ limit: 1, windowMs: 10, maxKeys: 3, now: () => time });
+    limiter.check("z"); // the first check schedules the next sweep for t=10
+    time = 2;
+    limiter.check("a");
+    time = 10;
+    limiter.check("b"); // the sweep drops "z"; "a" is still mid-window
+    time = 12;
+    limiter.check("a"); // "a" restarts between sweeps, with room to spare, so it is now newer than "b"
+    time = 13;
+    limiter.check("c");
+    limiter.check("d"); // full: must evict "b", the oldest window, not "a"
+    expect(limiter.check("a").allowed).toBe(false);
+    expect(limiter.check("b").allowed).toBe(true);
+  });
+
   it("clears every budget on reset", () => {
     const { limiter } = setup(1);
     limiter.check("a");

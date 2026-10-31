@@ -107,6 +107,12 @@ describe("POST /api/rooms", () => {
       expect((await send("203.0.113.8")).status).toBe(201);
     });
 
+    it("shares one budget across an IPv6 /64", async () => {
+      for (let i = 0; i < LIMIT; i++) await send(`2001:db8:1:2::${i + 1}`);
+      await expectError(await send("2001:db8:1:2:dead:beef:0:1"), 429, "rate_limited");
+      expect((await send("2001:db8:1:3::1")).status).toBe(201);
+    });
+
     it("counts invalid requests against the budget", async () => {
       for (let i = 0; i < LIMIT; i++) await postRoom("not json", { "x-forwarded-for": "203.0.113.7" });
       await expectError(await send("203.0.113.7"), 429, "rate_limited");
