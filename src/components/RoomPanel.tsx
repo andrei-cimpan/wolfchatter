@@ -1,10 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { createRoomErrorMessage } from "@/hooks/useCreateRoom";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import { MessageForm } from "./MessageForm";
+import { MessageList } from "./MessageList";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 
@@ -51,7 +53,13 @@ function SheetHeader() {
   );
 }
 
-function RoomContent({ roomId }: { roomId: string }) {
+interface RoomContentProps {
+  roomId: string;
+  author: string;
+  onAuthorChange: (author: string) => void;
+}
+
+function RoomContent({ roomId, author, onAuthorChange }: RoomContentProps) {
   const { data: room, isPending, isError } = useRoom(roomId);
   const hydrated = useHydrated();
   if (isPending || !hydrated) return <p role="status">Loading chatroom…</p>;
@@ -60,7 +68,9 @@ function RoomContent({ roomId }: { roomId: string }) {
   return (
     <>
       <h2 className="text-center font-medium">{room.title}</h2>
-      <p className="mt-6 text-center text-sm text-foreground/60">No messages yet</p>
+      <MessageList roomId={room.id} />
+      {/* Keyed so a half-written message stays with its room instead of following the user. */}
+      <MessageForm key={room.id} roomId={room.id} author={author} onAuthorChange={onAuthorChange} />
     </>
   );
 }
@@ -75,6 +85,7 @@ interface RoomPanelProps {
 export function RoomPanel({ creating, creationError, creationErrorSelection }: RoomPanelProps) {
   const roomId = useSelectedRoomId();
   const visibleError = creationErrorSelection === roomId ? creationError : null;
+  const [author, setAuthor] = useState("");
   return (
     <PanelFrame raised={roomId !== null}>
       {roomId !== null && <SheetHeader />}
@@ -88,7 +99,7 @@ export function RoomPanel({ creating, creationError, creationErrorSelection }: R
           {createRoomErrorMessage(visibleError)}
         </p>
       )}
-      {roomId === null ? <p>{EMPTY_STATE}</p> : <RoomContent roomId={roomId} />}
+      {roomId === null ? <p>{EMPTY_STATE}</p> : <RoomContent roomId={roomId} author={author} onAuthorChange={setAuthor} />}
     </PanelFrame>
   );
 }
