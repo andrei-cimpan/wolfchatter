@@ -26,6 +26,10 @@ class FakeSource implements MessageSource {
     this.pending?.resolve();
   }
 
+  pendingStart() {
+    return this.pending;
+  }
+
   fail(): void {
     this.handlers = null;
     this.pending?.reject(new Error("database down"));
@@ -223,5 +227,26 @@ describe("InMemoryRealtimeHub", () => {
     await expect(subscribed).rejects.toThrow("stopped");
     expect(vi.getTimerCount()).toBe(0);
     expect(s.heartbeat).not.toHaveBeenCalled();
+  });
+
+  it("subscribes again right after stop while the first start is still pending (review #4)", async () => {
+    const first = hub.subscribe("a", subscriber());
+    const firstStart = source.pendingStart()!;
+
+    const stopped = hub.stop();
+    const s = subscriber();
+    const second = hub.subscribe("a", s);
+    await stopped;
+    // A stopped source settles its old start later, as PostgresMessageSource does once it connects.
+    firstStart.reject(new Error("stopped while starting"));
+    source.ready();
+
+    await expect(first).rejects.toThrow("stopped");
+    await expect(second).resolves.toBeTypeOf("function");
+    source.emit(message("a"));
+    expect(s.sent).toEqual([message("a")]);
+    // The old start's failure must not discard the new one.
+    await hub.subscribe("b", subscriber());
+    expect(source.starts).toBe(2);
   });
 });

@@ -11,5 +11,6 @@ export type MessageSourceHandlers = {
 export interface MessageSource {
   /** Resolves once messages are being received. Rejects if the first connection fails. */
   start(handlers: MessageSourceHandlers): Promise<void>;
+  /** May be called while start is pending; that start then rejects. start may be called again at once. */
   stop(): Promise<void>;
 }

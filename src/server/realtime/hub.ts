@@ -54,19 +54,26 @@ export class InMemoryRealtimeHub implements RealtimeHub {
   async stop(): Promise<void> {
     this.generation++;
     this.closeAll();
-    const started = this.started;
+    const wasStarted = this.started !== null;
     this.started = null;
-    if (started) await started.then(() => this.source.stop(), () => {});
+    // Not waiting for a pending start: MessageSource.stop may be called during one, and waiting
+    // would make a subscribe right after stop() collide with the old start.
+    if (wasStarted) await this.source.stop();
   }
 
   private start(): Promise<void> {
-    this.started ??= this.source
-      .start({ onMessage: (message) => this.deliver(message), onReconnect: () => this.closeAll() })
-      .catch((error: unknown) => {
-        // Lets the next subscriber try again instead of inheriting the failure.
-        this.started = null;
-        throw error;
+    if (!this.started) {
+      const started = this.source.start({
+        onMessage: (message) => this.deliver(message),
+        onReconnect: () => this.closeAll(),
       });
+      this.started = started;
+      // Lets the next subscriber try again instead of inheriting the failure. A start from before
+      // stop() may fail after a newer one began; that must not discard the newer one.
+      started.catch(() => {
+        if (this.started === started) this.started = null;
+      });
+    }
     return this.started;
   }
 
