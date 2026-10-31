@@ -5,8 +5,9 @@ export type RateLimitResult = { allowed: true } | { allowed: false; retryAfterSe
 
 export interface RateLimiter {
   check(key: string): RateLimitResult;
+  /** Test hook: clears every budget, since the route limiters are shared module state. */
   reset(): void;
-  /** Keys currently tracked; shows that expired ones are dropped. */
+  /** Test hook: keys currently tracked, to prove expired keys are swept and the cap holds. */
   size(): number;
 }
 
