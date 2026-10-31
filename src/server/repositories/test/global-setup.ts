@@ -1,7 +1,9 @@
 import pg from "pg";
 import { migrate } from "../../../../scripts/migrate.mts";
 
-const DUPLICATE_DATABASE = "42P04";
+// Losing a CREATE DATABASE race reports 42P04 or, when both commits overlap, a 23505 unique
+// violation on pg_database's name index. Either way the database now exists.
+const DATABASE_ALREADY_EXISTS = new Set(["42P04", "23505"]);
 
 // Tests truncate tables, so they must never point at a database someone cares about.
 export function testDatabaseName(testUrl: string | undefined, devUrl: string | undefined): string {
@@ -26,7 +28,7 @@ async function createDatabaseIfMissing(testUrl: string, name: string): Promise<v
   } catch (error) {
     // Another test run created it between the check and the create.
     const code = error instanceof Error && "code" in error ? error.code : undefined;
-    if (code !== DUPLICATE_DATABASE) throw error;
+    if (typeof code !== "string" || !DATABASE_ALREADY_EXISTS.has(code)) throw error;
   } finally {
     await admin.end();
   }
