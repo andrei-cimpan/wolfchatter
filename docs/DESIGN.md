@@ -132,7 +132,7 @@ Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The he
 |---|---|---|
 | 400 | `validation_error` | A query or body fails its schema. `message` is the first issue, prefixed with its field, such as `bbox: south must not exceed north`. |
 | 400 | `invalid_json` | A POST body labelled JSON that does not parse. |
-| 413 | `payload_too_large` | A POST body over 16 KB (`JSON_BODY_MAX_BYTES`). Checked against `Content-Length` and while reading, so an unlabelled stream is cut off too. |
+| 413 | `payload_too_large` | A POST body over 16 KB (`JSON_BODY_MAX_BYTES`). Checked against `Content-Length` and while reading, so a streamed body without `Content-Length` is cut off too. |
 | 415 | `unsupported_media_type` | A POST whose `Content-Type` is not `application/json` (parameters such as `; charset=utf-8` are fine, case is ignored; `+json` types are rejected). Checked before the body is read. |
 | 404 | `room_not_found` | Unknown or malformed room id. |
 | 429 | `rate_limited` | Too many POSTs from one IP (see Rate limiting). Sent with `Retry-After` in seconds. |
