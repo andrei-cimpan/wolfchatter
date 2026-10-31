@@ -1,3 +1,4 @@
+import { wrapLongitude } from "@/lib/bbox";
 import type { Bbox } from "@/lib/types";
 
 export const MAP_ITEMS_LIMIT = 500;
@@ -11,4 +12,10 @@ export function longitudeRanges({ west, east }: Pick<Bbox, "west" | "east">): [L
     { from: west, to: 180 },
     { from: -180, to: east },
   ];
+}
+
+/** The middle of a wrapped viewport, where west > east means it crosses the antimeridian. */
+export function viewportCenter({ west, south, east, north }: Bbox): { lat: number; lng: number } {
+  const unwrappedEast = west <= east ? east : east + 360;
+  return { lat: (south + north) / 2, lng: wrapLongitude((west + unwrappedEast) / 2) };
 }

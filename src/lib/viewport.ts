@@ -4,8 +4,10 @@ import type { Bbox } from "./types";
 /** What the map asks `GET /api/rooms` for. */
 export type ViewportQuery = { bbox: Bbox; zoom: number };
 
-// Each side gains a fifth of the view's span, so a small pan stays inside what was loaded.
-const PADDING = 0.2;
+// Each side gains a tenth of the view's span, so a small pan stays inside what was loaded. Snapping
+// to tiles adds more, and the server caps a response at 500 cells, so more padding would crowd out
+// cells in view.
+const PADDING = 0.1;
 
 /**
  * Turns the map's visible bounds (Leaflet's, so longitudes may run past ±180) into the query for

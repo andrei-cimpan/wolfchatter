@@ -5,10 +5,10 @@ import { nextViewportQuery, viewportQuery } from "./viewport";
 const TILE = 11.25;
 
 describe("viewportQuery", () => {
-  it("pads the view by a fifth of its span on each side, then snaps out to whole tiles", () => {
-    // Span 20 x 10, padded by 4 and 2: west 6, east 34, south 38, north 52.
+  it("pads the view by a tenth of its span on each side, then snaps out to whole tiles", () => {
+    // Span 20 x 10, padded by 2 and 1: west 8, east 32, south 39, north 51.
     expect(viewportQuery({ west: 10, south: 40, east: 30, north: 50 }, 5)).toEqual({
-      bbox: { west: 0, south: 3 * TILE, east: 4 * TILE, north: 5 * TILE },
+      bbox: { west: 0, south: 3 * TILE, east: 3 * TILE, north: 5 * TILE },
       zoom: 5,
     });
   });
@@ -63,8 +63,8 @@ describe("nextViewportQuery", () => {
   });
 
   it("keeps the same query while the view stays inside what was loaded", () => {
-    // Snapping alone would move the padded west edge (6 - 8 = -2) into the tile west of 0.
-    const panned = { west: 2, south: 41, east: 22, north: 51 };
+    // Snapping alone would move the padded west edge (1 - 2 = -1) into the tile west of 0.
+    const panned = { west: 1, south: 41, east: 21, north: 51 };
     expect(viewportQuery(panned, 5)).not.toEqual(loaded);
     expect(nextViewportQuery(loaded, panned, 5)).toBe(loaded);
   });
