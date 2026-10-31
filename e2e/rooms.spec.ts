@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { box, expect, makeTilesHitTestable, serveBlankTiles, test } from "./support";
+import { box, expect, makeTilesHitTestable, serveBlankTiles, test, tileZooms } from "./support";
 
 const ROOM_URL = /\?room=[0-9a-f-]{36}$/;
 const ROOM_TITLE = /^Chatroom \d+$/;
@@ -25,15 +25,6 @@ async function createRoomAt(page: Page, x: number, y: number): Promise<string> {
   await expect(page).toHaveURL(ROOM_URL);
   await expect(roomTitle(page)).toHaveText(ROOM_TITLE);
   return (await roomTitle(page).textContent()) ?? "";
-}
-
-/** Zoom levels of the tiles on screen; tile URLs end in /{z}/{x}/{y}.png. The map opens at 5. */
-function tileZooms(page: Page) {
-  return page
-    .locator(".leaflet-tile")
-    .evaluateAll((tiles) => [
-      ...new Set(tiles.map((t) => new URL((t as HTMLImageElement).src).pathname.split("/")[1])),
-    ]);
 }
 
 function countRoomPosts(page: Page) {
