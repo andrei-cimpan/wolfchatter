@@ -25,8 +25,7 @@ export function useRoom(id: string | null) {
     queryFn: () => (roomIdSchema.safeParse(id).success ? getRoom(id!) : null),
     enabled: id !== null,
     retry: shouldRetryRoomQuery,
-    // Title and position never change. messageCount does, but nothing reads it from here yet;
-    // T3.4 (posting) or T5.3 (counts on markers) must refresh it when they start to.
+    // Title and position never change. messageCount does, but the UI does not show it.
     staleTime: Infinity,
   });
 }

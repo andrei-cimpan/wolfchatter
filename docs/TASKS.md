@@ -58,7 +58,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T5.1** Remember the username in localStorage.
 - [x] **T5.2** Auto-scroll to the newest message; disable Submit when a field is empty.
   *Still open from the PR #12 review:* any 400 becomes "Enter a username and a message.". The form checks with the API's own schema first, so this cannot be reached today; use the API's message if the client and API rules ever differ.
-- [ ] **T5.3** Message count on each marker; fly the map to the selected room.
+- [ ] **T5.3** Fly the map to the selected room.
   *Carried over from T3.2:* on narrow screens, a room created near the bottom of the map ends up behind the raised sheet. Flying to the selected room should keep its pin in the part of the map left visible.
   *Carried over from T3.5:* after a reload or on opening a `?room` link, the map starts on its default view, not on the selected room. Fly (or start) there on the first load too.
   *Carried over from the PR #11 review:* viewport cache keys keep Leaflet's unwrapped longitudes, so panning a full turn around the world refetches an area that is already cached. Shift `west` and `east` by the same whole number of turns into [-180, 180) before building the key (`viewportQuery` or `mapItemsQueryKey`), as flying to a room can also land on another copy of the world.

@@ -15,7 +15,7 @@ A real-time chat app built on a map. Click the map to drop a pin and start a con
 
 - Username remembered between visits.
 - Auto-scroll to the newest message; Submit disabled until both fields are filled.
-- Message count on each pin; the map flies to the selected room.
+- The map flies to the selected room.
 - Selected room kept in the URL (`?room=<id>`), so a room can be shared and survives a refresh.
 
 ## Tech stack
