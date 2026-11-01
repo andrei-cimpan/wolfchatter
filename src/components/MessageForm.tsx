@@ -21,6 +21,8 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
   // Worked out from the current input, so the hint goes away as soon as the input is fixed.
   const inputError = messageInputError(author, body);
   const [triedInvalid, setTriedInvalid] = useState(false);
+  // Once fixed, the next hint waits for another attempt: clearing the field to retype is not one.
+  if (triedInvalid && inputError === null) setTriedInvalid(false);
   const bodyRef = useRef<HTMLInputElement>(null);
   const { send, isPending, error } = usePostMessage(roomId);
 

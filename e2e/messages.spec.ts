@@ -79,6 +79,9 @@ test.describe("desktop", () => {
 
     await messageField(page).fill("Now with text");
     await expect(panel(page).getByRole("alert")).toHaveCount(0);
+    // Clearing the field to retype is not another attempt to send.
+    await messageField(page).clear();
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
   });
 
   test("Submit is disabled until both fields have text, and while a post is sending", async ({ page }) => {
