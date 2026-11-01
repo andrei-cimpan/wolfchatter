@@ -226,6 +226,7 @@ Two interfaces keep the hub independent of where messages come from and how they
 - Clustering is grid-based over a plain `(lat, lng)` index. PostGIS with a GiST index is the next step at larger scale.
 - When a viewport has more than 500 occupied cells, the sparsest are dropped, so the shown counts can add up to fewer rooms than are in view. Merging the remainder into coarser clusters would fix it.
 - No authentication, so authorship is self-declared.
+- Zooming during a flight works from the flight's mid-air zoom, so zooming in can end a level further out than where the user started. The zoom is still whole, and one more step corrects it.
 - `rooms.message_count`, its trigger, and the API's `messageCount` field are kept up to date, but the UI does not use them for now. They stay in case a later version needs them.
 - A page opened on a room shows the default view until the room has loaded, and asks for that view's pins. On a slow connection, a user who drags in that moment is moved to the room once it arrives.
 - A room shows only its latest 50 messages; there is no "load older" yet, though the API's `before` cursor supports it.
