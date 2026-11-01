@@ -84,6 +84,25 @@ test.describe("desktop", () => {
     await expect(panel(page).getByRole("alert")).toHaveCount(0);
   });
 
+  test("a server error goes away with a hint, and does not come back for a message not sent", async ({ page }) => {
+    await page.route(
+      (url) => url.pathname.endsWith("/messages"),
+      (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } })
+          : route.fallback(),
+    );
+    await openRoom(page, await newRoom(page.request));
+    await post(page, "ana", "Goes nowhere");
+    await expect(panel(page).getByRole("alert")).toHaveText("Couldn't send your message. Please try again.");
+
+    await messageField(page).fill("   ");
+    await messageField(page).press("Enter");
+    await expect(panel(page).getByRole("alert")).toHaveText("Enter a message.");
+    await messageField(page).fill("Not sent yet");
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+  });
+
   test("Submit is disabled until both fields have text, and while a post is sending", async ({ page }) => {
     let release = () => {};
     const held = new Promise<void>((resolve) => {

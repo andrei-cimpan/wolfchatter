@@ -24,12 +24,16 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
   // Once fixed, the next hint waits for another attempt: clearing the field to retype is not one.
   if (triedInvalid && inputError === null) setTriedInvalid(false);
   const bodyRef = useRef<HTMLInputElement>(null);
-  const { send, isPending, error } = usePostMessage(roomId);
+  const { send, clearError, isPending, error } = usePostMessage(roomId);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setTriedInvalid(inputError !== null);
-    if (inputError) return;
+    if (inputError) {
+      // Otherwise it would come back when the hint clears, about a message that was not sent.
+      clearError();
+      return;
+    }
     send(author, body, () => {
       setBody("");
       bodyRef.current?.focus();

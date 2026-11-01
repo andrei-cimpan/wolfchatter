@@ -106,7 +106,12 @@ export function usePostMessage(roomId: string) {
     mutation.mutate({ roomId, author, body }, { onSuccess: onSent });
   }
 
-  return { send, isPending: mutation.isPending, error: mutation.error };
+  /** Forgets the last failure. Not while sending: a reset would drop that post's `onSent`. */
+  function clearError() {
+    if (!sendingRef.current) mutation.reset();
+  }
+
+  return { send, clearError, isPending: mutation.isPending, error: mutation.error };
 }
 
 export function postMessageErrorMessage(error: Error): string {
