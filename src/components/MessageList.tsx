@@ -78,9 +78,9 @@ export function MessageList({ roomId, sentCount }: MessageListProps) {
     if (scroller && newestId !== undefined && followingRef.current) scroller.scrollTop = scroller.scrollHeight;
   }, [newestId]);
 
-  // The reader's own post always comes into view, or it would land out of sight. It may render
-  // before or after this count changes (the stream can deliver it first), so this also makes the
-  // effect above follow it.
+  // The reader's own post always comes into view, or it would land out of sight. The scroll event
+  // for this jump fires a frame later, so following is set here: a message landing before then
+  // comes into view too.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || sentCount === 0) return;

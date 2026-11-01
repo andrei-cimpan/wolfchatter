@@ -387,6 +387,36 @@ test.describe("following the conversation", () => {
     await expect(newest(page)).not.toBeInViewport();
   });
 
+  test("in the narrow sheet, a live message leaves a scrolled-up reader alone and follows at the bottom", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    const sendLive = await openLongRoom(page);
+    await sendLive("Live at the bottom");
+    await expect(newest(page)).toContainText("Live at the bottom");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await scrollList(page, null);
+    await sendLive("Live while reading");
+    await expect(newest(page)).toContainText("Live while reading");
+    expect(await scrollTop(page)).toBe(0);
+
+    await post(page, "ana", "From my phone");
+    await expect(newest(page)).toContainText("From my phone");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("a live message landing right after your own post still comes into view", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+    // Holds back the scroll event from jumping to your post, as if the live message beat its frame.
+    await page.evaluate(() => window.addEventListener("scroll", (event) => event.stopImmediatePropagation(), true));
+
+    await post(page, "ana", "My own post");
+    await expect(newest(page)).toContainText("My own post");
+    await sendLive("Live right after");
+    await expect(newest(page)).toContainText("Live right after");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
   test("a failed refetch keeps the list and the reader's place", async ({ page }) => {
     const sendLive = await openLongRoom(page);
     await scrollList(page, null);
