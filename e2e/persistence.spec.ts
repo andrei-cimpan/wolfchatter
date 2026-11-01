@@ -74,13 +74,39 @@ test.describe("desktop", () => {
     await expect(pin(page, second.title)).toBeVisible();
     await expectServerListsRoom(page, first);
     await expectServerListsRoom(page, second);
-    // Kept only in memory until T5.1 saves it.
-    await expect(usernameField(page)).toHaveValue("");
+    await expect(usernameField(page)).toHaveValue("ana");
 
     await pin(page, first.title).click();
     await expect(page).toHaveURL(firstUrl);
     await expect(roomTitle(page)).toHaveText(first.title);
     await expect(messages(page).getByRole("listitem")).toHaveText([/Before the reload, first room/]);
+  });
+
+  test("a username that was cleared stays cleared after a reload", async ({ page }) => {
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Signed as ana");
+    await usernameField(page).clear();
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Signed as ana");
+    await expect(usernameField(page)).toHaveValue("");
+  });
+
+  test("with storage blocked, posting still works and the username lasts until a reload", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", {
+        get() {
+          throw new DOMException("The operation is insecure.", "SecurityError");
+        },
+      });
+    });
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Posted without storage");
+    await expect(usernameField(page)).toHaveValue("ana");
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Posted without storage");
+    await expect(usernameField(page)).toHaveValue("");
   });
 
   test("Back still walks the rooms opened before a reload", async ({ page }) => {
