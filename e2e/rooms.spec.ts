@@ -27,6 +27,50 @@ async function createRoomAt(page: Page, x: number, y: number): Promise<string> {
   return (await roomTitle(page).textContent()) ?? "";
 }
 
+/** Where the selected room's pin ends up on a 1280 px view: centred in the map left of the card. */
+const CARD_FOCUS_X = (1280 - 396) / 2;
+
+async function postRoom(page: Page, position: { lat: number; lng: number }) {
+  const response = await page.request.post("/api/rooms", { data: position });
+  expect(response.status()).toBe(201);
+  return (await response.json()) as { id: string; title: string };
+}
+
+/** Waits for the flight to end with the pin's tip (12 px in, at the icon's foot) on this point. */
+async function expectPinTipAt(page: Page, title: string, point: { x: number; y: number }) {
+  await expect(async () => {
+    const icon = await pin(page, title).boundingBox();
+    expect(Math.abs((icon?.x ?? 0) + 12 - point.x)).toBeLessThan(3);
+    expect(Math.abs((icon?.y ?? 0) + 41 - point.y)).toBeLessThan(3);
+  }).toPass({ timeout: 10_000 });
+}
+
+/**
+ * The x of a pin's centre on each animation frame for the next 1.5 s, in the order seen. Without a
+ * title, any pin: the first the map shows, which suits a test whose room does not exist yet.
+ */
+function trackPinX(page: Page, title?: string): Promise<number[]> {
+  return page.evaluate(
+    ({ title, ms }) =>
+      new Promise<number[]>((resolve) => {
+        const xs: number[] = [];
+        const end = performance.now() + ms;
+        const sample = () => {
+          const selector = title ? `.leaflet-marker-icon[title="${title}"]` : ".leaflet-marker-icon";
+          const icon = document.querySelector(selector);
+          if (icon) {
+            const { x, width } = icon.getBoundingClientRect();
+            xs.push(x + width / 2);
+          }
+          if (performance.now() < end) requestAnimationFrame(sample);
+          else resolve(xs);
+        };
+        sample();
+      }),
+    { title, ms: 1500 },
+  );
+}
+
 function countRoomPosts(page: Page) {
   const posts: string[] = [];
   page.on("request", (request) => {
@@ -78,9 +122,77 @@ test.describe("desktop", () => {
     }
     await page.waitForTimeout(400);
 
+    const track = trackPinX(page);
     const title = await createRoomAt(page, 1150, 300);
-    const icon = await pin(page, title).boundingBox();
-    expect(Math.abs((icon?.x ?? 0) + (icon?.width ?? 0) / 2 - 1150)).toBeLessThan(15);
+    const xs = await track;
+    // The pin appears where the click was and flies from there. A hop to another copy of the
+    // world would jump a whole world, 512 px at this zoom.
+    expect(Math.abs((xs[0] ?? 0) - 1150)).toBeLessThan(40);
+    for (let i = 1; i < xs.length; i++) expect(Math.abs((xs[i] ?? 0) - (xs[i - 1] ?? 0))).toBeLessThan(300);
+    await expectPinTipAt(page, title, { x: CARD_FOCUS_X, y: 360 });
+  });
+
+  test("the map flies to a new room, keeping its pin clear of the card", async ({ page }) => {
+    await openMap(page);
+    const title = await createRoomAt(page, 100, 600);
+    await expectPinTipAt(page, title, { x: CARD_FOCUS_X, y: 360 });
+  });
+
+  test("a room link opens on the room, without a flight from the default view", async ({ page }) => {
+    const room = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    await openMap(page, `/?room=${room.id}`);
+    await expect(pin(page, room.title)).toBeAttached();
+    // The pin appears and the map moves in one commit, so a flight would still be moving it here.
+    expect(new Set(await trackPinX(page, room.title)).size).toBe(1);
+    await expectPinTipAt(page, room.title, { x: CARD_FOCUS_X, y: 360 });
+  });
+
+  test("Back flies to the previous room", async ({ page }) => {
+    const room = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    await openMap(page, `/?room=${room.id}`);
+    await expectPinTipAt(page, room.title, { x: CARD_FOCUS_X, y: 360 });
+
+    const created = await createRoomAt(page, 100, 600);
+    await expectPinTipAt(page, created, { x: CARD_FOCUS_X, y: 360 });
+    await page.goBack();
+    await expect(roomTitle(page)).toHaveText(room.title);
+    await expectPinTipAt(page, room.title, { x: CARD_FOCUS_X, y: 360 });
+  });
+
+  test("selecting a room flies there, and with reduced motion jumps instead", async ({ page }) => {
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    await openMap(page);
+    // Next keeps useSearchParams in sync with pushState, which is how the app selects a room.
+    const select = (id: string) => page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), id);
+
+    const flight = trackPinX(page);
+    await select(far.id);
+    expect(new Set(await flight).size).toBeGreaterThan(5);
+    await expectPinTipAt(page, far.title, { x: CARD_FOCUS_X, y: 360 });
+
+    const near = await postRoom(page, { lat: 48, lng: 20 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const jump = trackPinX(page, near.title);
+    await select(near.id);
+    expect(new Set(await jump).size).toBeLessThanOrEqual(2);
+    await expectPinTipAt(page, near.title, { x: CARD_FOCUS_X, y: 360 });
+  });
+
+  test("dragging during a flight stops it where the user left the map", async ({ page }) => {
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    await openMap(page);
+    await page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), far.id);
+    await expect(pin(page, far.title)).toBeAttached();
+
+    await page.mouse.move(300, 300);
+    await page.mouse.down();
+    await page.mouse.move(340, 320, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(2500);
+    // The flight would have ended with the pin at the focus point.
+    const icon = await pin(page, far.title).boundingBox();
+    const tip = { x: (icon?.x ?? 0) + 12, y: (icon?.y ?? 0) + 41 };
+    expect(Math.abs(tip.x - CARD_FOCUS_X) + Math.abs(tip.y - 360)).toBeGreaterThan(50);
   });
 
   test("dragging the map does not create a room", async ({ page }) => {
@@ -268,6 +380,15 @@ test.describe("narrow screen", () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(panel(page)).toHaveText("Click on the map to start a chat");
     expect((await box(page, ".leaflet-container")).height).toBeGreaterThan(map.height);
+  });
+
+  test("a room created near the bottom of the map stays in the part left visible by the sheet", async ({
+    page,
+  }) => {
+    await openMap(page);
+    const title = await createRoomAt(page, 300, 570);
+    const map = await box(page, ".leaflet-container");
+    await expectPinTipAt(page, title, { x: 375 / 2, y: map.y + map.height / 2 });
   });
 
   test("a map that starts beside a raised sheet fills in when the sheet closes", async ({ page }) => {

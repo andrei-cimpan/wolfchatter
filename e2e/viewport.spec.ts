@@ -135,6 +135,22 @@ test("when a viewport fails to load, the pins already shown stay", async ({ page
   await expect(bubble).toHaveCount(1);
 });
 
+test("flying to a far room makes one viewport request, once the map arrives", async ({ page, request }) => {
+  const created = await request.post("/api/rooms", { data: { lat: -33.87, lng: 151.2 } });
+  const { id } = (await created.json()) as { id: string };
+  const requests = countViewportRequests(page);
+  await openMap(page);
+  await expect.poll(() => requests.length).toBe(1);
+
+  await page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), id);
+  await expect.poll(() => requests.length, { timeout: 10_000 }).toBe(2);
+  await page.waitForTimeout(600);
+  expect(requests).toHaveLength(2);
+  const [west, , east] = (requests[1]?.get("bbox") ?? "").split(",").map(Number);
+  expect(west).toBeLessThan(151.2);
+  expect(east).toBeGreaterThan(151.2);
+});
+
 test("a small pan reuses the loaded pins instead of asking again", async ({ page }) => {
   const requests = countViewportRequests(page);
   await openMap(page);
