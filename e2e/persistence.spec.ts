@@ -96,8 +96,9 @@ test.describe("desktop", () => {
     await openMap(page);
     await createRoomWithMessage(page, 400, 300, "Signed as ana");
     await usernameField(page).fill("   ");
-    await panel(page).getByRole("textbox", { name: "Message" }).fill("Signed with spaces");
-    await panel(page).getByRole("button", { name: "Submit" }).click();
+    const messageField = panel(page).getByRole("textbox", { name: "Message" });
+    await messageField.fill("Signed with spaces");
+    await messageField.press("Enter");
     await expect(panel(page).getByRole("alert")).toHaveText("Enter a username.");
     await expect(messages(page).getByRole("listitem")).toHaveCount(1);
 

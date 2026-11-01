@@ -70,9 +70,80 @@ test.describe("desktop", () => {
       if (isMessagePost(new URL(r.url()), r.method())) posts.push(r.url());
     });
     await openRoom(page, await newRoom(page.request));
-    await post(page, "ana", "   ");
+    await usernameField(page).fill("ana");
+    await messageField(page).fill("   ");
+    await expect(submit(page)).toBeDisabled();
+    await messageField(page).press("Enter");
     await expect(panel(page).getByRole("alert")).toHaveText("Enter a message.");
     expect(posts).toHaveLength(0);
+
+    await messageField(page).fill("Now with text");
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+  });
+
+  test("Submit is disabled until both fields have text, and while a post is sending", async ({ page }) => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname.endsWith("/messages"),
+      async (route) => {
+        if (route.request().method() === "POST") await held;
+        await route.fallback();
+      },
+    );
+    await openRoom(page, await newRoom(page.request));
+    await expect(submit(page)).toBeDisabled();
+    await expect(submit(page)).toHaveCSS("opacity", "0.6");
+    await messageField(page).fill("Hello");
+    await expect(submit(page)).toBeDisabled();
+    await usernameField(page).fill("ana");
+    await expect(submit(page)).toBeEnabled();
+    await expect(submit(page)).toHaveCSS("opacity", "1");
+    await messageField(page).clear();
+    await expect(submit(page)).toBeDisabled();
+
+    await messageField(page).fill("Hello");
+    await submit(page).click();
+    await expect(submit(page)).toBeDisabled();
+    release();
+    await expect(messages(page).getByRole("listitem")).toHaveCount(1);
+    // Cleared after sending, so it waits for the next message.
+    await expect(submit(page)).toBeDisabled();
+  });
+
+  test("a failed post keeps keyboard focus on Submit, which can be pressed again", async ({ page }) => {
+    let failing = true;
+    await page.route(
+      (url) => url.pathname.endsWith("/messages"),
+      (route) =>
+        failing && route.request().method() === "POST"
+          ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } })
+          : route.fallback(),
+    );
+    await openRoom(page, await newRoom(page.request));
+    await usernameField(page).fill("ana");
+    await messageField(page).fill("Try twice");
+    await submit(page).focus();
+    await page.keyboard.press("Enter");
+    await expect(panel(page).getByRole("alert")).toHaveText("Couldn't send your message. Please try again.");
+    await expect(submit(page)).toBeFocused();
+
+    failing = false;
+    await page.keyboard.press("Enter");
+    await expect(newest(page)).toContainText("Try twice");
+  });
+
+  test("a paste cut short by the length limit can still be sent", async ({ page }) => {
+    await openRoom(page, await newRoom(page.request));
+    await usernameField(page).fill("ana");
+    await messageField(page).focus();
+    // The limit falls between the two halves of the emoji.
+    await page.keyboard.insertText(`${"x".repeat(999)}😀`);
+    const value = await messageField(page).inputValue();
+    expect(value.isWellFormed()).toBe(true);
+    await expect(submit(page)).toBeEnabled();
   });
 
   test("a rate-limited post explains the wait and keeps the text", async ({ page }) => {
