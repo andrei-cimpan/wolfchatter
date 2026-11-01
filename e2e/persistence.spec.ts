@@ -92,6 +92,36 @@ test.describe("desktop", () => {
     await expect(usernameField(page)).toHaveValue("");
   });
 
+  test("a username of only spaces is refused, and is gone after a reload", async ({ page }) => {
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Signed as ana");
+    await usernameField(page).fill("   ");
+    await panel(page).getByRole("textbox", { name: "Message" }).fill("Signed with spaces");
+    await panel(page).getByRole("button", { name: "Submit" }).click();
+    await expect(panel(page).getByRole("alert")).toHaveText("Enter a username.");
+    await expect(messages(page).getByRole("listitem")).toHaveCount(1);
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Signed as ana");
+    await expect(usernameField(page)).toHaveValue("");
+  });
+
+  test("spaces around a username are dropped; spaces inside it can still be typed", async ({ page }) => {
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Signed as ana");
+    await usernameField(page).clear();
+    await usernameField(page).pressSequentially(" ana b ");
+    // The field keeps what is typed, or the space in "ana b" could never be entered.
+    await expect(usernameField(page)).toHaveValue(" ana b ");
+    await panel(page).getByRole("textbox", { name: "Message" }).fill("Signed as ana b");
+    await panel(page).getByRole("button", { name: "Submit" }).click();
+    await expect(messages(page).getByRole("listitem").last()).toContainText("ana b:");
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Signed as ana b");
+    await expect(usernameField(page)).toHaveValue("ana b");
+  });
+
   test("with storage blocked, posting still works and the username lasts until a reload", async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, "localStorage", {

@@ -60,9 +60,22 @@ describe("readSavedUsername", () => {
     expect(readSavedUsername()).toBe(name);
   });
 
-  it("ignores a value too long for the field, which maxLength would not catch", () => {
+  it("ignores a value too long to post, which maxLength would not catch", () => {
     stubStorage({ [KEY]: "a".repeat(AUTHOR_MAX + 1) });
     expect(readSavedUsername()).toBe("");
+  });
+
+  it.each([
+    ["spaces", "   "],
+    ["zero-width characters, which trim() keeps", "​​"],
+  ])("ignores a saved value of only %s", (_label, text) => {
+    stubStorage({ [KEY]: text });
+    expect(readSavedUsername()).toBe("");
+  });
+
+  it("trims a saved value", () => {
+    stubStorage({ [KEY]: " ana " });
+    expect(readSavedUsername()).toBe("ana");
   });
 
   it("returns an empty string when storage is blocked", () => {
@@ -76,16 +89,25 @@ describe("readSavedUsername", () => {
 });
 
 describe("saveUsername", () => {
-  it("stores the text as typed, for the next read", () => {
+  it("stores the name trimmed, for the next read", () => {
     const items = stubStorage();
-    saveUsername(" ana ");
-    expect(items.get(KEY)).toBe(" ana ");
-    expect(readSavedUsername()).toBe(" ana ");
+    saveUsername("  ana b ");
+    expect(items.get(KEY)).toBe("ana b");
+    expect(readSavedUsername()).toBe("ana b");
   });
 
   it("forgets the name when the field is emptied", () => {
     const items = stubStorage({ [KEY]: "ana" });
     saveUsername("");
+    expect(items.has(KEY)).toBe(false);
+  });
+
+  it.each([
+    ["spaces", "   "],
+    ["zero-width characters, which trim() keeps", "​​"],
+  ])("forgets the name when the field holds only %s", (_label, text) => {
+    const items = stubStorage({ [KEY]: "ana" });
+    saveUsername(text);
     expect(items.has(KEY)).toBe(false);
   });
 
