@@ -8,12 +8,10 @@ function postableUsername(text: string): string {
   return result.success ? result.data : "";
 }
 
-// The window check comes first because Node has a `localStorage` global of its own, which warns
-// when touched. The try blocks are for browsers that block storage, where even reading the
-// property can throw: the username then lasts until the page is reloaded.
+// The try blocks cover the server, which has no `window`, and browsers that block storage, where
+// even reading the property can throw: the username then lasts until the page is reloaded.
 
 export function readSavedUsername(): string {
-  if (typeof window === "undefined") return "";
   try {
     return postableUsername(window.localStorage.getItem(KEY) ?? "");
   } catch {
@@ -22,7 +20,6 @@ export function readSavedUsername(): string {
 }
 
 export function saveUsername(username: string): void {
-  if (typeof window === "undefined") return;
   try {
     const name = postableUsername(username);
     if (name === "") window.localStorage.removeItem(KEY);
