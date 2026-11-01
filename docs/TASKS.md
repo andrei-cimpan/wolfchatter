@@ -57,7 +57,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 - [x] **T5.1** Remember the username in localStorage.
 - [x] **T5.2** Auto-scroll to the newest message; disable Submit when a field is empty.
-  *Still open from the PR #12 review:* `messageInputError` maps every schema issue to "Enter a username." or "Enter a message.", and any 400 becomes "Enter a username and a message.". Neither path can be reached today (a paste cut at the limit does not split an emoji in Chromium), but use the issue's own message if the client and API rules ever differ.
+  *Still open from the PR #12 review:* any 400 becomes "Enter a username and a message.". The form checks with the API's own schema first, so this cannot be reached today; use the API's message if the client and API rules ever differ.
 - [ ] **T5.3** Message count on each marker; fly the map to the selected room.
   *Carried over from T3.2:* on narrow screens, a room created near the bottom of the map ends up behind the raised sheet. Flying to the selected room should keep its pin in the part of the map left visible.
   *Carried over from T3.5:* after a reload or on opening a `?room` link, the map starts on its default view, not on the selected room. Fly (or start) there on the first load too.

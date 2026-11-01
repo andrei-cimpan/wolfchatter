@@ -18,7 +18,7 @@ function codePointLength(text: string): number {
 const INVISIBLE =
   /[\p{White_Space}\p{Cc}\p{Default_Ignorable_Code_Point}\u2800\uFFF9-\uFFFB\u{13430}-\u{1343F}\u{16FE4}]/gu;
 
-function hasVisibleText(text: string): boolean {
+export function hasVisibleText(text: string): boolean {
   return text.replace(INVISIBLE, "").length > 0;
 }
 
