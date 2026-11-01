@@ -46,14 +46,32 @@ async function expectPinTipAt(page: Page, title: string, point: { x: number; y: 
 }
 
 /** At a whole zoom every tile is 256 px wide; a zoom left between levels scales them and blurs the map. */
-async function expectZoomKept(page: Page) {
+async function expectWholeZoom(page: Page) {
   await expect
     .poll(
       () => page.locator(".leaflet-tile").evaluateAll((tiles) => [...new Set(tiles.map((t) => t.getBoundingClientRect().width))]),
       { timeout: 5000 },
     )
     .toEqual([256]);
+}
+
+async function expectZoomKept(page: Page) {
+  await expectWholeZoom(page);
   expect(await tileZooms(page)).toEqual(["5"]);
+}
+
+/** Next keeps useSearchParams in sync with pushState, which is how the app selects a room. */
+function selectInPage(page: Page, id: string) {
+  return page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), id);
+}
+
+/** Pausing before the release means no inertia, so the drag's moveend comes right at mouse up. */
+async function dragWithoutInertia(page: Page) {
+  await page.mouse.move(300, 300);
+  await page.mouse.down();
+  await page.mouse.move(340, 320, { steps: 4 });
+  await page.waitForTimeout(100);
+  await page.mouse.up();
 }
 
 /**
@@ -221,6 +239,57 @@ test.describe("desktop", () => {
     await select(near.id);
     await expectPinTipAt(page, near.title, { x: CARD_FOCUS_X, y: 360 });
     await expectZoomKept(page);
+  });
+
+  test("a flight started during a zoom animation still ends on a whole zoom when dragged", async ({ page }) => {
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    const near = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page);
+    // Visited first so both are cached: the flight below must start inside the zoom's 250 ms.
+    await selectInPage(page, far.id);
+    await expectPinTipAt(page, far.title, { x: CARD_FOCUS_X, y: 360 });
+    await selectInPage(page, near.id);
+    await expectPinTipAt(page, near.title, { x: CARD_FOCUS_X, y: 360 });
+
+    await page.evaluate((room) => {
+      document.querySelector<HTMLElement>(".leaflet-control-zoom-out")?.click();
+      history.pushState(null, "", `/?room=${room}`);
+    }, far.id);
+    await page.waitForTimeout(700);
+    await dragWithoutInertia(page);
+    await expectWholeZoom(page);
+  });
+
+  test("selecting again just after a drag stopped a flight still ends on a whole zoom", async ({ page }) => {
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    const other = await postRoom(page, { lat: 60, lng: -100 });
+    await openMap(page);
+    await selectInPage(page, far.id);
+    await page.waitForTimeout(700);
+    await dragWithoutInertia(page);
+    // Inside the 250 ms in which the drag's zoom restore is animating.
+    await page.waitForTimeout(50);
+    await selectInPage(page, other.id);
+    await page.waitForTimeout(700);
+    await dragWithoutInertia(page);
+    await expectWholeZoom(page);
+    expect(await tileZooms(page)).toEqual(["5"]);
+  });
+
+  test("zooming during a flight is not undone by a later flight", async ({ page }) => {
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    const near = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page);
+    await selectInPage(page, near.id);
+    await expectPinTipAt(page, near.title, { x: CARD_FOCUS_X, y: 360 });
+
+    await page.getByRole("button", { name: "Zoom out" }).click();
+    await expect.poll(() => tileZooms(page)).toEqual(["4"]);
+    await page.waitForTimeout(400);
+    await selectInPage(page, far.id);
+    await expectPinTipAt(page, far.title, { x: CARD_FOCUS_X, y: 360 });
+    await expectWholeZoom(page);
+    expect(await tileZooms(page)).toEqual(["4"]);
   });
 
   test("two rooms created in quick succession keep the zoom", async ({ page }) => {
