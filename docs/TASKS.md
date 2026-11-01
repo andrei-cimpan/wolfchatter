@@ -46,12 +46,12 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 ## 4. Real-time
 
 - [x] **T4.1** Realtime hub: one `LISTEN`, in-memory fan-out, heartbeat.
-- [ ] **T4.2** `GET /api/rooms/:id/stream` and the `useRoomStream` hook with reconnect catch-up.
+- [x] **T4.2** `GET /api/rooms/:id/stream` and the `useRoomStream` hook with reconnect catch-up.
   *Check:* a message posted in one browser appears in another within about a second, with no duplicates after a reconnect.
   *Carried over from the PR #14 review:*
-  - If the request aborts while `subscribe` is still waiting (the source starting or in an outage), call the returned unsubscribe once it resolves, or the subscriber stays in the hub until its next failed write.
-  - `subscribe` waits out a source outage with no time limit. Put a timeout on it in the route if a stream should fail fast instead.
-  - Nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if a deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers.
+  - Done: if the request aborts while `subscribe` is still waiting, the route calls the returned unsubscribe once it resolves.
+  - Done: the route ends the stream if `subscribe` has not resolved after 10 seconds, and the browser retries.
+  - Moved to T6.2: wiring `stopRealtimeHub()` to shutdown.
 
 ## 5. Usability improvements
 
@@ -69,7 +69,10 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 ## 6. Quality
 
 - [ ] **T6.1** Playwright tests: create pin and post, reload persistence, two-browser live message, clusters appear when zoomed out and expand on click, and the bottom-sheet layout at a 375 px wide viewport.
+  *Carried over from the PR #15 review:* `useRoomStream` itself (the effect, and closing the stream on unmount or a room change) has no unit test, because hooks are tested here without React Testing Library or jsdom. The e2e tests cover it; add a hook test if those tools are ever added (ask first: new dependencies).
 - [ ] **T6.2** Dockerfile for the app and a `/health` endpoint.
+  *Carried over from T4.2:* nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if the deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers, so check what actually reaches the clients.
+  *Carried over from the PR #15 review:* the stream writes with `controller.enqueue` without checking `desiredSize`, so for a client whose connection has stalled (a backgrounded phone, a NAT that forgot it) messages pile up in server memory until TCP gives up. Ending the stream past a small backlog would let the client reconnect and catch up, but first check that Next reads the body with backpressure (otherwise the backlog sits in the socket buffer and `desiredSize` never drops), under the production server.
 
 ## 7. Documents and review
 

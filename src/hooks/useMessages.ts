@@ -3,7 +3,8 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { ApiError, listMessages, postMessage, retryAfterPhrase } from "@/lib/api-client";
-import { mergeMessages } from "@/lib/messages";
+import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
+import { mergeCaughtUp, mergeMessages } from "@/lib/messages";
 import { postMessageSchema } from "@/lib/schemas";
 import type { Message } from "@/lib/types";
 import { shouldRetryRoomQuery } from "./useRoom";
@@ -13,8 +14,9 @@ export function messagesQueryKey(roomId: string) {
 }
 
 /**
- * The room's latest page of messages, oldest first. Until the live stream (T4) exists, the
- * default staleTime of 0 refetches it when the window regains focus or the room is reopened.
+ * The room's latest page of messages, oldest first. The live stream (`useRoomStream`) adds new
+ * ones; the default staleTime of 0 still refetches it when the window regains focus or the room is
+ * reopened, which covers a stream that keeps failing.
  */
 export function useMessages(roomId: string) {
   return useQuery({
@@ -24,8 +26,8 @@ export function useMessages(roomId: string) {
   });
 }
 
-/** Adds a message this tab posted to its room's cached list. */
-export function addPostedMessage(queryClient: QueryClient, message: Message): void {
+/** Adds a message (one this tab posted, or a live one) to its room's cached list. */
+export function addMessage(queryClient: QueryClient, message: Message): void {
   const key = messagesQueryKey(message.roomId);
   if (queryClient.getQueryData<Message[]>(key) !== undefined) {
     queryClient.setQueryData<Message[]>(key, (messages) => mergeMessages(messages ?? [], [message]));
@@ -35,6 +37,40 @@ export function addPostedMessage(queryClient: QueryClient, message: Message): vo
   if (queryClient.getQueryData(key) === undefined || queryClient.isFetching({ queryKey: key }) > 0) {
     void queryClient.invalidateQueries({ queryKey: key });
   }
+}
+
+// Messages before the last one seen that catch-up asks for again. created_at is the inserting
+// transaction's start, so a message can commit after a newer one yet sort before it; asking only
+// for what follows the last one seen would skip it for good.
+export const CATCH_UP_OVERLAP = 5;
+
+/**
+ * Fills in what the room's list missed while its stream was not subscribed: run on every `ready`,
+ * the first one included, since the list's first fetch may have started before the subscribe.
+ */
+export async function catchUp(queryClient: QueryClient, roomId: string): Promise<void> {
+  const key = messagesQueryKey(roomId);
+  // A fetch on its way may predate the subscribe; catch up from its answer rather than restart it.
+  // A list that never loaded is fetched now, which needs no catching up but does no harm.
+  if (queryClient.getQueryData(key) === undefined || queryClient.isFetching({ queryKey: key }) > 0) {
+    await queryClient.refetchQueries({ queryKey: key }, { cancelRefetch: false });
+  }
+  const messages = queryClient.getQueryData<Message[]>(key);
+  // Still not loaded: the list shows its error and a way to try again.
+  if (messages === undefined) return;
+
+  // With too few messages for the overlap, the latest page covers the whole gap.
+  const cursor = messages.at(-1 - CATCH_UP_OVERLAP)?.id;
+  let page: Message[];
+  try {
+    page = await listMessages(roomId, { after: cursor, limit: MESSAGE_LIMIT_MAX });
+  } catch {
+    return void queryClient.invalidateQueries({ queryKey: key });
+  }
+  // A full page may not reach the newest message. The list shows only the latest page, so load
+  // that instead of paging through the gap.
+  if (page.length === MESSAGE_LIMIT_MAX) return void queryClient.invalidateQueries({ queryKey: key });
+  queryClient.setQueryData<Message[]>(key, (current) => current && mergeCaughtUp(current, cursor, page));
 }
 
 type PostMessageVariables = { roomId: string; author: string; body: string };
@@ -57,7 +93,7 @@ export function usePostMessage(roomId: string) {
 
   const mutation = useMutation({
     mutationFn: ({ roomId: id, author, body }: PostMessageVariables) => postMessage(id, { author, body }),
-    onSuccess: (message) => addPostedMessage(queryClient, message),
+    onSuccess: (message) => addMessage(queryClient, message),
     onSettled: () => {
       sendingRef.current = false;
     },

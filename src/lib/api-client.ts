@@ -84,9 +84,13 @@ function roomPath(roomId: string): string {
   return `/api/rooms/${encodeURIComponent(roomId)}`;
 }
 
-/** The room's latest page of messages, oldest first. */
-export function listMessages(roomId: string): Promise<Message[]> {
-  return request<Message[]>(`${roomPath(roomId)}/messages`);
+/** The room's latest page of messages, oldest first, or with `after` the page that follows that message. */
+export function listMessages(roomId: string, options: { after?: string; limit?: number } = {}): Promise<Message[]> {
+  const params = new URLSearchParams();
+  if (options.after !== undefined) params.set("after", options.after);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.size > 0 ? `?${params}` : "";
+  return request<Message[]>(`${roomPath(roomId)}/messages${query}`);
 }
 
 export function postMessage(roomId: string, input: { author: string; body: string }): Promise<Message> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMessageTime, mergeMessages } from "./messages";
+import { formatMessageTime, mergeCaughtUp, mergeMessages } from "./messages";
 import type { Message } from "./types";
 
 function message(id: string, createdAt = "2026-10-31T12:00:00.000Z"): Message {
@@ -27,6 +27,45 @@ describe("mergeMessages", () => {
     const existing = [message("a")];
     mergeMessages(existing, [message("b")]);
     expect(existing.map((m) => m.id)).toEqual(["a"]);
+  });
+});
+
+describe("mergeCaughtUp", () => {
+  const ids = (messages: Message[]) => messages.map((m) => m.id);
+
+  it("adds the missed messages after the cursor, without repeating the overlap", () => {
+    const merged = mergeCaughtUp([message("a"), message("b"), message("c")], "a", [message("b"), message("c"), message("d")]);
+    expect(ids(merged)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("puts missed messages before live ones that arrived while the page loaded", () => {
+    // "e" came live before the page answered; "c" and "d" were sent during the gap.
+    const merged = mergeCaughtUp([message("a"), message("b"), message("e")], "a", [message("b"), message("c"), message("d")]);
+    expect(ids(merged)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("takes the server's order for a message that committed late", () => {
+    // "x" committed after "c" was delivered live, but sorts before it.
+    const merged = mergeCaughtUp([message("a"), message("c")], "a", [message("x"), message("c")]);
+    expect(ids(merged)).toEqual(["a", "x", "c"]);
+  });
+
+  it("does not repeat a message the list holds before the cursor in another order (review #1)", () => {
+    // "C" began its transaction first but "X" committed first: the list got X then C live, while
+    // the server sorts C before X, so the page after C still holds X.
+    const listed = [message("m1"), message("X"), message("C"), message("m4"), message("m5")];
+    const merged = mergeCaughtUp(listed, "C", [message("X"), message("m4"), message("m5"), message("m6")]);
+    expect(ids(merged)).toEqual(["m1", "C", "X", "m4", "m5", "m6"]);
+  });
+
+  it("merges a latest page into a short list when there is no cursor", () => {
+    const merged = mergeCaughtUp([message("a"), message("e")], undefined, [message("a"), message("b")]);
+    expect(ids(merged)).toEqual(["a", "b", "e"]);
+  });
+
+  it("appends the page when the cursor is no longer in the list", () => {
+    const merged = mergeCaughtUp([message("a"), message("b")], "gone", [message("b"), message("c")]);
+    expect(ids(merged)).toEqual(["a", "b", "c"]);
   });
 });
 
