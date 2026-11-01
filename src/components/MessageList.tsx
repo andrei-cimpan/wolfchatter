@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { useMessages } from "@/hooks/useMessages";
 import { useRoomStream } from "@/hooks/useRoomStream";
-import { formatMessageTime } from "@/lib/messages";
+import { formatMessageTime, isNearBottom } from "@/lib/messages";
 import type { Message } from "@/lib/types";
 
 /** The messages, oldest first: author and body, the date right-aligned below, then a divider. */
@@ -52,23 +52,47 @@ function MessageListBody({ query }: { query: MessagesQuery }) {
   );
 }
 
+interface MessageListProps {
+  roomId: string;
+  /** How many posts this form has sent; each one brings the newest message into view. */
+  sentCount: number;
+}
+
 /** Scrolls inside the card or sheet, so the form below it stays in view. Mount one per room. */
-export function MessageList({ roomId }: { roomId: string }) {
+export function MessageList({ roomId, sentCount }: MessageListProps) {
   const query = useMessages(roomId);
   useRoomStream(roomId);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  // Recorded while scrolling: by the time an effect runs, the new message has already grown the
+  // list, so measuring there would take a reader at the bottom for one who has scrolled up.
+  const followingRef = useRef(true);
   const newestId = query.data?.at(-1)?.id;
 
-  // Shows the newest message when the room opens and when one is added. The raised sheet's list
-  // fits only a message or two, so a new post would otherwise land out of sight. T5.2 refines this
-  // for live messages, which should not pull a reader away from older ones.
+  // Shows the newest message when the room opens and when one is added, unless the reader has
+  // scrolled up to older ones.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
-    if (scroller && newestId !== undefined) scroller.scrollTop = scroller.scrollHeight;
+    if (scroller && newestId !== undefined && followingRef.current) scroller.scrollTop = scroller.scrollHeight;
   }, [newestId]);
 
+  // The reader's own post always comes into view, or it would land out of sight. It may render
+  // before or after this count changes (the stream can deliver it first), so this also makes the
+  // effect above follow it.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || sentCount === 0) return;
+    followingRef.current = true;
+    scroller.scrollTop = scroller.scrollHeight;
+  }, [sentCount]);
+
   return (
-    <div ref={scrollerRef} className="mt-4 flex-auto overflow-y-auto">
+    <div
+      ref={scrollerRef}
+      onScroll={(event) => {
+        followingRef.current = isNearBottom(event.currentTarget);
+      }}
+      className="mt-4 flex-auto overflow-y-auto"
+    >
       <MessageListBody query={query} />
     </div>
   );

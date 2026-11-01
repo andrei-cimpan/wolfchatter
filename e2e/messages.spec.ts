@@ -202,6 +202,80 @@ test.describe("live messages", () => {
   });
 });
 
+test.describe("following the conversation", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  // Resolves once the scroll event has fired, so the list knows where the reader is.
+  const scrollList = (page: Page, toBottomMinus: number | null) =>
+    scroller(page).evaluate(
+      (el, distance) =>
+        new Promise<void>((resolve) => {
+          el.addEventListener("scroll", () => resolve(), { once: true });
+          el.scrollTop = distance === null ? 0 : el.scrollHeight - el.clientHeight - distance;
+        }),
+      toBottomMinus,
+    );
+  const scrollTop = (page: Page) => scroller(page).evaluate((el) => el.scrollTop);
+
+  async function openLongRoom(page: Page) {
+    const id = await newRoom(page.request);
+    const sendLive = (body: string) =>
+      page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
+    for (let i = 1; i <= 25; i++) await sendLive(`Message ${i}`);
+    const streamOpened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    await openRoom(page, id);
+    await streamOpened;
+    await expect(messages(page).getByRole("listitem")).toHaveCount(25);
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+    return sendLive;
+  }
+
+  test("a live message leaves a reader who scrolled up where they are", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+
+    await sendLive("Live while reading");
+    await expect(newest(page)).toContainText("Live while reading");
+    expect(await scrollTop(page)).toBe(0);
+    await expect(newest(page)).not.toBeInViewport();
+  });
+
+  test("a live message comes into view for a reader at the bottom, or just short of it", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await sendLive("Live at the bottom");
+    await expect(newest(page)).toContainText("Live at the bottom");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await scrollList(page, 10);
+    await sendLive("Live just short of it");
+    await expect(newest(page)).toContainText("Live just short of it");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("scrolling back down follows live messages again", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+    await scrollList(page, 0);
+
+    await sendLive("Live after coming back");
+    await expect(newest(page)).toContainText("Live after coming back");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("your own post comes into view even after scrolling up, and live messages then follow", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+
+    await post(page, "ana", "My own post");
+    await expect(newest(page)).toContainText("My own post");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await sendLive("Live after my post");
+    await expect(newest(page)).toContainText("Live after my post");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+});
+
 test.describe("live messages after a drop", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 

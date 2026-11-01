@@ -36,6 +36,15 @@ export function mergeCaughtUp(
   return [...head, ...mergeMessages(page, existing.slice(cut))];
 }
 
+// Absorbs the fractions of a pixel a zoomed page can leave at the bottom; less than one message
+// row, so a reader who has scrolled up even one message counts as reading older ones.
+export const NEAR_BOTTOM_PX = 32;
+
+/** Whether a scrolling element is showing the end of its content. */
+export function isNearBottom(element: { scrollTop: number; scrollHeight: number; clientHeight: number }): boolean {
+  return element.scrollHeight - element.clientHeight - element.scrollTop <= NEAR_BOTTOM_PX;
+}
+
 /** Date and time in the reader's locale and time zone; the options exist for tests. */
 export function formatMessageTime(iso: string, options: { locale?: string; timeZone?: string } = {}): string {
   return new Intl.DateTimeFormat(options.locale, {

@@ -11,11 +11,12 @@ interface MessageFormProps {
   /** Owned by the panel, so the username carries over when the user switches rooms. */
   author: string;
   onAuthorChange: (author: string) => void;
+  onSent: () => void;
 }
 
 // maxLength counts UTF-16 units and the API counts code points, so the fields are at most as
 // lenient as the API: an emoji-heavy text can be cut short, but never rejected as too long.
-export function MessageForm({ roomId, author, onAuthorChange }: MessageFormProps) {
+export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageFormProps) {
   const [body, setBody] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
   const bodyRef = useRef<HTMLInputElement>(null);
@@ -29,6 +30,7 @@ export function MessageForm({ roomId, author, onAuthorChange }: MessageFormProps
     send(author, body, () => {
       setBody("");
       bodyRef.current?.focus();
+      onSent();
     });
   }
 
