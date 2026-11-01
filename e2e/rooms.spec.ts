@@ -398,6 +398,27 @@ test.describe("desktop", () => {
   });
 });
 
+test.describe("just wide enough for the card", () => {
+  test.use({ viewport: { width: 800, height: 720 } });
+
+  test("a room selected at zoom 0 stays clear of the card", async ({ page }) => {
+    const room = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    await openMap(page);
+    for (const zoom of [4, 3, 2, 1, 0]) {
+      await page.getByRole("button", { name: "Zoom out" }).click();
+      await expect.poll(() => tileZooms(page)).toEqual([String(zoom)]);
+    }
+    await page.waitForTimeout(400);
+
+    await page.evaluate((id) => history.pushState(null, "", `/?room=${id}`), room.id);
+    await expect(pin(page, room.title)).toBeAttached();
+    // Half the 800 px view, less the shift: at zoom 0 the 256 px world allows 127 px of it.
+    await expectPinTipAt(page, room.title, { x: 400 - 127, y: 360 });
+    await page.waitForTimeout(500);
+    await expectPinTipAt(page, room.title, { x: 400 - 127, y: 360 });
+  });
+});
+
 test.describe("narrow screen", () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
