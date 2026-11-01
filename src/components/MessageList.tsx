@@ -30,9 +30,11 @@ type MessagesQuery = ReturnType<typeof useMessages>;
 // Only messages go in the log, which screen readers announce as it grows: status text there would
 // be read out, and so would a whole history arriving in a log already on screen.
 function MessageListBody({ query }: { query: MessagesQuery }) {
-  const { data: messages, isPending, isError, refetch } = query;
+  const { data: messages, isPending, refetch } = query;
   if (isPending) return <p role="status" className="text-sm text-foreground/60">Loading messages…</p>;
-  if (isError) {
+  // Only when there is nothing to show: a failed refetch leaves the loaded list readable, and the
+  // stream or the next refetch catches it up.
+  if (messages === undefined) {
     return (
       <p role="alert" className="text-sm">
         Couldn&apos;t load messages.{" "}

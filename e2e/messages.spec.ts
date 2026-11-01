@@ -365,6 +365,35 @@ test.describe("following the conversation", () => {
     await expect(newest(page)).not.toBeInViewport();
   });
 
+  test("a failed refetch keeps the list and the reader's place", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+    await scroller(page).evaluate((el) => el.scrollBy(0, 100));
+    await expect.poll(() => scrollTop(page)).toBe(100);
+
+    let failed = 0;
+    const isList = (url: URL) => url.pathname.endsWith("/messages");
+    await page.route(isList, (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      failed++;
+      return route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } });
+    });
+    // What TanStack Query listens for to refetch when the tab is shown again.
+    await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+    // The first try and its one retry, after which the query is in its error state.
+    await expect.poll(() => failed).toBe(2);
+    await page.waitForTimeout(300);
+
+    await expect(panel(page).getByText("Couldn't load messages.")).toHaveCount(0);
+    await expect(messages(page).getByRole("listitem")).toHaveCount(25);
+    expect(await scrollTop(page)).toBe(100);
+
+    await page.unroute(isList);
+    await sendLive("Live after the failure");
+    await expect(newest(page)).toContainText("Live after the failure");
+    expect(await scrollTop(page)).toBe(100);
+  });
+
   test("your own post comes into view even after scrolling up, and live messages then follow", async ({ page }) => {
     const sendLive = await openLongRoom(page);
     await scrollList(page, null);
