@@ -26,7 +26,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 - **FR7** Pins load by map viewport. Zoomed out, nearby rooms collapse into clusters that show a count, and clicking a cluster zooms in.
 - **FR8** The layout is responsive. On desktop the chat panel sits on the right of the map. On narrow screens it becomes a bottom sheet: with no room selected, a banner below the map, so the map's attribution stays visible; once a room is open, a sheet raised over the map.
 
-**Usability improvements (beyond the brief):** remember the username locally, auto-scroll to the newest message, disable Submit when a field is empty, show a message count on each pin, and fly the map to the selected pin.
+**Usability improvements (beyond the brief):** remember the username locally, auto-scroll to the newest message, disable Submit when a field is empty, and fly the map to the selected pin.
 
 ## 4. Technical decisions
 
@@ -41,9 +41,9 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 | `rooms` | `id` uuid PK, `title` text, `lat` double, `lng` double, `message_count` integer, `created_at` timestamptz |
 | `messages` | `id` uuid PK, `room_id` FK, `author` text (max 32), `body` text (max 1000), `created_at` timestamptz |
 
-Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles default to "Chatroom N", as in the mockups.
+Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles default to "Chatroom N", as in the mockups. `message_count` is kept up to date but not used by the UI for now; it stays in case a later version needs it.
 
-**Viewport loading and clustering.** The map requests only the pins in view (`bbox` and `zoom`). The server groups rooms into grid cells of roughly 64 px at that zoom and returns one cluster (count and centre) per crowded cell, and individual rooms elsewhere. At zoom 16 and above rooms are never clustered. Each room also keeps a denormalized `message_count` for the pin badge.
+**Viewport loading and clustering.** The map requests only the pins in view (`bbox` and `zoom`). The server groups rooms into grid cells of roughly 64 px at that zoom and returns one cluster (count and centre) per crowded cell, and individual rooms elsewhere. At zoom 16 and above rooms are never clustered.
 
 **Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime`). v1 provides `PostgresChatRepository`. v2 adds `SupabaseChatRepository` without changing UI code.
 

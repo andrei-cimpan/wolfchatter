@@ -7,6 +7,7 @@ import iconUrl from "leaflet/dist/images/marker-icon.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import { useMemo, useState } from "react";
 import { Marker, useMap, useMapEvents } from "react-leaflet";
+import { useFlyToRoom } from "@/hooks/useFlyToRoom";
 import { nearestWorldCopy } from "@/lib/bbox";
 import { clusterBubble } from "@/lib/cluster-bubble";
 import { CLUSTER_MAX_ZOOM, clusterCellBounds } from "@/lib/map-grid";
@@ -92,6 +93,7 @@ export interface MapMarkersProps {
   /** The zoom the clusters were grouped at, which decides the cell a click zooms into. */
   clusterZoom: number;
   pinAnchor: PinAnchor | null;
+  selectedRoomId: string | null;
   onRoomClick: (id: string) => void;
 }
 
@@ -99,16 +101,22 @@ export interface MapMarkersProps {
 // the copy nearest the view's centre, recomputed after every move. At low zoom several copies are
 // on screen at once, so the room just created stays on the copy that was clicked until the user
 // drags or zooms. Not on any move: raising the mobile sheet moves the map too.
-export function MapMarkers({ rooms, clusters, clusterZoom, pinAnchor, onRoomClick }: MapMarkersProps) {
+export function MapMarkers({ rooms, clusters, clusterZoom, pinAnchor, selectedRoomId, onRoomClick }: MapMarkersProps) {
   const map = useMap();
   const [centerLng, setCenterLng] = useState(() => map.getCenter().lng);
   const [releasedAnchor, setReleasedAnchor] = useState<PinAnchor | null>(null);
+  const anchor = pinAnchor !== releasedAnchor ? pinAnchor : null;
+  const pinLng = (room: PinRoom) => nearestWorldCopy(room.lng, room.id === anchor?.roomId ? anchor.lng : centerLng);
+
+  const selected = rooms.find((room) => room.id === selectedRoomId);
+  // Before useMapEvents: flyTo fires zoomstart, and here it finds that render's handlers not yet
+  // added. Otherwise the new room's pin would lose its anchor and hop as the flight starts.
+  useFlyToRoom(selectedRoomId, selected && { ...selected, lng: pinLng(selected) });
   useMapEvents({
     moveend: () => setCenterLng(map.getCenter().lng),
     dragstart: () => setReleasedAnchor(pinAnchor),
     zoomstart: () => setReleasedAnchor(pinAnchor),
   });
-  const anchor = pinAnchor !== releasedAnchor ? pinAnchor : null;
 
   return (
     <>
@@ -123,7 +131,7 @@ export function MapMarkers({ rooms, clusters, clusterZoom, pinAnchor, onRoomClic
       {rooms.map((room) => (
         <Marker
           key={room.id}
-          position={[room.lat, nearestWorldCopy(room.lng, room.id === anchor?.roomId ? anchor.lng : centerLng)]}
+          position={[room.lat, pinLng(room)]}
           icon={pinIcon}
           title={room.title}
           alt={room.title}

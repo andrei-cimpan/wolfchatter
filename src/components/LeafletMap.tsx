@@ -92,7 +92,8 @@ export default function LeafletMap({ pinAnchor, onMapClick, onRoomClick }: Leafl
   const data = useMapItems(viewport);
   const { rooms, clusters } = splitItems(data?.items ?? []);
   // The open room always gets a pin, even when it is clustered, out of view, or not loaded yet.
-  const { data: selectedRoom } = useRoom(useSelectedRoomId());
+  const selectedRoomId = useSelectedRoomId();
+  const { data: selectedRoom } = useRoom(selectedRoomId);
   if (selectedRoom && !rooms.some((room) => room.id === selectedRoom.id)) rooms.push(selectedRoom);
 
   return (
@@ -113,6 +114,7 @@ export default function LeafletMap({ pinAnchor, onMapClick, onRoomClick }: Leafl
         clusters={clusters}
         clusterZoom={data?.zoom ?? 0}
         pinAnchor={pinAnchor}
+        selectedRoomId={selectedRoomId}
         onRoomClick={onRoomClick}
       />
     </MapContainer>
