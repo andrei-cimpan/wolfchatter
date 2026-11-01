@@ -74,13 +74,69 @@ test.describe("desktop", () => {
     await expect(pin(page, second.title)).toBeVisible();
     await expectServerListsRoom(page, first);
     await expectServerListsRoom(page, second);
-    // Kept only in memory until T5.1 saves it.
-    await expect(usernameField(page)).toHaveValue("");
+    await expect(usernameField(page)).toHaveValue("ana");
 
     await pin(page, first.title).click();
     await expect(page).toHaveURL(firstUrl);
     await expect(roomTitle(page)).toHaveText(first.title);
     await expect(messages(page).getByRole("listitem")).toHaveText([/Before the reload, first room/]);
+  });
+
+  test("a username that was cleared stays cleared after a reload", async ({ page }) => {
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Signed as ana");
+    await usernameField(page).clear();
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Signed as ana");
+    await expect(usernameField(page)).toHaveValue("");
+  });
+
+  test("a username of only spaces is refused, and is gone after a reload", async ({ page }) => {
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Signed as ana");
+    await usernameField(page).fill("   ");
+    await panel(page).getByRole("textbox", { name: "Message" }).fill("Signed with spaces");
+    await panel(page).getByRole("button", { name: "Submit" }).click();
+    await expect(panel(page).getByRole("alert")).toHaveText("Enter a username.");
+    await expect(messages(page).getByRole("listitem")).toHaveCount(1);
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Signed as ana");
+    await expect(usernameField(page)).toHaveValue("");
+  });
+
+  test("spaces around a username are dropped; spaces inside it can still be typed", async ({ page }) => {
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Signed as ana");
+    await usernameField(page).clear();
+    await usernameField(page).pressSequentially(" ana b ");
+    // The field keeps what is typed, or the space in "ana b" could never be entered.
+    await expect(usernameField(page)).toHaveValue(" ana b ");
+    await panel(page).getByRole("textbox", { name: "Message" }).fill("Signed as ana b");
+    await panel(page).getByRole("button", { name: "Submit" }).click();
+    await expect(messages(page).getByRole("listitem").last()).toContainText("ana b:");
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Signed as ana b");
+    await expect(usernameField(page)).toHaveValue("ana b");
+  });
+
+  test("with storage blocked, posting still works and the username lasts until a reload", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", {
+        get() {
+          throw new DOMException("The operation is insecure.", "SecurityError");
+        },
+      });
+    });
+    await openMap(page);
+    await createRoomWithMessage(page, 400, 300, "Posted without storage");
+    await expect(usernameField(page)).toHaveValue("ana");
+
+    await page.reload();
+    await expect(messages(page)).toContainText("Posted without storage");
+    await expect(usernameField(page)).toHaveValue("");
   });
 
   test("Back still walks the rooms opened before a reload", async ({ page }) => {

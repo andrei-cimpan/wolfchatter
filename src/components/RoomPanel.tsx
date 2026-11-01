@@ -5,6 +5,7 @@ import { createRoomErrorMessage } from "@/hooks/useCreateRoom";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import { readSavedUsername, saveUsername } from "@/lib/saved-username";
 import { MessageForm } from "./MessageForm";
 import { MessageList } from "./MessageList";
 
@@ -84,7 +85,13 @@ interface RoomPanelProps {
 export function RoomPanel({ creating, creationError, creationErrorSelection }: RoomPanelProps) {
   const roomId = useSelectedRoomId();
   const visibleError = creationErrorSelection === roomId ? creationError : null;
-  const [author, setAuthor] = useState("");
+  // The server starts empty and the browser with the saved name, which cannot cause a hydration
+  // mismatch: RoomContent renders the form only once hydrated.
+  const [author, setAuthor] = useState(readSavedUsername);
+  function changeAuthor(next: string) {
+    setAuthor(next);
+    saveUsername(next);
+  }
   return (
     <PanelFrame raised={roomId !== null}>
       {roomId !== null && <SheetHeader />}
@@ -101,7 +108,7 @@ export function RoomPanel({ creating, creationError, creationErrorSelection }: R
       {roomId === null ? <p>{EMPTY_STATE}</p> : (
         // Keyed so each room mounts its own message log, which then does not read out the history
         // it opens with, and its own form, so a half-written message stays with its room.
-        <RoomContent key={roomId} roomId={roomId} author={author} onAuthorChange={setAuthor} />
+        <RoomContent key={roomId} roomId={roomId} author={author} onAuthorChange={changeAuthor} />
       )}
     </PanelFrame>
   );

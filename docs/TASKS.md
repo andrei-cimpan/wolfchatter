@@ -55,7 +55,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 ## 5. Usability improvements
 
-- [ ] **T5.1** Remember the username in localStorage.
+- [x] **T5.1** Remember the username in localStorage.
 - [ ] **T5.2** Auto-scroll to the newest message; disable Submit when a field is empty.
   *Carried over from the PR #12 review:*
   - T3.4 already scrolls the list to the newest message on opening a room and whenever one is added. What is left is to stay put when the reader has scrolled up to older messages and a live one arrives (T4.2).
