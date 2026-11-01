@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, type UIEvent } from "react";
 import { useMessages } from "@/hooks/useMessages";
 import { useRoomStream } from "@/hooks/useRoomStream";
 import { formatMessageTime, isNearBottom } from "@/lib/messages";
@@ -66,6 +66,7 @@ export function MessageList({ roomId, sentCount }: MessageListProps) {
   // Recorded while scrolling: by the time an effect runs, the new message has already grown the
   // list, so measuring there would take a reader at the bottom for one who has scrolled up.
   const followingRef = useRef(true);
+  const measuredSizeRef = useRef({ width: 0, height: 0 });
   const newestId = query.data?.at(-1)?.id;
 
   // Shows the newest message when the room opens and when one is added, unless the reader has
@@ -85,14 +86,30 @@ export function MessageList({ roomId, sentCount }: MessageListProps) {
     scroller.scrollTop = scroller.scrollHeight;
   }, [sentCount]);
 
+  // A narrower list rewraps its text and a shorter one shows less, both of which leave the end out
+  // of view with nothing having been added.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const observer = new ResizeObserver(() => {
+      measuredSizeRef.current = { width: scroller.clientWidth, height: scroller.clientHeight };
+      if (followingRef.current) scroller.scrollTop = scroller.scrollHeight;
+    });
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, []);
+
+  function handleScroll(event: UIEvent<HTMLDivElement>) {
+    const scroller = event.currentTarget;
+    const measured = measuredSizeRef.current;
+    // Rewrapping moves scrollTop, and this event can fire before the observer above has run. That
+    // was the layout, not the reader, so it must not count as scrolling up.
+    if (scroller.clientWidth !== measured.width || scroller.clientHeight !== measured.height) return;
+    followingRef.current = isNearBottom(scroller);
+  }
+
   return (
-    <div
-      ref={scrollerRef}
-      onScroll={(event) => {
-        followingRef.current = isNearBottom(event.currentTarget);
-      }}
-      className="mt-4 flex-auto overflow-y-auto"
-    >
+    <div ref={scrollerRef} onScroll={handleScroll} className="mt-4 flex-auto overflow-y-auto">
       <MessageListBody query={query} />
     </div>
   );

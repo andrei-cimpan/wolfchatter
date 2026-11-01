@@ -287,12 +287,15 @@ test.describe("following the conversation", () => {
       toBottomMinus,
     );
   const scrollTop = (page: Page) => scroller(page).evaluate((el) => el.scrollTop);
+  const distanceFromBottom = (page: Page) =>
+    scroller(page).evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  const longLine = (i: number) => `Message ${i}, an ordinary sentence that wraps once the panel narrows`;
 
-  async function openLongRoom(page: Page) {
+  async function openLongRoom(page: Page, text = (i: number) => `Message ${i}`) {
     const id = await newRoom(page.request);
     const sendLive = (body: string) =>
       page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
-    for (let i = 1; i <= 25; i++) await sendLive(`Message ${i}`);
+    for (let i = 1; i <= 25; i++) await sendLive(text(i));
     const streamOpened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
     await openRoom(page, id);
     await streamOpened;
@@ -331,6 +334,35 @@ test.describe("following the conversation", () => {
     await sendLive("Live after coming back");
     await expect(newest(page)).toContainText("Live after coming back");
     await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("a reader who never scrolled keeps following when the list changes size", async ({ page }) => {
+    // Below the md breakpoint, where the list's width follows the window's and its text rewraps.
+    await page.setViewportSize({ width: 700, height: 900 });
+    const sendLive = await openLongRoom(page, longLine);
+    // A drag, with no waiting between sizes: the scroll events that rewrapping causes can then fire
+    // before the list has seen its new size, and must still not read as the reader scrolling up.
+    for (const width of [660, 620, 580, 540, 500, 460, 420, 380, 420, 500, 450]) {
+      await page.setViewportSize({ width, height: 900 });
+    }
+    await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(1);
+    await sendLive("Live after narrowing");
+    await expect(newest(page)).toContainText("Live after narrowing");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await page.setViewportSize({ width: 450, height: 700 });
+    await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(1);
+  });
+
+  test("a reader who scrolled up is not pulled down when the list changes size", async ({ page }) => {
+    await page.setViewportSize({ width: 700, height: 900 });
+    const sendLive = await openLongRoom(page, longLine);
+    await scrollList(page, null);
+    await page.setViewportSize({ width: 450, height: 900 });
+    await page.setViewportSize({ width: 450, height: 700 });
+    await sendLive("Live while reading");
+    await expect(newest(page)).toContainText("Live while reading");
+    await expect(newest(page)).not.toBeInViewport();
   });
 
   test("your own post comes into view even after scrolling up, and live messages then follow", async ({ page }) => {
