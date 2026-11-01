@@ -45,6 +45,17 @@ async function expectPinTipAt(page: Page, title: string, point: { x: number; y: 
   }).toPass({ timeout: 10_000 });
 }
 
+/** At a whole zoom every tile is 256 px wide; a zoom left between levels scales them and blurs the map. */
+async function expectZoomKept(page: Page) {
+  await expect
+    .poll(
+      () => page.locator(".leaflet-tile").evaluateAll((tiles) => [...new Set(tiles.map((t) => t.getBoundingClientRect().width))]),
+      { timeout: 5000 },
+    )
+    .toEqual([256]);
+  expect(await tileZooms(page)).toEqual(["5"]);
+}
+
 /**
  * The x of a pin's centre on each animation frame for the next 1.5 s, in the order seen. Without a
  * title, any pin: the first the map shows, which suits a test whose room does not exist yet.
@@ -183,6 +194,8 @@ test.describe("desktop", () => {
     await openMap(page);
     await page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), far.id);
     await expect(pin(page, far.title)).toBeAttached();
+    // Long enough for the flight to have zoomed out part of the way.
+    await page.waitForTimeout(500);
 
     await page.mouse.move(300, 300);
     await page.mouse.down();
@@ -193,6 +206,30 @@ test.describe("desktop", () => {
     const icon = await pin(page, far.title).boundingBox();
     const tip = { x: (icon?.x ?? 0) + 12, y: (icon?.y ?? 0) + 41 };
     expect(Math.abs(tip.x - CARD_FOCUS_X) + Math.abs(tip.y - 360)).toBeGreaterThan(50);
+    await expectZoomKept(page);
+  });
+
+  test("selecting another room during a flight keeps the zoom", async ({ page }) => {
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    const near = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page);
+    const select = (id: string) => page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), id);
+
+    await select(far.id);
+    await expect(pin(page, far.title)).toBeAttached();
+    await page.waitForTimeout(500);
+    await select(near.id);
+    await expectPinTipAt(page, near.title, { x: CARD_FOCUS_X, y: 360 });
+    await expectZoomKept(page);
+  });
+
+  test("two rooms created in quick succession keep the zoom", async ({ page }) => {
+    await openMap(page);
+    await expect(page.locator(".leaflet-tile").first()).toBeAttached();
+    await createRoomAt(page, 100, 600);
+    const second = await createRoomAt(page, 800, 100);
+    await expectPinTipAt(page, second, { x: CARD_FOCUS_X, y: 360 });
+    await expectZoomKept(page);
   });
 
   test("dragging the map does not create a room", async ({ page }) => {
