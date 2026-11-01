@@ -19,6 +19,15 @@ describe("messageInputError", () => {
     expect(messageInputError("ana", "   ")).toBe("Enter a message.");
     expect(messageInputError("ana", "ㅤ")).toBe("Enter a message.");
   });
+
+  it("says what is wrong when a field has text the API would refuse", () => {
+    expect(messageInputError("ana", "hello\u0000there")).toBe("Message contains invalid characters");
+    expect(messageInputError("an\u0000a", "Hello")).toBe("Username contains invalid characters");
+  });
+
+  it("still asks for the text when a field holds only a NUL", () => {
+    expect(messageInputError("ana", "\u0000")).toBe("Enter a message.");
+  });
 });
 
 describe("postMessageErrorMessage", () => {

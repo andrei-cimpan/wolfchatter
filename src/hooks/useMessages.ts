@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { ApiError, listMessages, postMessage, retryAfterPhrase } from "@/lib/api-client";
 import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import { mergeCaughtUp, mergeMessages } from "@/lib/messages";
-import { postMessageSchema } from "@/lib/schemas";
+import { hasVisibleText, postMessageSchema } from "@/lib/schemas";
 import type { Message } from "@/lib/types";
 import { shouldRetryRoomQuery } from "./useRoom";
 
@@ -79,7 +79,12 @@ type PostMessageVariables = { roomId: string; author: string; body: string };
 export function messageInputError(author: string, body: string): string | null {
   const result = postMessageSchema.safeParse({ author, body });
   if (result.success) return null;
-  return result.error.issues[0]?.path[0] === "author" ? "Enter a username." : "Enter a message.";
+  const [issue] = result.error.issues;
+  const isAuthor = issue?.path[0] === "author";
+  if (!issue || !hasVisibleText(isAuthor ? author : body)) return isAuthor ? "Enter a username." : "Enter a message.";
+  // Text that looks fine but is refused, such as a pasted NUL: "Enter a message." beside it would
+  // make no sense. The form calls the API's author a username.
+  return issue.message.replace(/^Author/, "Username");
 }
 
 /**
@@ -106,7 +111,12 @@ export function usePostMessage(roomId: string) {
     mutation.mutate({ roomId, author, body }, { onSuccess: onSent });
   }
 
-  return { send, isPending: mutation.isPending, error: mutation.error };
+  /** Forgets the last failure. Not while sending: a reset would drop that post's `onSent`. */
+  function clearError() {
+    if (!sendingRef.current) mutation.reset();
+  }
+
+  return { send, clearError, isPending: mutation.isPending, error: mutation.error };
 }
 
 export function postMessageErrorMessage(error: Error): string {

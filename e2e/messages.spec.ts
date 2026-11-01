@@ -70,9 +70,102 @@ test.describe("desktop", () => {
       if (isMessagePost(new URL(r.url()), r.method())) posts.push(r.url());
     });
     await openRoom(page, await newRoom(page.request));
-    await post(page, "ana", "   ");
+    await usernameField(page).fill("ana");
+    await messageField(page).fill("   ");
+    await expect(submit(page)).toBeDisabled();
+    await messageField(page).press("Enter");
     await expect(panel(page).getByRole("alert")).toHaveText("Enter a message.");
     expect(posts).toHaveLength(0);
+
+    await messageField(page).fill("Now with text");
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+    // Clearing the field to retype is not another attempt to send.
+    await messageField(page).clear();
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+  });
+
+  test("a server error goes away with a hint, and does not come back for a message not sent", async ({ page }) => {
+    await page.route(
+      (url) => url.pathname.endsWith("/messages"),
+      (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } })
+          : route.fallback(),
+    );
+    await openRoom(page, await newRoom(page.request));
+    await post(page, "ana", "Goes nowhere");
+    await expect(panel(page).getByRole("alert")).toHaveText("Couldn't send your message. Please try again.");
+
+    await messageField(page).fill("   ");
+    await messageField(page).press("Enter");
+    await expect(panel(page).getByRole("alert")).toHaveText("Enter a message.");
+    await messageField(page).fill("Not sent yet");
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+  });
+
+  test("Submit is disabled until both fields have text, and while a post is sending", async ({ page }) => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname.endsWith("/messages"),
+      async (route) => {
+        if (route.request().method() === "POST") await held;
+        await route.fallback();
+      },
+    );
+    await openRoom(page, await newRoom(page.request));
+    await expect(submit(page)).toBeDisabled();
+    await expect(submit(page)).toHaveCSS("opacity", "0.6");
+    await messageField(page).fill("Hello");
+    await expect(submit(page)).toBeDisabled();
+    await usernameField(page).fill("ana");
+    await expect(submit(page)).toBeEnabled();
+    await expect(submit(page)).toHaveCSS("opacity", "1");
+    await messageField(page).clear();
+    await expect(submit(page)).toBeDisabled();
+
+    await messageField(page).fill("Hello");
+    await submit(page).click();
+    await expect(submit(page)).toBeDisabled();
+    release();
+    await expect(messages(page).getByRole("listitem")).toHaveCount(1);
+    // Cleared after sending, so it waits for the next message.
+    await expect(submit(page)).toBeDisabled();
+  });
+
+  test("a failed post keeps keyboard focus on Submit, which can be pressed again", async ({ page }) => {
+    let failing = true;
+    await page.route(
+      (url) => url.pathname.endsWith("/messages"),
+      (route) =>
+        failing && route.request().method() === "POST"
+          ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } })
+          : route.fallback(),
+    );
+    await openRoom(page, await newRoom(page.request));
+    await usernameField(page).fill("ana");
+    await messageField(page).fill("Try twice");
+    await submit(page).focus();
+    await page.keyboard.press("Enter");
+    await expect(panel(page).getByRole("alert")).toHaveText("Couldn't send your message. Please try again.");
+    await expect(submit(page)).toBeFocused();
+
+    failing = false;
+    await page.keyboard.press("Enter");
+    await expect(newest(page)).toContainText("Try twice");
+  });
+
+  test("a paste cut short by the length limit can still be sent", async ({ page }) => {
+    await openRoom(page, await newRoom(page.request));
+    await usernameField(page).fill("ana");
+    await messageField(page).focus();
+    // The limit falls between the two halves of the emoji.
+    await page.keyboard.insertText(`${"x".repeat(999)}😀`);
+    const value = await messageField(page).inputValue();
+    expect(value.isWellFormed()).toBe(true);
+    await expect(submit(page)).toBeEnabled();
   });
 
   test("a rate-limited post explains the wait and keeps the text", async ({ page }) => {
@@ -199,6 +292,171 @@ test.describe("live messages", () => {
 
     await send("after");
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/, /after/]);
+  });
+});
+
+test.describe("following the conversation", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  // Resolves once the scroll event has fired, so the list knows where the reader is.
+  const scrollList = (page: Page, toBottomMinus: number | null) =>
+    scroller(page).evaluate(
+      (el, distance) =>
+        new Promise<void>((resolve) => {
+          el.addEventListener("scroll", () => resolve(), { once: true });
+          el.scrollTop = distance === null ? 0 : el.scrollHeight - el.clientHeight - distance;
+        }),
+      toBottomMinus,
+    );
+  const scrollTop = (page: Page) => scroller(page).evaluate((el) => el.scrollTop);
+  const distanceFromBottom = (page: Page) =>
+    scroller(page).evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  const longLine = (i: number) => `Message ${i}, an ordinary sentence that wraps once the panel narrows`;
+
+  async function openLongRoom(page: Page, text = (i: number) => `Message ${i}`) {
+    const id = await newRoom(page.request);
+    const sendLive = (body: string) =>
+      page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
+    for (let i = 1; i <= 25; i++) await sendLive(text(i));
+    const streamOpened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    await openRoom(page, id);
+    await streamOpened;
+    await expect(messages(page).getByRole("listitem")).toHaveCount(25);
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+    return sendLive;
+  }
+
+  test("a live message leaves a reader who scrolled up where they are", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+
+    await sendLive("Live while reading");
+    await expect(newest(page)).toContainText("Live while reading");
+    expect(await scrollTop(page)).toBe(0);
+    await expect(newest(page)).not.toBeInViewport();
+  });
+
+  test("a live message comes into view for a reader at the bottom, or just short of it", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await sendLive("Live at the bottom");
+    await expect(newest(page)).toContainText("Live at the bottom");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await scrollList(page, 10);
+    await sendLive("Live just short of it");
+    await expect(newest(page)).toContainText("Live just short of it");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("scrolling back down follows live messages again", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+    await scrollList(page, 0);
+
+    await sendLive("Live after coming back");
+    await expect(newest(page)).toContainText("Live after coming back");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("a reader who never scrolled keeps following when the list changes size", async ({ page }) => {
+    // Below the md breakpoint, where the list's width follows the window's and its text rewraps.
+    await page.setViewportSize({ width: 700, height: 900 });
+    const sendLive = await openLongRoom(page, longLine);
+    // A drag, with no waiting between sizes: the scroll events that rewrapping causes can then fire
+    // before the list has seen its new size, and must still not read as the reader scrolling up.
+    for (const width of [660, 620, 580, 540, 500, 460, 420, 380, 420, 500, 450]) {
+      await page.setViewportSize({ width, height: 900 });
+    }
+    await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(1);
+    await sendLive("Live after narrowing");
+    await expect(newest(page)).toContainText("Live after narrowing");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await page.setViewportSize({ width: 450, height: 700 });
+    await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(1);
+  });
+
+  test("a reader who scrolled up is not pulled down when the list changes size", async ({ page }) => {
+    await page.setViewportSize({ width: 700, height: 900 });
+    const sendLive = await openLongRoom(page, longLine);
+    await scrollList(page, null);
+    await page.setViewportSize({ width: 450, height: 900 });
+    await page.setViewportSize({ width: 450, height: 700 });
+    await sendLive("Live while reading");
+    await expect(newest(page)).toContainText("Live while reading");
+    await expect(newest(page)).not.toBeInViewport();
+  });
+
+  test("in the narrow sheet, a live message leaves a scrolled-up reader alone and follows at the bottom", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    const sendLive = await openLongRoom(page);
+    await sendLive("Live at the bottom");
+    await expect(newest(page)).toContainText("Live at the bottom");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await scrollList(page, null);
+    await sendLive("Live while reading");
+    await expect(newest(page)).toContainText("Live while reading");
+    expect(await scrollTop(page)).toBe(0);
+
+    await post(page, "ana", "From my phone");
+    await expect(newest(page)).toContainText("From my phone");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("a live message landing right after your own post still comes into view", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+    // Holds back the scroll event from jumping to your post, as if the live message beat its frame.
+    await page.evaluate(() => window.addEventListener("scroll", (event) => event.stopImmediatePropagation(), true));
+
+    await post(page, "ana", "My own post");
+    await expect(newest(page)).toContainText("My own post");
+    await sendLive("Live right after");
+    await expect(newest(page)).toContainText("Live right after");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+  });
+
+  test("a failed refetch keeps the list and the reader's place", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+    await scroller(page).evaluate((el) => el.scrollBy(0, 100));
+    await expect.poll(() => scrollTop(page)).toBe(100);
+
+    let failed = 0;
+    const isList = (url: URL) => url.pathname.endsWith("/messages");
+    await page.route(isList, (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      failed++;
+      return route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } });
+    });
+    // What TanStack Query listens for to refetch when the tab is shown again.
+    await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+    // The first try and its one retry, after which the query is in its error state.
+    await expect.poll(() => failed).toBe(2);
+    await page.waitForTimeout(300);
+
+    await expect(panel(page).getByText("Couldn't load messages.")).toHaveCount(0);
+    await expect(messages(page).getByRole("listitem")).toHaveCount(25);
+    expect(await scrollTop(page)).toBe(100);
+
+    await page.unroute(isList);
+    await sendLive("Live after the failure");
+    await expect(newest(page)).toContainText("Live after the failure");
+    expect(await scrollTop(page)).toBe(100);
+  });
+
+  test("your own post comes into view even after scrolling up, and live messages then follow", async ({ page }) => {
+    const sendLive = await openLongRoom(page);
+    await scrollList(page, null);
+
+    await post(page, "ana", "My own post");
+    await expect(newest(page)).toContainText("My own post");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
+
+    await sendLive("Live after my post");
+    await expect(newest(page)).toContainText("Live after my post");
+    await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
   });
 });
 

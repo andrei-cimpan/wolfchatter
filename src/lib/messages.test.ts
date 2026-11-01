@@ -1,10 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { formatMessageTime, mergeCaughtUp, mergeMessages } from "./messages";
+import { formatMessageTime, isNearBottom, mergeCaughtUp, mergeMessages, NEAR_BOTTOM_PX } from "./messages";
 import type { Message } from "./types";
 
 function message(id: string, createdAt = "2026-10-31T12:00:00.000Z"): Message {
   return { id, roomId: "room", author: "ana", body: `body ${id}`, createdAt };
 }
+
+describe("isNearBottom", () => {
+  const atDistance = (distance: number) => ({ scrollHeight: 1000, clientHeight: 200, scrollTop: 800 - distance });
+
+  it("is true at the very bottom", () => {
+    expect(isNearBottom(atDistance(0))).toBe(true);
+  });
+
+  it("allows some slack, up to and including the limit", () => {
+    expect(isNearBottom(atDistance(0.5))).toBe(true);
+    expect(isNearBottom(atDistance(NEAR_BOTTOM_PX))).toBe(true);
+  });
+
+  it("is false once the reader has scrolled further up", () => {
+    expect(isNearBottom(atDistance(NEAR_BOTTOM_PX + 1))).toBe(false);
+    expect(isNearBottom(atDistance(800))).toBe(false);
+  });
+
+  it("is true when the content does not overflow", () => {
+    expect(isNearBottom({ scrollHeight: 200, clientHeight: 200, scrollTop: 0 })).toBe(true);
+  });
+});
 
 describe("mergeMessages", () => {
   it("appends new messages after the existing ones", () => {

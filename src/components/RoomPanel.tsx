@@ -63,14 +63,20 @@ interface RoomContentProps {
 function RoomContent({ roomId, author, onAuthorChange }: RoomContentProps) {
   const { data: room, isPending, isError } = useRoom(roomId);
   const hydrated = useHydrated();
+  const [sentCount, setSentCount] = useState(0);
   if (isPending || !hydrated) return <p role="status">Loading chatroom…</p>;
   if (isError) return <p role="alert">Couldn&apos;t load this chatroom. Please try again.</p>;
   if (room === null) return <p>This chatroom doesn&apos;t exist.</p>;
   return (
     <>
       <h2 className="text-center font-medium">{room.title}</h2>
-      <MessageList roomId={room.id} />
-      <MessageForm roomId={room.id} author={author} onAuthorChange={onAuthorChange} />
+      <MessageList roomId={room.id} sentCount={sentCount} />
+      <MessageForm
+        roomId={room.id}
+        author={author}
+        onAuthorChange={onAuthorChange}
+        onSent={() => setSentCount((count) => count + 1)}
+      />
     </>
   );
 }
