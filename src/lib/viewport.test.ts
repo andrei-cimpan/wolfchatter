@@ -34,6 +34,18 @@ describe("viewportQuery", () => {
     expect(bbox.east).toBe(18 * TILE);
   });
 
+  it("gives the same query for the same place on any copy of the world", () => {
+    const home = viewportQuery({ west: 10, south: 40, east: 30, north: 50 }, 5);
+    expect(viewportQuery({ west: 370, south: 40, east: 390, north: 50 }, 5)).toEqual(home);
+    expect(viewportQuery({ west: -350, south: 40, east: -330, north: 50 }, 5)).toEqual(home);
+    expect(viewportQuery({ west: 1090, south: 40, east: 1110, north: 50 }, 5)).toEqual(home);
+  });
+
+  it("spells a view across the antimeridian one way, from either side", () => {
+    const fromEast = viewportQuery({ west: 170, south: 0, east: 190, north: 10 }, 5);
+    expect(viewportQuery({ west: -190, south: 0, east: -170, north: 10 }, 5)).toEqual(fromEast);
+  });
+
   it("clamps latitudes at the poles", () => {
     const { bbox } = viewportQuery({ west: 0, south: -85, east: 40, north: 85 }, 3);
     expect(bbox.south).toBe(-90);
@@ -67,6 +79,17 @@ describe("nextViewportQuery", () => {
     const panned = { west: 1, south: 41, east: 21, north: 51 };
     expect(viewportQuery(panned, 5)).not.toEqual(loaded);
     expect(nextViewportQuery(loaded, panned, 5)).toBe(loaded);
+  });
+
+  it("keeps the same query for a view inside what was loaded, on another copy of the world", () => {
+    const panned = { west: 361, south: 41, east: 381, north: 51 };
+    expect(nextViewportQuery(loaded, panned, 5)).toBe(loaded);
+    expect(nextViewportQuery(loaded, { ...panned, west: panned.west - 720, east: panned.east - 720 }, 5)).toBe(loaded);
+  });
+
+  it("keeps the same query when a view across the antimeridian is spelled from the other side", () => {
+    const acrossEast = viewportQuery({ west: 170, south: 0, east: 190, north: 10 }, 5);
+    expect(nextViewportQuery(acrossEast, { west: -190, south: 0, east: -170, north: 10 }, 5)).toBe(acrossEast);
   });
 
   it("asks again once the view leaves what was loaded", () => {
