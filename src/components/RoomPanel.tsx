@@ -8,6 +8,7 @@ import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
 import { readSavedUsername, saveUsername } from "@/lib/saved-username";
 import { MessageForm } from "./MessageForm";
 import { MessageList } from "./MessageList";
+import { VisibleAlert } from "./VisibleAlert";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 
@@ -117,9 +118,7 @@ export function RoomPanel({ creating, creationError, creationErrorSelection }: R
         </p>
       )}
       {visibleError && (
-        <p role="alert" className="mb-2 text-sm text-red-700 dark:text-red-400">
-          {createRoomErrorMessage(visibleError)}
-        </p>
+        <VisibleAlert message={createRoomErrorMessage(visibleError)} className="mb-2 text-sm text-red-700 dark:text-red-400" />
       )}
       {roomId === null ? <p>{EMPTY_STATE}</p> : (
         // Keyed so each room mounts its own message log, which then does not read out the history

@@ -145,6 +145,52 @@ async function expectPostWorks(page: Page) {
   await expect(messages(page).getByRole("listitem").last()).toBeInViewport({ ratio: 0.9 });
 }
 
+for (const { width, height } of [
+  { width: 320, height: 568 },
+  { width: 568, height: 320 },
+  { width: 568, height: 276 },
+]) {
+  test.describe(`errors on a short screen, ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("a failed post's error comes fully into view", async ({ page }) => {
+      await openFullRoom(page);
+      await page.route("**/messages", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 429, headers: { "Retry-After": "30" }, json: { error: { code: "rate_limited", message: "Too many" } } })
+          : route.fallback(),
+      );
+      await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
+      await panel(page).getByRole("textbox", { name: "Message" }).fill("Will fail");
+      await submit(page).click();
+
+      await expect(panel(page).getByRole("alert")).toBeInViewport({ ratio: 1 });
+      // Only the panel may scroll; `main` hides its overflow, so a scroll there could not be undone.
+      expect(await page.locator("main").evaluate((main) => main.scrollTop)).toBe(0);
+      await expectNoPageScroll(page);
+    });
+  });
+}
+
+test.describe("errors in a panel scrolled down", () => {
+  // Short enough to scroll past the 68 px above this error; at 276 px the panel scrolls only 40 px.
+  test.use({ viewport: { width: 568, height: 200 } });
+
+  test("a failed room creation's error comes into view at the panel's top", async ({ page }) => {
+    await openFullRoom(page);
+    await page.route("**/api/rooms", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 429, headers: { "Retry-After": "30" }, json: { error: { code: "rate_limited", message: "Too many" } } })
+        : route.fallback(),
+    );
+    await page.locator("aside").evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
+    // High up and to the right: in a window this short, Next's dev badge covers the lower left.
+    await page.locator(".leaflet-container").click({ position: { x: 220, y: 60 } });
+
+    await expect(panel(page).getByRole("alert")).toBeInViewport({ ratio: 1 });
+  });
+});
+
 test.describe("short upright screen", () => {
   test.use({ viewport: { width: 320, height: 568 } });
 

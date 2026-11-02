@@ -3,6 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { messageInputError, postMessageErrorMessage, usePostMessage } from "@/hooks/useMessages";
 import { AUTHOR_MAX, BODY_MAX } from "@/lib/limits";
+import { VisibleAlert } from "./VisibleAlert";
 
 const FIELD = "h-11 min-w-0 rounded border border-foreground/30 bg-background px-3";
 
@@ -82,11 +83,7 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
           Submit
         </button>
       </div>
-      {shownError && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
-          {shownError}
-        </p>
-      )}
+      {shownError && <VisibleAlert message={shownError} className="text-sm text-red-700 dark:text-red-400" />}
     </form>
   );
 }
