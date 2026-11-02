@@ -13,6 +13,7 @@ export function ChatShell() {
   const [pinAnchor, setPinAnchor] = useState<PinAnchor | null>(null);
   const [draft, setDraft] = useState<DraftPin | null>(null);
   const draftCount = useRef(0);
+  const mapAreaRef = useRef<HTMLDivElement>(null);
   const creation = useCreateRoom((room, clickedLng, userMovedOn) => {
     setPinAnchor({ roomId: room.id, lng: clickedLng });
     // Kept until the panel sees the new selection: clearing it now would drop the sheet for a frame,
@@ -39,6 +40,14 @@ export function ChatShell() {
     creation.clearResult();
   }
 
+  // The button that had the focus is gone, and focus on a removed element falls back to the page's
+  // start. The map container is focusable (Leaflet's keyboard panning), and the next step is there.
+  function discardFromPanel() {
+    if (creation.isSending()) return;
+    discardDraft();
+    mapAreaRef.current?.querySelector<HTMLElement>(".leaflet-container")?.focus({ preventScroll: true });
+  }
+
   function pickRoom(id: string) {
     setDraft(null);
     creation.clearResult();
@@ -56,7 +65,7 @@ export function ChatShell() {
     <main className="flex h-dvh flex-col overflow-hidden short-wide:has-[[data-raised]]:flex-row md:relative md:block">
       <h1 className="sr-only">Wolfchatter</h1>
       {/* `isolate` keeps Leaflet's high z-index panes and controls from covering the panel. */}
-      <div className="relative isolate min-h-0 min-w-0 flex-1 md:absolute md:inset-0">
+      <div ref={mapAreaRef} className="relative isolate min-h-0 min-w-0 flex-1 md:absolute md:inset-0">
         <MapView
           pinAnchor={pinAnchor}
           draft={draft}
@@ -74,7 +83,7 @@ export function ChatShell() {
           createdRoomId={creation.createdRoomId}
           onSendDraft={(current, author, body, onSent) => creation.send(current, author, body, onSent)}
           onClearCreationError={creation.clearResult}
-          onDiscardDraft={discardDraft}
+          onDiscardDraft={discardFromPanel}
           onDraftSaved={() => setDraft(null)}
         />
       </Suspense>

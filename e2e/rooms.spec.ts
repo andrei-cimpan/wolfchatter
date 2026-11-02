@@ -392,7 +392,7 @@ test.describe("desktop", () => {
     await startDraftAt(page, 400, 300);
     await fillDraft(page);
     await submit(page).click();
-    await expect(panel(page).getByRole("status")).toHaveText("Creating a chatroom…");
+    await expect(panel(page).getByRole("status").filter({ hasText: "Creating a chatroom…" })).toBeVisible();
     await page.mouse.click(300, 500);
     await expect(page).toHaveURL(ROOM_URL);
     await page.waitForTimeout(500);
@@ -767,6 +767,27 @@ test.describe("desktop", () => {
     await submit(page).click();
     await expect(discard(page)).toHaveAttribute("aria-disabled", "true");
     await expect(page).toHaveURL(ROOM_URL);
+  });
+
+  test("a new room's message field takes the focus only once", async ({ page }) => {
+    await openMap(page);
+    await createRoomAt(page, 400, 300);
+    await expect(messageField(page)).toBeFocused();
+    await page.goBack();
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await page.goForward();
+    await expect(page).toHaveURL(ROOM_URL);
+    await expect(messageField(page)).toBeVisible();
+    // On a phone this would pop up the keyboard for someone who only went back to look.
+    await expect(messageField(page)).not.toBeFocused();
+  });
+
+  test("Discard leaves the focus on the map, and the note is announced", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await expect(panel(page).getByRole("status").filter({ hasText: DRAFT_NOTE })).toBeVisible();
+    await discard(page).click();
+    await expect(page.locator(".leaflet-container")).toBeFocused();
   });
 
   test("reloading loses a draft", async ({ page }) => {

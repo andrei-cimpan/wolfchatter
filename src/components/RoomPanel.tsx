@@ -125,7 +125,9 @@ function DraftContent({ author, onAuthorChange, send, clearError, isPending, err
   return (
     <>
       <h2 className="text-center font-medium">New chatroom</h2>
-      <p className="mt-4 flex-auto text-center text-sm text-foreground/70">{DRAFT_NOTE}</p>
+      <p role="status" className="mt-4 flex-auto text-center text-sm text-foreground/70">
+        {DRAFT_NOTE}
+      </p>
       <MessageForm
         author={author}
         onAuthorChange={onAuthorChange}
