@@ -543,6 +543,41 @@ test.describe("desktop", () => {
     expectPosition(await posted, { lat: 48, lng: 20 - (CARD_SHIFT_PX + panned) / ZOOM_5_PX_PER_DEGREE });
   });
 
+  test("after dragging the map, Enter keeps an open room and its unsent reply", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await messageField(page).fill("Half written");
+    await dragWithoutInertia(page);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(100);
+    await expect(roomTitle(page)).toHaveText(room.title);
+    await expect(messageField(page)).toHaveValue("Half written");
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("after dragging the map, Enter leaves a draft where it is", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    await fillDraft(page, "Half written");
+    await dragWithoutInertia(page);
+    const before = await draftPin(page).boundingBox();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    expect(await draftPin(page).boundingBox()).toEqual(before);
+    await expect(messageField(page)).toHaveValue("Half written");
+  });
+
+  test("Enter works again once the keyboard brings the focus back to a dragged map", async ({ page }) => {
+    await openMap(page);
+    await dragWithoutInertia(page);
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(page.locator(".leaflet-container")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+  });
+
   test("a focused pin opens its room with Enter or Space", async ({ page }) => {
     await openMap(page);
     const first = await createRoomAt(page, 400, 300);

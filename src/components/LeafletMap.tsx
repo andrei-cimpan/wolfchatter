@@ -86,17 +86,42 @@ function ClickToDraft({
 
 // A click has no keyboard equivalent otherwise. The map is focusable for Leaflet's arrow-key panning,
 // so Enter drops a pin where a selected room would land: the middle of what the card leaves clear.
-// A focused pin or bubble handles its own Enter, and the event reaches the map as well.
+// A focused pin or bubble handles its own Enter, and the event reaches the map as well. Leaflet also
+// focuses the map on any press, so someone who typed a message and dragged the map may press Enter
+// to send it, which must not replace their room or move their draft. `:focus-visible` cannot tell
+// these apart: it can match after a drag too.
 function EnterToDraft({ onMapClick }: Pick<LeafletMapProps, "onMapClick">) {
   const map = useMap();
+  const focusFromPointer = useRef(false);
   useEffect(() => {
     const container = map.getContainer();
     container.setAttribute("role", "group");
     container.setAttribute("aria-label", "Map. Arrow keys move it, and Enter drops a pin at its centre.");
+    let pressing = false;
+    const onPress = () => {
+      pressing = true;
+      focusFromPointer.current = true;
+    };
+    const onRelease = () => {
+      pressing = false;
+    };
+    const onFocus = () => {
+      if (!pressing) focusFromPointer.current = false;
+    };
+    container.addEventListener("pointerdown", onPress);
+    container.addEventListener("focus", onFocus);
+    window.addEventListener("pointerup", onRelease);
+    window.addEventListener("pointercancel", onRelease);
+    return () => {
+      container.removeEventListener("pointerdown", onPress);
+      container.removeEventListener("focus", onFocus);
+      window.removeEventListener("pointerup", onRelease);
+      window.removeEventListener("pointercancel", onRelease);
+    };
   }, [map]);
   useMapEvents({
     keydown: ({ originalEvent: { key, target } }) => {
-      if (key !== "Enter" || target !== map.getContainer()) return;
+      if (key !== "Enter" || target !== map.getContainer() || focusFromPointer.current) return;
       const { x, y } = map.getSize();
       const shiftX = focusShiftPx(map.getZoom(), window.matchMedia(WIDE_SCREEN_QUERY).matches);
       const { lat, lng } = map.containerPointToLatLng([x / 2 - shiftX, y / 2]);
