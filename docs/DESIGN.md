@@ -129,7 +129,7 @@ create trigger messages_notify after insert on messages
 |---|---|---|
 | `GET /api/rooms?bbox=w,s,e,n&zoom=z` | Rooms and clusters in the viewport (max 500 items) | 200 `MapItem[]` |
 | `GET /api/rooms/:id` | One room | 200 `Room` |
-| `POST /api/rooms` | Create a room `{lat, lng}` | 201 `Room`, with `Location: /api/rooms/:id` |
+| `POST /api/rooms` | Create a room `{lat, lng}`, with an optional `firstMessage: {author, body}` saved in the same transaction | 201 `Room`, plus `firstMessage: Message` if one was sent, with `Location: /api/rooms/:id` |
 | `GET /api/rooms/:id/messages?before=&after=&limit=` | Page of messages, oldest first | 200 `Message[]` |
 | `POST /api/rooms/:id/messages` | Post `{author, body}` | 201 `Message` (no `Location`: there is no single-message endpoint) |
 | `GET /api/rooms/:id/stream` | SSE stream of new messages (see Real-time delivery) | 200 `text/event-stream` |

@@ -42,6 +42,27 @@ describe("rooms", () => {
   });
 });
 
+describe("createRoomWithMessage", () => {
+  it("saves the room and its first message together", async () => {
+    const { room, message } = await repo().createRoomWithMessage(
+      { lat: 44.43, lng: 26.1 },
+      { author: "ana", body: "hello" },
+    );
+    expect(room).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 1 });
+    expect(message).toMatchObject({ roomId: room.id, author: "ana", body: "hello" });
+    expect(await repo().getRoom(room.id)).toEqual(room);
+    expect(bodies(await repo().listMessages(room.id))).toEqual(["hello"]);
+  });
+
+  it("saves no room when the message cannot be saved", async () => {
+    // Over the column's limit, which the API's schema would catch first.
+    const tooLong = { author: "x".repeat(33), body: "hello" };
+    await expect(repo().createRoomWithMessage({ lat: 12.5, lng: 34.5 }, tooLong)).rejects.toThrow();
+
+    expect(await repo().listMapItems({ bbox: WORLD, zoom: 16 })).toEqual([]);
+  });
+});
+
 describe("postMessage", () => {
   it("stores the message and bumps the room's message count", async () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });

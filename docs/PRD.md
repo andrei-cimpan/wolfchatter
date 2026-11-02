@@ -50,7 +50,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 **API (REST, JSON).**
 
 - `GET /api/rooms?bbox=<w,s,e,n>&zoom=<z>`: rooms and clusters inside the viewport
-- `POST /api/rooms` and `GET /api/rooms/:id`
+- `POST /api/rooms` (optionally with the room's first message, saved together) and `GET /api/rooms/:id`
 - `GET /api/rooms/:id/messages?before=<cursor>&after=<cursor>` and `POST /api/rooms/:id/messages`
 - `GET /api/rooms/:id/stream` (Server-Sent Events, FR6)
 

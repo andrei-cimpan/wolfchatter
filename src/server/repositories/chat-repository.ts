@@ -20,6 +20,11 @@ export interface ChatRepository {
   getRoom(id: string): Promise<Room | null>;
   listMapItems(query: { bbox: Bbox; zoom: number }): Promise<MapItem[]>;
   createRoom(input: { lat: number; lng: number }): Promise<Room>;
+  /** Saves both or neither, so a failed post cannot leave an empty room on the map. */
+  createRoomWithMessage(
+    room: { lat: number; lng: number },
+    message: { author: string; body: string },
+  ): Promise<{ room: Room; message: Message }>;
   /** Oldest first. Without a cursor, returns the latest page. */
   listMessages(roomId: string, opts?: ListMessagesOptions): Promise<Message[]>;
   /** Throws RoomNotFoundError if the room does not exist. */
