@@ -618,6 +618,44 @@ test.describe("desktop", () => {
     expect(await savedLat()).toBeCloseTo(untouched, 5);
   });
 
+  /** A real double-click can be slower than the wait on an empty map, here 320 ms between clicks. */
+  async function slowDoubleClick(page: Page, x: number, y: number) {
+    await page.mouse.click(x, y);
+    await page.waitForTimeout(320);
+    await page.mouse.down({ clickCount: 2 });
+    await page.mouse.up({ clickCount: 2 });
+  }
+
+  test("a slow double-click keeps a draft dropped earlier, with its text", async ({ page }) => {
+    await openMap(page);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page, "Half written");
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+
+    await slowDoubleClick(page, 800, 150);
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await page.waitForTimeout(600);
+    await expect(draftPin(page)).toHaveCount(1);
+    await expect(messageField(page)).toHaveValue("Half written");
+  });
+
+  test("a slow double-click keeps an open room and an unsent reply", async ({ page }) => {
+    await openMap(page);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    const title = await createRoomAt(page, 400, 300);
+    const roomUrl = page.url();
+    await messageField(page).fill("Half written reply");
+    await expectPinTipAt(page, title, { x: CARD_FOCUS_X, y: 360 });
+
+    await slowDoubleClick(page, 800, 150);
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await page.waitForTimeout(600);
+    await expect(page).toHaveURL(roomUrl);
+    await expect(roomTitle(page)).toHaveText(title);
+    await expect(messageField(page)).toHaveValue("Half written reply");
+  });
+
   test("reloading loses a draft", async ({ page }) => {
     await openMap(page);
     await startDraftAt(page, 400, 300);
