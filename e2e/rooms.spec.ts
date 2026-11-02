@@ -138,6 +138,20 @@ function countRoomPosts(page: Page) {
   return posts;
 }
 
+/** Holds the next room creation until the returned function is called, which then fails it. */
+async function holdRoomPost(page: Page) {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/rooms", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    await held;
+    await route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "boom" } } });
+  });
+  return release;
+}
+
 test.describe("desktop", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
@@ -616,6 +630,45 @@ test.describe("desktop", () => {
 
     await page.goForward();
     await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("a first message that fails after Back leaves no error for Forward to show", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await startDraftAt(page, 200, 600);
+    await fillDraft(page, "Sent, then left");
+    const failPost = await holdRoomPost(page);
+    await submit(page).click();
+    await expect(panel(page)).toContainText("Creating a chatroom…");
+
+    await page.goBack();
+    await expect(roomTitle(page)).toHaveText(room.title);
+    failPost();
+    await expect(panel(page)).not.toContainText("Creating a chatroom…");
+
+    await page.goForward();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("a first message that fails after Back and Forward leaves no error either", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await startDraftAt(page, 200, 600);
+    await fillDraft(page, "Sent, then left");
+    const failPost = await holdRoomPost(page);
+    await submit(page).click();
+    await expect(panel(page)).toContainText("Creating a chatroom…");
+
+    await page.goBack();
+    await expect(roomTitle(page)).toHaveText(room.title);
+    await page.goForward();
+    await expect(page).toHaveURL(/\/$/);
+    failPost();
+
     await expect(panel(page)).toHaveText(EMPTY_STATE);
     await expect(draftPin(page)).toHaveCount(0);
   });

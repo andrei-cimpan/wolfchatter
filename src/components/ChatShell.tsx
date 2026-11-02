@@ -14,12 +14,16 @@ export function ChatShell() {
   const [draft, setDraft] = useState<DraftPin | null>(null);
   const draftCount = useRef(0);
   const mapAreaRef = useRef<HTMLDivElement>(null);
-  const creation = useCreateRoom((room, clickedLng, userMovedOn) => {
-    setPinAnchor({ roomId: room.id, lng: clickedLng });
-    // Kept until the panel sees the new selection: clearing it now would drop the sheet for a frame,
-    // because Next.js applies `?room` in a transition.
-    setDraft((current) => (userMovedOn || !current ? null : { ...current, savedAs: room.id }));
-  });
+  const creation = useCreateRoom(
+    (room, clickedLng, userMovedOn) => {
+      setPinAnchor({ roomId: room.id, lng: clickedLng });
+      // Kept until the panel sees the new selection: clearing it now would drop the sheet for a frame,
+      // because Next.js applies `?room` in a transition.
+      setDraft((current) => (userMovedOn || !current ? null : { ...current, savedAs: room.id }));
+    },
+    // Its error stays behind unseen, since only a draft shows one, and the next draft clears it.
+    () => setDraft(null),
+  );
 
   function startDraft(lat: number, lng: number) {
     // One room at a time: the form being sent belongs to the draft where it is.
@@ -57,8 +61,12 @@ export function ChatShell() {
   // Back or Forward ends a draft, whose form is gone by then. Left in place, it would come back on any
   // entry with no room open, and saving there would overwrite that entry.
   useEffect(() => {
-    window.addEventListener("popstate", discardDraft);
-    return () => window.removeEventListener("popstate", discardDraft);
+    function endDraft() {
+      if (creation.isSending()) creation.abandonSend();
+      else discardDraft();
+    }
+    window.addEventListener("popstate", endDraft);
+    return () => window.removeEventListener("popstate", endDraft);
   });
 
   return (
