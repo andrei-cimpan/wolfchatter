@@ -790,6 +790,39 @@ test.describe("desktop", () => {
     await expect(page.locator(".leaflet-container")).toBeFocused();
   });
 
+  test("a draft moved after closing a room still returns Back to that room once saved", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await startDraftAt(page, 200, 600);
+    await page.locator(".leaflet-container").click({ position: { x: 700, y: 150 } });
+    await page.waitForTimeout(700);
+    await expect(draftPin(page)).toHaveCount(1);
+    await fillDraft(page);
+    await submit(page).click();
+    await expect(page).toHaveURL(ROOM_URL);
+    await expect(roomTitle(page)).toHaveText(ROOM_TITLE);
+
+    await page.goBack();
+    await expect(roomTitle(page)).toHaveText(room.title);
+  });
+
+  test("moving a draft clears a failed send's error and keeps the text", async ({ page }) => {
+    await page.route("**/api/rooms", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "x" } } })
+        : route.fallback(),
+    );
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page, "Try again");
+    await submit(page).click();
+    await expect(panel(page).getByRole("alert")).toBeVisible();
+
+    await page.locator(".leaflet-container").click({ position: { x: 700, y: 150 } });
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+    await expect(messageField(page)).toHaveValue("Try again");
+  });
+
   test("reloading loses a draft", async ({ page }) => {
     await openMap(page);
     await startDraftAt(page, 400, 300);
