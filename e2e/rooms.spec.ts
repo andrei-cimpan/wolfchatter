@@ -755,6 +755,20 @@ test.describe("desktop", () => {
     await expect(draftPin(page)).toHaveCount(0);
   });
 
+  test("Discard shows as unavailable while the first message is on its way", async ({ page }) => {
+    await page.route("**/api/rooms", async (route) => {
+      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 800));
+      await route.fallback();
+    });
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await expect(discard(page)).not.toHaveAttribute("aria-disabled", "true");
+    await fillDraft(page);
+    await submit(page).click();
+    await expect(discard(page)).toHaveAttribute("aria-disabled", "true");
+    await expect(page).toHaveURL(ROOM_URL);
+  });
+
   test("reloading loses a draft", async ({ page }) => {
     await openMap(page);
     await startDraftAt(page, 400, 300);
@@ -903,6 +917,22 @@ test.describe("narrow screen", () => {
     const heights = await page.evaluate(() => (window as unknown as { sheetHeights: number[] }).sheetHeights);
     expect(heights.length).toBeGreaterThan(0);
     expect(Math.min(...heights)).toBeCloseTo(667 / 2, 0);
+  });
+
+  test("the close button shows as unavailable while a first message is on its way", async ({ page }) => {
+    await page.route("**/api/rooms", async (route) => {
+      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 800));
+      await route.fallback();
+    });
+    await openMap(page);
+    await startDraftAt(page, 180, 250);
+    await fillDraft(page);
+    const close = page.getByRole("button", { name: "Close chat" });
+    await expect(close).not.toHaveAttribute("aria-disabled", "true");
+    await submit(page).click();
+    await expect(close).toHaveAttribute("aria-disabled", "true");
+    await expect(page).toHaveURL(ROOM_URL);
+    await expect(close).not.toHaveAttribute("aria-disabled", "true");
   });
 
   test("the close button also discards a draft", async ({ page }) => {

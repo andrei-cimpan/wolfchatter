@@ -62,7 +62,15 @@ export function RoomPanelFallback() {
   );
 }
 
-function SheetHeader({ onClose, leading }: { onClose: () => void; leading?: ReactNode }) {
+function SheetHeader({
+  onClose,
+  closeUnavailable,
+  leading,
+}: {
+  onClose: () => void;
+  closeUnavailable: boolean;
+  leading?: ReactNode;
+}) {
   return (
     <div className="relative mb-2 flex h-11 shrink-0 items-center justify-between md:hidden">
       {leading ?? <span />}
@@ -70,8 +78,9 @@ function SheetHeader({ onClose, leading }: { onClose: () => void; leading?: Reac
       <button
         type="button"
         aria-label="Close chat"
+        aria-disabled={closeUnavailable || undefined}
         onClick={onClose}
-        className="flex size-11 items-center justify-center rounded-full text-2xl leading-none hover:bg-foreground/10"
+        className="flex size-11 items-center justify-center rounded-full text-2xl leading-none not-aria-disabled:hover:bg-foreground/10 aria-disabled:opacity-60"
       >
         ×
       </button>
@@ -79,12 +88,23 @@ function SheetHeader({ onClose, leading }: { onClose: () => void; leading?: Reac
   );
 }
 
-function DiscardButton({ onClick, className = "" }: { onClick: () => void; className?: string }) {
+// While the first message is on its way the room is about to exist, so there is nothing to discard.
+// aria-disabled, as for Submit: a disabled button would lose keyboard focus, and the send may fail.
+function DiscardButton({
+  onClick,
+  unavailable,
+  className = "",
+}: {
+  onClick: () => void;
+  unavailable: boolean;
+  className?: string;
+}) {
   return (
     <button
       type="button"
+      aria-disabled={unavailable || undefined}
       onClick={onClick}
-      className={`h-11 rounded px-2 text-sm underline hover:bg-foreground/10 ${className}`}
+      className={`h-11 rounded px-2 text-sm underline not-aria-disabled:hover:bg-foreground/10 aria-disabled:opacity-60 ${className}`}
     >
       Discard
     </button>
@@ -115,7 +135,7 @@ function DraftContent({ author, onAuthorChange, send, clearError, isPending, err
         errorMessage={error ? createRoomErrorMessage(error) : null}
       />
       {/* The sheet has this in its header instead, where it costs no height. */}
-      <DiscardButton onClick={onDiscard} className="mt-2 hidden self-start md:block" />
+      <DiscardButton onClick={onDiscard} unavailable={isPending} className="mt-2 hidden self-start md:block" />
     </>
   );
 }
@@ -194,7 +214,8 @@ export function RoomPanel({
       {raised && (
         <SheetHeader
           onClose={close}
-          leading={openDraft && <DiscardButton onClick={onDiscardDraft} />}
+          closeUnavailable={openDraft !== null && creating}
+          leading={openDraft && <DiscardButton onClick={onDiscardDraft} unavailable={creating} />}
         />
       )}
       {creating && (
