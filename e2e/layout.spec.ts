@@ -315,11 +315,12 @@ test.describe("large phone on its side", () => {
   });
 });
 
-for (const { width, height } of [
-  { width: 800, height: 200 },
-  { width: 300, height: 260 },
+for (const { width, height, layout } of [
+  { width: 800, height: 200, layout: "card" },
+  { width: 300, height: 260, layout: "beside the map" },
+  { width: 300, height: 310, layout: "sheet" },
 ]) {
-  test.describe(`very short window, ${width}x${height}`, () => {
+  test.describe(`very short window, ${layout}, ${width}x${height}`, () => {
     test.use({ viewport: { width, height } });
 
     test("the panel scrolls, so Submit stays reachable and the list keeps its room", async ({ page }) => {
