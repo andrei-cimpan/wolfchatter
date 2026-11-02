@@ -734,6 +734,54 @@ test.describe("desktop", () => {
     await expect(panel(page)).toHaveText(EMPTY_STATE);
   });
 
+  test("a slow double-click whose second click lands on the new pin zooms and takes the pin back", async ({ page }) => {
+    // Without a flight the pin stays where the second click lands.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openMap(page);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    await page.mouse.click(500, 150);
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    await page.mouse.move(CARD_FOCUS_X, 360 - 33);
+    await page.mouse.down({ clickCount: 2 });
+    await page.mouse.up({ clickCount: 2 });
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+  });
+
+  test("a slow double-tap whose second tap lands on the new pin takes the pin back", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openMap(page);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    await page.mouse.click(500, 150);
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    // Some touch platforms always report detail 1, and Leaflet simulates the dblclick for them.
+    await page.evaluate(
+      ({ clientX, clientY }) => {
+        const at = { bubbles: true, cancelable: true, clientX, clientY, view: window, detail: 1 };
+        const pin = document.elementFromPoint(clientX, clientY);
+        pin?.dispatchEvent(new MouseEvent("click", at));
+        pin?.dispatchEvent(new MouseEvent("dblclick", { ...at, detail: 2 }));
+      },
+      { clientX: CARD_FOCUS_X, clientY: 360 - 33 },
+    );
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("double-clicking a draft's pin later zooms and keeps the draft, with its text", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openMap(page);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    await startDraftAt(page, 500, 150);
+    await fillDraft(page, "Half written");
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    await page.mouse.dblclick(CARD_FOCUS_X, 360 - 33);
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await expect(draftPin(page)).toHaveCount(1);
+    await expect(messageField(page)).toHaveValue("Half written");
+  });
+
   test("a slow double-tap reporting two single clicks takes back its pin", async ({ page }) => {
     await openMap(page);
     await expect.poll(() => tileZooms(page)).toEqual(["5"]);

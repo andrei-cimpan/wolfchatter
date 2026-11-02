@@ -58,10 +58,14 @@ function ClickToDraft({
     dragstart: () => clearTimeout(timerRef.current),
     // Also a click on a cluster, which zooms.
     zoomstart: () => clearTimeout(timerRef.current),
-    click: (event) => {
-      clearTimeout(timerRef.current);
+    // Not in `click`, which a pin keeps to itself: the second click of a double-click can land on the
+    // pin the first one dropped.
+    preclick: () => {
       droppedBeforeThisClick.current = droppedByLastClick.current;
       droppedByLastClick.current = false;
+    },
+    click: (event) => {
+      clearTimeout(timerRef.current);
       if (event.originalEvent.detail > 1) return;
       const { lat, lng } = event.latlng;
       timerRef.current = setTimeout(() => {
