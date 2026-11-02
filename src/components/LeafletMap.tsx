@@ -1,7 +1,7 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { useMapItems } from "@/hooks/useMapItems";
 import { useRoom } from "@/hooks/useRoom";
@@ -32,18 +32,33 @@ export interface LeafletMapProps {
 // of a double-click in `detail`. A double-click zooms and should leave no pin, so a click waits to
 // see if another follows. With a room or draft open the wait covers a typical double-click, since
 // acting early would destroy it, and the flight would move the map before the zoom. On an empty map
-// there is nothing to lose, so a pin comes sooner and a slower double-click takes it back.
+// there is nothing to lose, so a pin comes sooner and a slower double-click takes it back. Anything
+// else the user does during the wait (moving the map, going Back, or a pin click through `timerRef`)
+// means they moved on, so the click drops nothing.
 function ClickToDraft({
+  timerRef,
   somethingOpen,
   onMapClick,
   onDoubleClickUndo,
-}: Pick<LeafletMapProps, "onMapClick" | "onDoubleClickUndo"> & { somethingOpen: boolean }) {
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+}: Pick<LeafletMapProps, "onMapClick" | "onDoubleClickUndo"> & {
+  timerRef: RefObject<ReturnType<typeof setTimeout> | undefined>;
+  somethingOpen: boolean;
+}) {
   const droppedByLastClick = useRef(false);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    const cancel = () => clearTimeout(timerRef.current);
+    window.addEventListener("popstate", cancel);
+    return () => {
+      window.removeEventListener("popstate", cancel);
+      cancel();
+    };
+  }, [timerRef]);
   useMapEvents({
+    dragstart: () => clearTimeout(timerRef.current),
+    // Also a click on a cluster, which zooms.
+    zoomstart: () => clearTimeout(timerRef.current),
     click: (event) => {
-      clearTimeout(timer.current);
+      clearTimeout(timerRef.current);
       const dropped = droppedByLastClick.current;
       droppedByLastClick.current = false;
       if (event.originalEvent.detail > 1) {
@@ -51,7 +66,7 @@ function ClickToDraft({
         return;
       }
       const { lat, lng } = event.latlng;
-      timer.current = setTimeout(() => {
+      timerRef.current = setTimeout(() => {
         droppedByLastClick.current = true;
         onMapClick(lat, lng);
       }, somethingOpen ? DOUBLE_CLICK_WAIT_MS : EMPTY_MAP_CLICK_WAIT_MS);
@@ -120,11 +135,17 @@ export default function LeafletMap({ pinAnchor, draft, onMapClick, onDoubleClick
   const selectedRoomId = useSelectedRoomId();
   const { data: selectedRoom } = useRoom(selectedRoomId);
   if (selectedRoom && !rooms.some((room) => room.id === selectedRoom.id)) rooms.push(selectedRoom);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function pickRoom(id: string) {
+    clearTimeout(clickTimerRef.current);
+    onRoomClick(id);
+  }
 
   return (
     <MapContainer center={INITIAL_VIEW.center} zoom={INITIAL_VIEW.zoom} className="h-full w-full">
       <TileLayer url={tileConfig.url} attribution={tileConfig.attribution} />
       <ClickToDraft
+        timerRef={clickTimerRef}
         somethingOpen={selectedRoomId !== null || draft !== null}
         onMapClick={onMapClick}
         onDoubleClickUndo={onDoubleClickUndo}
@@ -138,7 +159,7 @@ export default function LeafletMap({ pinAnchor, draft, onMapClick, onDoubleClick
         pinAnchor={pinAnchor}
         selectedRoomId={selectedRoomId}
         draft={selectedRoomId === null ? draft : null}
-        onRoomClick={onRoomClick}
+        onRoomClick={pickRoom}
       />
     </MapContainer>
   );

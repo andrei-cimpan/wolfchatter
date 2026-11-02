@@ -656,6 +656,51 @@ test.describe("desktop", () => {
     await expect(messageField(page)).toHaveValue("Half written reply");
   });
 
+  test("a pin picked straight after a click on the map keeps that pick", async ({ page }) => {
+    await openMap(page);
+    const first = await createRoomAt(page, 400, 300);
+    const firstUrl = page.url();
+    await createRoomAt(page, 600, 450);
+    await page.waitForTimeout(1500);
+    const target = await pin(page, first).boundingBox();
+
+    await page.mouse.click(200, 650);
+    await page.mouse.click((target?.x ?? 0) + 12, (target?.y ?? 0) + 20);
+    await expect(page).toHaveURL(firstUrl);
+    await page.waitForTimeout(800);
+    await expect(page).toHaveURL(firstUrl);
+    await expect(roomTitle(page)).toHaveText(first);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("Back straight after a click on the map drops no pin", async ({ page }) => {
+    await openMap(page);
+    await createRoomAt(page, 400, 300);
+    await page.mouse.click(200, 650);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/$/);
+    await page.waitForTimeout(800);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+  });
+
+  test("moving the map straight after a click on it drops no pin", async ({ page }) => {
+    await openMap(page);
+    await page.mouse.click(500, 400);
+    await page.mouse.move(500, 400);
+    await page.mouse.down();
+    await page.mouse.move(550, 430, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+    await expect(draftPin(page)).toHaveCount(0);
+
+    await page.mouse.click(500, 400);
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await page.waitForTimeout(600);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+  });
+
   test("reloading loses a draft", async ({ page }) => {
     await openMap(page);
     await startDraftAt(page, 400, 300);
