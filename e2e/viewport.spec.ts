@@ -131,6 +131,18 @@ test("a focused cluster zooms in with Enter, and focus moves to the map", async 
   await expect(page.locator(".draft-pin")).toHaveCount(0);
 });
 
+test("holding Enter on a focused cluster zooms in and drops no draft", async ({ page }) => {
+  await serveOneCluster(page);
+  await openMap(page);
+  await page.getByRole("button", { name: "12 chatrooms", exact: true }).focus();
+  await page.keyboard.down("Enter");
+  await expect(page.locator(".leaflet-container")).toBeFocused();
+  await page.keyboard.down("Enter");
+  await page.keyboard.up("Enter");
+  await expect.poll(() => tileZooms(page)).toEqual(["8"]);
+  await expect(page.locator(".draft-pin")).toHaveCount(0);
+});
+
 test("a focused cluster keeps a visible focus ring in forced-colours mode", async ({ page }) => {
   await page.emulateMedia({ forcedColors: "active" });
   await serveOneCluster(page);

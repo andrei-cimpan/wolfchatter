@@ -120,8 +120,10 @@ function EnterToDraft({ onMapClick }: Pick<LeafletMapProps, "onMapClick">) {
     };
   }, [map]);
   useMapEvents({
-    keydown: ({ originalEvent: { key, target } }) => {
-      if (key !== "Enter" || target !== map.getContainer() || focusFromPointer.current) return;
+    keydown: ({ originalEvent: event }) => {
+      // Not a repeat: Discard and a bubble's Enter move the focus here while the key is still down.
+      if (event.key !== "Enter" || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (event.target !== map.getContainer() || focusFromPointer.current) return;
       const { x, y } = map.getSize();
       const shiftX = focusShiftPx(map.getZoom(), window.matchMedia(WIDE_SCREEN_QUERY).matches);
       const { lat, lng } = map.containerPointToLatLng([x / 2 - shiftX, y / 2]);

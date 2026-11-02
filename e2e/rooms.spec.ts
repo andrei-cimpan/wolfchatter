@@ -578,6 +578,29 @@ test.describe("desktop", () => {
     await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
   });
 
+  test("holding Enter on Discard does not drop a new draft on the map that takes the focus", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await discard(page).focus();
+    await page.keyboard.down("Enter");
+    await expect(page.locator(".leaflet-container")).toBeFocused();
+    await page.keyboard.down("Enter");
+    await page.keyboard.up("Enter");
+    await page.waitForTimeout(100);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+  });
+
+  for (const key of ["Control+Enter", "Meta+Enter", "Alt+Enter", "Shift+Enter"]) {
+    test(`${key} on the map drops no draft`, async ({ page }) => {
+      await openMap(page);
+      await page.locator(".leaflet-container").focus();
+      await page.keyboard.press(key);
+      await page.waitForTimeout(100);
+      await expect(draftPin(page)).toHaveCount(0);
+    });
+  }
+
   test("a focused pin opens its room with Enter or Space", async ({ page }) => {
     await openMap(page);
     const first = await createRoomAt(page, 400, 300);
