@@ -179,6 +179,24 @@ test("flying to a far room makes one viewport request, once the map arrives", as
   expect(east).toBeGreaterThan(151.2);
 });
 
+test.describe("narrow screen", () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("a flight that raises the sheet makes one viewport request, once the map arrives", async ({ page, request }) => {
+    const created = await request.post("/api/rooms", { data: { lat: -33.87, lng: 151.2 } });
+    const { id } = (await created.json()) as { id: string };
+    const requests = countViewportRequests(page);
+    await openMap(page);
+    await expect.poll(() => requests.length).toBe(1);
+
+    await page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), id);
+    await expect.poll(() => requests.length, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(3000);
+    // The sheet ends a move in mid-air; a report then would ask for a zoom the flight is only passing.
+    expect(requests.map((query) => query.get("zoom"))).toEqual(["5", "5"]);
+  });
+});
+
 test("a small pan reuses the loaded pins instead of asking again", async ({ page }) => {
   const requests = countViewportRequests(page);
   await openMap(page);

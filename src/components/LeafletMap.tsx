@@ -100,6 +100,8 @@ function TrackViewport({ onChange }: { onChange: (bounds: Bbox, zoom: number) =>
   const map = useMap();
   useEffect(() => {
     const report = () => {
+      // In mid-flight: a sheet resizing the map ends a move there. The landing reports instead.
+      if (!Number.isInteger(map.getZoom())) return;
       const bounds = map.getBounds();
       onChange(
         { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() },
