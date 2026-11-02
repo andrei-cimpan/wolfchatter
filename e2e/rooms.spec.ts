@@ -65,6 +65,14 @@ async function expectPinTipAt(page: Page, title: string, point: { x: number; y: 
   }).toPass({ timeout: 10_000 });
 }
 
+async function expectDraftPinTipAt(page: Page, point: { x: number; y: number }) {
+  await expect(async () => {
+    const icon = await draftPin(page).boundingBox();
+    expect(Math.abs((icon?.x ?? 0) + 12 - point.x)).toBeLessThan(3);
+    expect(Math.abs((icon?.y ?? 0) + 41 - point.y)).toBeLessThan(3);
+  }).toPass({ timeout: 10_000 });
+}
+
 /** At a whole zoom every tile is 256 px wide; a zoom left between levels scales them and blurs the map. */
 async function expectWholeZoom(page: Page) {
   await expect
@@ -588,6 +596,26 @@ test.describe("desktop", () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(panel(page)).toHaveText(EMPTY_STATE);
     await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("clicking the draft's pin leaves the draft where it was", async ({ page }) => {
+    const savedLat = async () => {
+      await fillDraft(page);
+      const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/rooms");
+      await submit(page).click();
+      return ((await request).postDataJSON() as { lat: number }).lat;
+    };
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    const untouched = await savedLat();
+
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    // Its head, well above the tip: a click passing through to the map would move the draft here.
+    await page.mouse.click(CARD_FOCUS_X, 360 - 33);
+    await page.waitForTimeout(800);
+    expect(await savedLat()).toBeCloseTo(untouched, 5);
   });
 
   test("reloading loses a draft", async ({ page }) => {

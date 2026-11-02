@@ -175,6 +175,9 @@ export function MapMarkers({
           title={DRAFT_PIN_TITLE}
           alt={DRAFT_PIN_TITLE}
           keyboard={false}
+          // Leaflet passes a click through a marker with no listener, and the draft would move to
+          // where the pin's head is, which is then saved for good.
+          eventHandlers={{ click: () => undefined }}
         />
       )}
     </>
