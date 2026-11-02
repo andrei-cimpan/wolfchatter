@@ -110,8 +110,14 @@ export function MessageList({ roomId, sentCount }: MessageListProps) {
     followingRef.current = isNearBottom(scroller);
   }
 
+  // The minimum applies only where the panel can run out of height: the desktop card grows with its
+  // content, so there it would add empty space to a room with few messages.
   return (
-    <div ref={scrollerRef} onScroll={handleScroll} className="mt-4 flex-auto overflow-y-auto">
+    <div
+      ref={scrollerRef}
+      onScroll={handleScroll}
+      className="mt-4 flex-auto overflow-y-auto max-md:min-h-20 [@media(height<320px)]:min-h-20"
+    >
       <MessageListBody query={query} />
     </div>
   );

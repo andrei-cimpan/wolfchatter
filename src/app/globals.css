@@ -5,6 +5,9 @@
   --foreground: #171717;
 }
 
+/* A phone on its side: below `md`, and too short for a sheet to leave any map above it. */
+@custom-variant short-wide (@media (width < 48rem) and (height <= 500px) and (orientation: landscape));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

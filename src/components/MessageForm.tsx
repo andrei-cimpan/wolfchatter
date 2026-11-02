@@ -3,6 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { messageInputError, postMessageErrorMessage, usePostMessage } from "@/hooks/useMessages";
 import { AUTHOR_MAX, BODY_MAX } from "@/lib/limits";
+import { VisibleAlert } from "./VisibleAlert";
 
 const FIELD = "h-11 min-w-0 rounded border border-foreground/30 bg-background px-3";
 
@@ -57,7 +58,8 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
         required
         className={FIELD}
       />
-      <div className="flex gap-2">
+      {/* Wraps in a very narrow panel, where Submit would otherwise squeeze the field to nothing. */}
+      <div className="flex flex-wrap gap-2">
         <label htmlFor="message-body" className="sr-only">
           Message
         </label>
@@ -70,23 +72,19 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
           maxLength={BODY_MAX}
           autoComplete="off"
           required
-          className={`${FIELD} flex-1`}
+          className={`${FIELD} flex-[1_1_8rem]`}
         />
         {/* aria-disabled, not disabled: a disabled button loses keyboard focus when a post starts,
             and could not explain what is missing. handleSubmit and the send ref do the blocking. */}
         <button
           type="submit"
           aria-disabled={isPending || inputError !== null || undefined}
-          className="h-11 shrink-0 rounded border border-foreground/30 px-4 font-medium not-aria-disabled:hover:bg-foreground/10 aria-disabled:opacity-60"
+          className="ml-auto h-11 shrink-0 rounded border border-foreground/30 px-4 font-medium not-aria-disabled:hover:bg-foreground/10 aria-disabled:opacity-60"
         >
           Submit
         </button>
       </div>
-      {shownError && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
-          {shownError}
-        </p>
-      )}
+      {shownError && <VisibleAlert message={shownError} className="text-sm text-red-700 dark:text-red-400" />}
     </form>
   );
 }

@@ -59,12 +59,17 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T5.2** Auto-scroll to the newest message; disable Submit when a field is empty.
   *Still open from the PR #12 review:* any 400 becomes "Enter a username and a message.". The form checks with the API's own schema first, so this cannot be reached today; use the API's message if the client and API rules ever differ.
 - [x] **T5.3** Fly the map to the selected room.
-- [ ] **T5.4** Keep the chat usable in a short sheet.
-  *Carried over from the PR #17 review:* the raised sheet is half the screen and its form has a fixed height, so at 667x375 (a phone on its side) the message list is 0 px tall and Submit runs past the bottom of the screen, and at 320x568 the list is only 47 px. This needs a layout decision, such as a taller sheet on short screens.
+- [x] **T5.4** Keep the chat usable in a short sheet.
+  *Carried over from the PR #17 review:* the raised sheet is half the screen and its form has a fixed height, so at 667x375 (a phone on its side) the message list is 0 px tall and Submit runs past the bottom of the screen, and at 320x568 the list is only 47 px. Done: the sheet is at least 320 px tall, and a phone on its side shows the chat beside the map.
 
 ## 6. Quality
 
 - [ ] **T6.1** Playwright tests: create pin and post, reload persistence, two-browser live message, clusters appear when zoomed out and expand on click, and the bottom-sheet layout at a 375 px wide viewport.
+  *Flaky e2e tests seen on PR #19, look at these first:*
+  - `a flight started during a zoom animation still ends on a whole zoom when dragged` failed in CI, including its retry, with the map left between zoom levels (tiles about 338 px wide, not 256). Locally it failed once in 95 runs on the PR's first commit and passed 40 of 40 on `main`, too few runs to tell them apart. This may be a real bug in the flight code, since a map left between zoom levels looks blurry.
+  - `a second click makes a second room; pins and Back switch between them` needed a retry in CI: the second title read the same as the first. `createRoomAt` may read the old title before the panel updates; not confirmed.
+  - `Back flies to the previous room` needed a retry in CI on `main` and on the T5.3 branch.
+  *Carried over from the PR #19 review:* add tests at the layout's boundaries (500 and 501 px high, 767 and 768 px wide), and for the desktop card having no list minimum in a quiet room. Also, on a phone 768 px or wider on its side, with 47 px insets at 844x390, Submit sits 14 px under the notch, because the card's `md:right-4` ignores the safe area; this was measured in emulation, not on a device.
   *Carried over from the PR #15 review:* `useRoomStream` itself (the effect, and closing the stream on unmount or a room change) has no unit test, because hooks are tested here without React Testing Library or jsdom. The e2e tests cover it; add a hook test if those tools are ever added (ask first: new dependencies).
   *Carried over from the PR #18 review:* on narrow screens, a flight that raises the sheet makes one extra viewport request at a mid-flight zoom (for example 5, 4, then 5), because the resize ends a move and `TrackViewport` reports it. It is one wasted request and may briefly draw clusters for the wrong zoom. Skip the report while a flight is under way, and extend the "one viewport request" e2e test to a narrow screen.
   *Carried over from the PR #17 review:* a refetch replaces the list with the latest 50 messages, so with 50 loaded plus 5 live, a reader at the very top who refocuses the tab loses the five oldest and the view starts at the sixth. Readers further down keep their place in Chromium through scroll anchoring; Safari, which has none, was not tested. Consider merging the refetch into the cached list, and add a test when browsers other than Chromium are configured.

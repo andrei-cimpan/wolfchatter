@@ -24,7 +24,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 - **FR5** Rooms and messages persist across sessions.
 - **FR6** Messages from other users appear in real time without a refresh.
 - **FR7** Pins load by map viewport. Zoomed out, nearby rooms collapse into clusters that show a count, and clicking a cluster zooms in.
-- **FR8** The layout is responsive. On desktop the chat panel sits on the right of the map. On narrow screens it becomes a bottom sheet: with no room selected, a banner below the map, so the map's attribution stays visible; once a room is open, a sheet raised over the map.
+- **FR8** The layout is responsive. On desktop the chat panel sits on the right of the map. On narrow screens it becomes a bottom sheet: with no room selected, a banner below the map, so the map's attribution stays visible; once a room is open, a sheet raised over the map. A phone on its side is too short for a sheet, so there the open room sits beside the map instead.
 
 **Usability improvements (beyond the brief):** remember the username locally, auto-scroll to the newest message, disable Submit when a field is empty, and fly the map to the selected pin.
 
