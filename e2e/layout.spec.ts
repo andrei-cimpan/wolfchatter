@@ -111,6 +111,11 @@ test.describe("narrow screen", () => {
   });
 });
 
+async function expectNoSidewaysScroll(page: Page) {
+  const overflow = await page.locator("aside").evaluate((aside) => aside.scrollWidth - aside.clientWidth);
+  expect(overflow).toBe(0);
+}
+
 const MIN_LIST_PX = 80;
 const panel = (page: Page) => page.getByRole("complementary", { name: "Chat" });
 const messages = (page: Page) => panel(page).getByRole("log", { name: "Messages" });
@@ -194,6 +199,26 @@ test.describe("errors in a panel scrolled down", () => {
     await expect(panel(page).getByRole("alert")).toBeInViewport({ ratio: 1 });
   });
 });
+
+for (const { width, height } of [
+  { width: 320, height: 180 },
+  { width: 300, height: 260 },
+  { width: 360, height: 320 },
+]) {
+  test.describe(`narrow panel beside the map, ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("Submit wraps below the message field rather than squeezing it", async ({ page }) => {
+      await openFullRoom(page);
+      const textWidth = await panel(page).getByRole("textbox", { name: "Message" }).evaluate((field) => {
+        const style = getComputedStyle(field);
+        return field.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      });
+      expect(textWidth).toBeGreaterThanOrEqual(80);
+      await expectNoSidewaysScroll(page);
+    });
+  });
+}
 
 test.describe("short upright screen", () => {
   test.use({ viewport: { width: 320, height: 568 } });
