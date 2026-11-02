@@ -36,7 +36,8 @@ function ClickToCreate({ onMapClick }: Pick<LeafletMapProps, "onMapClick">) {
   return null;
 }
 
-// The mobile sheet changes the map's height; Leaflet only notices window resizes on its own.
+// The mobile sheet changes the map's height, and the panel beside it on a phone on its side the
+// map's width; Leaflet only notices window resizes on its own.
 function KeepSizeInSync() {
   const map = useMap();
   useEffect(() => {

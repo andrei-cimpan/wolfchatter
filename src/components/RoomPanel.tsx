@@ -21,10 +21,11 @@ const RAISED_BESIDE_MAP =
   "short-wide:h-auto short-wide:w-1/2 short-wide:shrink-0 short-wide:rounded-t-none short-wide:rounded-l-2xl short-wide:border-t-0 short-wide:border-l short-wide:pr-[max(1rem,env(safe-area-inset-right))] short-wide:shadow-[-4px_0_12px_rgb(0_0_0/0.1)]";
 
 // Narrow screens: a banner in the page flow below the map, so it never hides the map's
-// attribution, raised to half the screen once a room is open. From md up: a card floating over
-// the map's top-right corner, as in the mockups. It scrolls when even the form does not fit, such
-// as in a very short window or at high browser zoom, so Submit can always be reached. `relative`
-// keeps the form's absolutely positioned sr-only labels inside that scroll, or they stretch the page.
+// attribution, raised to a sheet or set beside the map once a room is open. From md up: a card
+// floating over the map's top-right corner, as in the mockups. It scrolls when even the form does
+// not fit, such as in a very short window or at high browser zoom, so Submit can always be reached.
+// `relative` keeps the form's absolutely positioned sr-only labels inside that scroll, or they
+// stretch the page.
 function PanelFrame({ raised, busy = false, children }: { raised: boolean; busy?: boolean; children: ReactNode }) {
   return (
     <aside
