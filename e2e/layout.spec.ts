@@ -149,6 +149,18 @@ async function post(page: Page) {
   await expect(messages(page).getByRole("listitem").last()).toContainText("Sent from a short screen");
 }
 
+async function expectSelectedPinTipAt(page: Page, point: { x: number; y: number }) {
+  const title = panel(page).getByRole("heading", { level: 2 });
+  await expect(title).toHaveText(/^Chatroom \d+$/);
+  const pin = page.getByRole("button", { name: (await title.textContent()) ?? "", exact: true });
+  await expect(async () => {
+    const icon = await pin.boundingBox();
+    // The icon's tip is 12 px right of its left edge and 41 px below its top.
+    expect(Math.abs((icon?.x ?? 0) + 12 - point.x)).toBeLessThan(3);
+    expect(Math.abs((icon?.y ?? 0) + 41 - point.y)).toBeLessThan(3);
+  }).toPass({ timeout: 10_000 });
+}
+
 async function expectPostWorks(page: Page) {
   await post(page);
   await expect(messages(page).getByRole("listitem").last()).toBeInViewport({ ratio: 0.9 });
@@ -289,16 +301,46 @@ test.describe("phone on its side, 667x375", () => {
     await page.goto("/");
     await expect(page.locator(".leaflet-container")).toBeVisible();
     await page.locator(".leaflet-container").click({ position: { x: 500, y: 100 } });
-    const title = panel(page).getByRole("heading", { level: 2 });
-    await expect(title).toHaveText(/^Chatroom \d+$/);
+    await expectSelectedPinTipAt(page, { x: 667 / 4, y: 375 / 2 });
+  });
 
-    const pin = page.getByRole("button", { name: (await title.textContent()) ?? "", exact: true });
-    await expect(async () => {
-      const icon = await pin.boundingBox();
-      // The icon's tip is 12 px right of its left edge and 41 px below its top.
-      expect(Math.abs((icon?.x ?? 0) + 12 - 667 / 4)).toBeLessThan(3);
-      expect(Math.abs((icon?.y ?? 0) + 41 - 375 / 2)).toBeLessThan(3);
-    }).toPass({ timeout: 10_000 });
+  test("closing the chat gives the whole width back to the map", async ({ page }) => {
+    await openFullRoom(page);
+    await expect(page.locator(".leaflet-tile-loaded").first()).toBeVisible();
+    await page.getByRole("button", { name: "Close chat" }).click();
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+
+    const map = await box(page, ".leaflet-container");
+    expect(map.width).toBe(667);
+    expect(map.y + map.height).toBeLessThanOrEqual((await box(page, "aside")).y);
+
+    // Leaflet loaded tiles only for the narrow map; without invalidateSize() the strip the chat
+    // uncovers stays grey. Sampled top right, clear of the attribution box.
+    await makeTilesHitTestable(page);
+    await expect
+      .poll(() => page.evaluate(() => document.elementFromPoint(640, 20)?.classList.contains("leaflet-tile") ?? false))
+      .toBe(true);
+  });
+});
+
+test.describe("rotating a phone with a room open", () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("the chat moves beside the map and back, and the pin stays centred", async ({ page }) => {
+    await openFullRoom(page);
+    await expectSelectedPinTipAt(page, { x: 375 / 2, y: (667 - 667 / 2) / 2 });
+
+    await page.setViewportSize({ width: 667, height: 375 });
+    expect(await box(page, "aside")).toEqual({ x: 667 / 2, y: 0, width: 667 / 2, height: 375 });
+    await expectSelectedPinTipAt(page, { x: 667 / 4, y: 375 / 2 });
+    await expectUsableChat(page, 375);
+
+    await page.setViewportSize({ width: 375, height: 667 });
+    const sheet = await box(page, "aside");
+    expect(sheet.width).toBe(375);
+    expect(sheet.y + sheet.height).toBe(667);
+    await expectSelectedPinTipAt(page, { x: 375 / 2, y: (667 - 667 / 2) / 2 });
+    await expectUsableChat(page, 667);
   });
 });
 
