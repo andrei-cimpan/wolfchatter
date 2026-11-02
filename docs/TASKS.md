@@ -59,8 +59,8 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T5.2** Auto-scroll to the newest message; disable Submit when a field is empty.
   *Still open from the PR #12 review:* any 400 becomes "Enter a username and a message.". The form checks with the API's own schema first, so this cannot be reached today; use the API's message if the client and API rules ever differ.
 - [x] **T5.3** Fly the map to the selected room.
-- [ ] **T5.4** Keep the chat usable in a short sheet.
-  *Carried over from the PR #17 review:* the raised sheet is half the screen and its form has a fixed height, so at 667x375 (a phone on its side) the message list is 0 px tall and Submit runs past the bottom of the screen, and at 320x568 the list is only 47 px. This needs a layout decision, such as a taller sheet on short screens.
+- [x] **T5.4** Keep the chat usable in a short sheet.
+  *Carried over from the PR #17 review:* the raised sheet is half the screen and its form has a fixed height, so at 667x375 (a phone on its side) the message list is 0 px tall and Submit runs past the bottom of the screen, and at 320x568 the list is only 47 px. Done: the sheet is at least 320 px tall, and a phone on its side shows the chat beside the map.
 
 ## 6. Quality
 

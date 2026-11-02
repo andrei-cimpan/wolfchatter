@@ -110,3 +110,131 @@ test.describe("narrow screen", () => {
     }
   });
 });
+
+const MIN_LIST_PX = 80;
+const panel = (page: Page) => page.getByRole("complementary", { name: "Chat" });
+const messages = (page: Page) => panel(page).getByRole("log", { name: "Messages" });
+const submit = (page: Page) => panel(page).getByRole("button", { name: "Submit" });
+
+/** Opens a room with enough messages to overflow any list, so the list's height is what the layout gave it. */
+async function openFullRoom(page: Page) {
+  const response = await page.request.post("/api/rooms", { data: { lat: 48, lng: 20 } });
+  const { id } = (await response.json()) as { id: string };
+  for (let i = 1; i <= 8; i++) {
+    await page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body: `Message ${i}` } });
+  }
+  await page.goto(`/?room=${id}`);
+  await expect(messages(page).getByRole("listitem")).toHaveCount(8);
+}
+
+// The list scrolls in the log's parent.
+const listHeight = (page: Page) => messages(page).locator("..").evaluate((el) => el.clientHeight);
+
+async function expectUsableChat(page: Page, viewportHeight: number) {
+  expect(await listHeight(page)).toBeGreaterThanOrEqual(MIN_LIST_PX);
+  const button = await submit(page).boundingBox();
+  expect((button?.y ?? 0) + (button?.height ?? 0)).toBeLessThanOrEqual(viewportHeight);
+  await expectNoPageScroll(page);
+}
+
+async function expectPostWorks(page: Page) {
+  await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
+  await panel(page).getByRole("textbox", { name: "Message" }).fill("Sent from a short screen");
+  await submit(page).click();
+  await expect(messages(page).getByRole("listitem").last()).toContainText("Sent from a short screen");
+  await expect(messages(page).getByRole("listitem").last()).toBeInViewport({ ratio: 0.9 });
+}
+
+test.describe("short upright screen", () => {
+  test.use({ viewport: { width: 320, height: 568 } });
+
+  test("the sheet is taller than half the screen, so the list keeps its room", async ({ page }) => {
+    await openFullRoom(page);
+    const sheet = await box(page, "aside");
+    expect(sheet.height).toBe(320);
+    expect(sheet.y + sheet.height).toBe(568);
+    await expectUsableChat(page, 568);
+    await expectPostWorks(page);
+  });
+});
+
+for (const { width, height } of [
+  { width: 667, height: 375 },
+  { width: 568, height: 320 },
+]) {
+  test.describe(`phone on its side, ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("the chat sits beside the map, and the map keeps its attribution", async ({ page }) => {
+      await openFullRoom(page);
+      const sheet = await box(page, "aside");
+      expect(sheet).toEqual({ x: width / 2, y: 0, width: width / 2, height });
+      await expect(page.getByRole("button", { name: "Close chat" })).toBeVisible();
+      await expectUsableChat(page, height);
+      await expectPostWorks(page);
+
+      expect(await box(page, ".leaflet-container")).toEqual({ x: 0, y: 0, width: width / 2, height });
+      await expect(page.locator(".leaflet-control-attribution")).toBeInViewport();
+    });
+  });
+}
+
+test.describe("phone on its side, 667x375", () => {
+  test.use({ viewport: { width: 667, height: 375 } });
+
+  test("with no room open the banner stays below the map", async ({ page }) => {
+    await page.goto("/");
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    const sheet = await box(page, "aside");
+    expect(sheet.width).toBe(667);
+    expect(sheet.y + sheet.height).toBe(375);
+    const map = await box(page, ".leaflet-container");
+    expect(map.width).toBe(667);
+    expect(map.y + map.height).toBeLessThanOrEqual(sheet.y);
+  });
+
+  test("a new room's pin is centred in the map left beside the chat", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".leaflet-container")).toBeVisible();
+    await page.locator(".leaflet-container").click({ position: { x: 500, y: 100 } });
+    const title = panel(page).getByRole("heading", { level: 2 });
+    await expect(title).toHaveText(/^Chatroom \d+$/);
+
+    const pin = page.getByRole("button", { name: (await title.textContent()) ?? "", exact: true });
+    await expect(async () => {
+      const icon = await pin.boundingBox();
+      // The icon's tip is 12 px right of its left edge and 41 px below its top.
+      expect(Math.abs((icon?.x ?? 0) + 12 - 667 / 4)).toBeLessThan(3);
+      expect(Math.abs((icon?.y ?? 0) + 41 - 375 / 2)).toBeLessThan(3);
+    }).toPass({ timeout: 10_000 });
+  });
+});
+
+test.describe("large phone on its side", () => {
+  test.use({ viewport: { width: 844, height: 390 } });
+
+  test("gets the floating card, with the list keeping its room", async ({ page }) => {
+    await openFullRoom(page);
+    const card = await box(page, "aside");
+    expect(card.width).toBe(380);
+    expect(card.y).toBe(16);
+    await expectUsableChat(page, 390);
+    expect(await box(page, ".leaflet-container")).toEqual({ x: 0, y: 0, width: 844, height: 390 });
+  });
+});
+
+for (const { width, height } of [
+  { width: 800, height: 200 },
+  { width: 300, height: 260 },
+]) {
+  test.describe(`very short window, ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("the panel scrolls, so Submit stays reachable and the list keeps its room", async ({ page }) => {
+      await openFullRoom(page);
+      expect(await listHeight(page)).toBeGreaterThanOrEqual(MIN_LIST_PX);
+      await expectPostWorks(page);
+      await expectNoPageScroll(page);
+    });
+  });
+}
