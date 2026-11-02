@@ -137,11 +137,15 @@ async function expectUsableChat(page: Page, viewportHeight: number) {
   await expectNoPageScroll(page);
 }
 
-async function expectPostWorks(page: Page) {
+async function post(page: Page) {
   await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
   await panel(page).getByRole("textbox", { name: "Message" }).fill("Sent from a short screen");
   await submit(page).click();
   await expect(messages(page).getByRole("listitem").last()).toContainText("Sent from a short screen");
+}
+
+async function expectPostWorks(page: Page) {
+  await post(page);
   await expect(messages(page).getByRole("listitem").last()).toBeInViewport({ ratio: 0.9 });
 }
 
@@ -279,7 +283,18 @@ for (const { width, height } of [
     test("the panel scrolls, so Submit stays reachable and the list keeps its room", async ({ page }) => {
       await openFullRoom(page);
       expect(await listHeight(page)).toBeGreaterThanOrEqual(MIN_LIST_PX);
-      await expectPostWorks(page);
+      await expect(submit(page)).not.toBeInViewport({ ratio: 1 });
+
+      // A real wheel: Playwright's own click scrolls even a panel that a person could not scroll.
+      await panel(page).getByRole("heading", { level: 2 }).hover();
+      await page.mouse.wheel(0, 600);
+      await expect(submit(page)).toBeInViewport({ ratio: 1 });
+      await post(page);
+
+      // The form and a whole message may not both fit, so the reader scrolls back up to read it.
+      await submit(page).hover();
+      await page.mouse.wheel(0, -600);
+      await expect(messages(page).getByRole("listitem").last()).toBeInViewport({ ratio: 0.9 });
       await expectNoPageScroll(page);
     });
   });
