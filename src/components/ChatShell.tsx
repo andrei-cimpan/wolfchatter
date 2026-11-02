@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useCreateRoom } from "@/hooks/useCreateRoom";
 import { currentSelectedRoomId, selectRoom } from "@/hooks/useSelectedRoom";
 import type { PinAnchor } from "./LeafletMap";
@@ -44,6 +44,13 @@ export function ChatShell() {
     creation.clearResult();
     creation.pick(id);
   }
+
+  // Back or Forward ends a draft, whose form is gone by then. Left in place, it would come back on any
+  // entry with no room open, and saving there would overwrite that entry.
+  useEffect(() => {
+    window.addEventListener("popstate", discardDraft);
+    return () => window.removeEventListener("popstate", discardDraft);
+  });
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden short-wide:has-[[data-raised]]:flex-row md:relative md:block">

@@ -171,7 +171,7 @@ export function RoomPanel({
   onDraftSaved,
 }: RoomPanelProps) {
   const roomId = useSelectedRoomId();
-  // An open room hides a draft rather than ending it, so Back and Forward can return to it.
+  // Until `?room` catches up: a draft starts in the render before an open room closes.
   const openDraft = roomId === null ? draft : null;
   const savedAs = draft?.savedAs ?? null;
   useEffect(() => {

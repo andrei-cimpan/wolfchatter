@@ -573,7 +573,7 @@ test.describe("desktop", () => {
     await expect(panel(page)).toHaveText(EMPTY_STATE);
   });
 
-  test("a draft over an open room comes and goes with Back and Forward", async ({ page }) => {
+  test("Back from a draft over an open room returns to the room and ends the draft", async ({ page }) => {
     const room = await postRoom(page, { lat: 48, lng: 20 });
     await openMap(page, `/?room=${room.id}`);
     await startDraftAt(page, 200, 600);
@@ -585,8 +585,23 @@ test.describe("desktop", () => {
     await expect(draftPin(page)).toHaveCount(0);
 
     await page.goForward();
-    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
-    await expect(draftPin(page)).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("a draft ended by Back does not come back on an older entry", async ({ page }) => {
+    await openMap(page);
+    await createRoomAt(page, 400, 300);
+    await startDraftAt(page, 200, 600);
+    await fillDraft(page, "Half written");
+
+    await page.goBack();
+    await expect(page).toHaveURL(ROOM_URL);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
   });
 
   test("saving a draft from the empty map leaves Back on the empty map", async ({ page }) => {
