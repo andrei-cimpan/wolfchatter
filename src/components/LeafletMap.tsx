@@ -6,6 +6,7 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { useMapItems } from "@/hooks/useMapItems";
 import { useRoom } from "@/hooks/useRoom";
 import { useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import { focusShiftPx, WIDE_SCREEN_QUERY } from "@/lib/map-focus";
 import { INITIAL_VIEW, tileConfigFromEnv } from "@/lib/map-config";
 import type { Bbox, MapItem } from "@/lib/types";
 import { nextViewportQuery, type ViewportQuery } from "@/lib/viewport";
@@ -78,6 +79,28 @@ function ClickToDraft({
       clearTimeout(timerRef.current);
       if (droppedBeforeThisClick.current) onDoubleClickUndo();
       droppedBeforeThisClick.current = false;
+    },
+  });
+  return null;
+}
+
+// A click has no keyboard equivalent otherwise. The map is focusable for Leaflet's arrow-key panning,
+// so Enter drops a pin where a selected room would land: the middle of what the card leaves clear.
+// A focused pin or bubble handles its own Enter, and the event reaches the map as well.
+function EnterToDraft({ onMapClick }: Pick<LeafletMapProps, "onMapClick">) {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    container.setAttribute("role", "group");
+    container.setAttribute("aria-label", "Map. Arrow keys move it, and Enter drops a pin at its centre.");
+  }, [map]);
+  useMapEvents({
+    keydown: ({ originalEvent: { key, target } }) => {
+      if (key !== "Enter" || target !== map.getContainer()) return;
+      const { x, y } = map.getSize();
+      const shiftX = focusShiftPx(map.getZoom(), window.matchMedia(WIDE_SCREEN_QUERY).matches);
+      const { lat, lng } = map.containerPointToLatLng([x / 2 - shiftX, y / 2]);
+      onMapClick(lat, lng);
     },
   });
   return null;
@@ -160,6 +183,7 @@ export default function LeafletMap({ pinAnchor, draft, onMapClick, onDoubleClick
         onMapClick={onMapClick}
         onDoubleClickUndo={onDoubleClickUndo}
       />
+      <EnterToDraft onMapClick={onMapClick} />
       <KeepSizeInSync />
       <TrackViewport onChange={onViewChange} />
       <MapMarkers

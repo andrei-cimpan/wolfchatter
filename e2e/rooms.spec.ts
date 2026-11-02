@@ -477,6 +477,46 @@ test.describe("desktop", () => {
     expect(posts).toHaveLength(3);
   });
 
+  test("with only a keyboard, Enter on the map drops a draft in the clear part, and the form can be reached", async ({ page }) => {
+    const posts = countRoomPosts(page);
+    await openMap(page);
+    await page.locator(".leaflet-container").focus();
+    await page.keyboard.press("Enter");
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    expect(posts).toHaveLength(0);
+
+    const username = panel(page).getByRole("textbox", { name: "Username" });
+    await expect(async () => {
+      await page.keyboard.press("Tab");
+      await expect(username).toBeFocused({ timeout: 100 });
+    }).toPass({ timeout: 10_000, intervals: [0] });
+    await page.keyboard.type("ana");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("Typed, never clicked");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(ROOM_URL);
+    expect(posts).toHaveLength(1);
+  });
+
+  test("Enter drops the draft where the arrow keys moved the map", async ({ page }) => {
+    await openMap(page);
+    await page.locator(".leaflet-container").focus();
+    await page.keyboard.press("Enter");
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    const before = await draftPin(page).boundingBox();
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(async () => {
+      const moved = await draftPin(page).boundingBox();
+      expect(Math.abs((moved?.x ?? 0) - (before?.x ?? 0))).toBeGreaterThan(20);
+    }).toPass();
+
+    await page.keyboard.press("Enter");
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+  });
+
   test("a focused pin opens its room with Enter or Space", async ({ page }) => {
     await openMap(page);
     const first = await createRoomAt(page, 400, 300);

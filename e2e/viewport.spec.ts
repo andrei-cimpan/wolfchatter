@@ -127,6 +127,8 @@ test("a focused cluster zooms in with Enter, and focus moves to the map", async 
   await expect.poll(() => tileZooms(page)).toEqual(["8"]);
   // The bubble is gone after the zoom; without this, focus would fall back to the page's start.
   await expect(page.locator(".leaflet-container")).toBeFocused();
+  // Enter on the map itself drops a draft, and this one started on the bubble.
+  await expect(page.locator(".draft-pin")).toHaveCount(0);
 });
 
 test("a focused cluster keeps a visible focus ring in forced-colours mode", async ({ page }) => {
