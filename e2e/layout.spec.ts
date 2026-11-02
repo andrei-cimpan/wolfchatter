@@ -193,20 +193,23 @@ for (const { width, height } of [
   });
 }
 
-test.describe("errors in a panel scrolled down", () => {
-  // Short enough to scroll past the 68 px above this error; at 276 px the panel scrolls only 40 px.
+test.describe("errors in a very short draft", () => {
   test.use({ viewport: { width: 568, height: 200 } });
 
-  test("a failed room creation's error comes into view at the panel's top", async ({ page }) => {
-    await openFullRoom(page);
+  test("a failed room creation's error comes into view", async ({ page }) => {
     await page.route("**/api/rooms", (route) =>
       route.request().method() === "POST"
         ? route.fulfill({ status: 429, headers: { "Retry-After": "30" }, json: { error: { code: "rate_limited", message: "Too many" } } })
         : route.fallback(),
     );
-    await page.locator("aside").evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
+    await page.goto("/");
+    await expect(page.locator(".leaflet-container")).toBeVisible();
     // High up and to the right: in a window this short, Next's dev badge covers the lower left.
-    await page.locator(".leaflet-container").click({ position: { x: 220, y: 60 } });
+    await page.locator(".leaflet-container").click({ position: { x: 400, y: 60 } });
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText("New chatroom");
+    await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
+    await panel(page).getByRole("textbox", { name: "Message" }).fill("Will fail");
+    await submit(page).click();
 
     await expect(panel(page).getByRole("alert")).toBeInViewport({ ratio: 1 });
   });
@@ -244,6 +247,27 @@ for (const { width, height } of [
       await expect(page.getByRole("button", { name: "Zoom out" })).toBeInViewport({ ratio: 1 });
       await expect(page.locator(".leaflet-control-attribution")).toBeInViewport({ ratio: 1 });
       expect((await box(page, "aside")).y + (await box(page, "aside")).height).toBe(height);
+      await expectNoPageScroll(page);
+    });
+  });
+}
+
+for (const { width, height, x, y } of [
+  { width: 320, height: 568, x: 160, y: 150 },
+  { width: 568, height: 320, x: 400, y: 100 },
+  { width: 1280, height: 720, x: 400, y: 300 },
+]) {
+  test.describe(`a draft at ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("shows the note, the form and Discard without scrolling", async ({ page }) => {
+      await page.goto("/");
+      await expect(page.locator(".leaflet-container")).toBeVisible();
+      await page.locator(".leaflet-container").click({ position: { x, y } });
+      await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText("New chatroom");
+      await expect(panel(page).getByText("Send the first message to create this chatroom.")).toBeInViewport({ ratio: 1 });
+      await expect(submit(page)).toBeInViewport({ ratio: 1 });
+      await expect(panel(page).getByRole("button", { name: "Discard" })).toBeInViewport({ ratio: 1 });
       await expectNoPageScroll(page);
     });
   });
@@ -301,6 +325,10 @@ test.describe("phone on its side, 667x375", () => {
     await page.goto("/");
     await expect(page.locator(".leaflet-container")).toBeVisible();
     await page.locator(".leaflet-container").click({ position: { x: 500, y: 100 } });
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText("New chatroom");
+    await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
+    await panel(page).getByRole("textbox", { name: "Message" }).fill("Hello");
+    await submit(page).click();
     await expectSelectedPinTipAt(page, { x: 667 / 4, y: 375 / 2 });
   });
 

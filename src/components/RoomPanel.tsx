@@ -1,16 +1,27 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createRoomErrorMessage } from "@/hooks/useCreateRoom";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
 import { readSavedUsername, saveUsername } from "@/lib/saved-username";
-import { MessageForm } from "./MessageForm";
+import { MessageForm, RoomMessageForm } from "./MessageForm";
 import { MessageList } from "./MessageList";
-import { VisibleAlert } from "./VisibleAlert";
 
 const EMPTY_STATE = "Click on the map to start a chat";
+const DRAFT_NOTE = "Send the first message to create this chatroom. Until then, nobody else can see it.";
+
+/** A pin dropped on the map but not saved: nothing exists on the server until its first message. */
+export type DraftPin = {
+  id: string;
+  lat: number;
+  lng: number;
+  /** See DraftToSend. */
+  openedOverRoom: boolean;
+  /** The room it became, until the panel has switched to that room. */
+  savedAs?: string;
+};
 
 // The form and headers take about 237 px, so 20rem leaves the list at least one whole message. The
 // cap leaves the map's zoom buttons (102 px) and attribution on a very short screen; the panel scrolls.
@@ -51,14 +62,15 @@ export function RoomPanelFallback() {
   );
 }
 
-function SheetHeader() {
+function SheetHeader({ onClose, leading }: { onClose: () => void; leading?: ReactNode }) {
   return (
-    <div className="relative mb-2 flex h-11 items-center justify-end md:hidden">
+    <div className="relative mb-2 flex h-11 shrink-0 items-center justify-between md:hidden">
+      {leading ?? <span />}
       <span aria-hidden className="absolute left-1/2 top-0 h-1 w-10 -translate-x-1/2 rounded-full bg-foreground/20 short-wide:hidden" />
       <button
         type="button"
         aria-label="Close chat"
-        onClick={() => selectRoom(null)}
+        onClick={onClose}
         className="flex size-11 items-center justify-center rounded-full text-2xl leading-none hover:bg-foreground/10"
       >
         ×
@@ -67,13 +79,55 @@ function SheetHeader() {
   );
 }
 
+function DiscardButton({ onClick, className = "" }: { onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-11 rounded px-2 text-sm underline hover:bg-foreground/10 ${className}`}
+    >
+      Discard
+    </button>
+  );
+}
+
+interface DraftContentProps {
+  author: string;
+  onAuthorChange: (author: string) => void;
+  send: (author: string, body: string, onSent: () => void) => void;
+  clearError: () => void;
+  isPending: boolean;
+  error: Error | null;
+  onDiscard: () => void;
+}
+
+function DraftContent({ author, onAuthorChange, send, clearError, isPending, error, onDiscard }: DraftContentProps) {
+  return (
+    <>
+      <h2 className="text-center font-medium">New chatroom</h2>
+      <p className="mt-4 flex-auto text-center text-sm text-foreground/70">{DRAFT_NOTE}</p>
+      <MessageForm
+        author={author}
+        onAuthorChange={onAuthorChange}
+        send={send}
+        clearError={clearError}
+        isPending={isPending}
+        errorMessage={error ? createRoomErrorMessage(error) : null}
+      />
+      {/* The sheet has this in its header instead, where it costs no height. */}
+      <DiscardButton onClick={onDiscard} className="mt-2 hidden self-start md:block" />
+    </>
+  );
+}
+
 interface RoomContentProps {
   roomId: string;
   author: string;
   onAuthorChange: (author: string) => void;
+  autoFocusBody: boolean;
 }
 
-function RoomContent({ roomId, author, onAuthorChange }: RoomContentProps) {
+function RoomContent({ roomId, author, onAuthorChange, autoFocusBody }: RoomContentProps) {
   const { data: room, isPending, isError } = useRoom(roomId);
   const hydrated = useHydrated();
   const [sentCount, setSentCount] = useState(0);
@@ -84,26 +138,45 @@ function RoomContent({ roomId, author, onAuthorChange }: RoomContentProps) {
     <>
       <h2 className="text-center font-medium">{room.title}</h2>
       <MessageList roomId={room.id} sentCount={sentCount} />
-      <MessageForm
+      <RoomMessageForm
         roomId={room.id}
         author={author}
         onAuthorChange={onAuthorChange}
         onSent={() => setSentCount((count) => count + 1)}
+        autoFocusBody={autoFocusBody}
       />
     </>
   );
 }
 
 interface RoomPanelProps {
+  draft: DraftPin | null;
   creating: boolean;
   creationError: Error | null;
-  /** `?room` when the failed click happened; the error is hidden once the selection moves on. */
-  creationErrorSelection: string | null;
+  createdRoomId: string | null;
+  onSendDraft: (draft: DraftPin, author: string, body: string, onSent: () => void) => void;
+  onClearCreationError: () => void;
+  onDiscardDraft: () => void;
+  onDraftSaved: () => void;
 }
 
-export function RoomPanel({ creating, creationError, creationErrorSelection }: RoomPanelProps) {
+export function RoomPanel({
+  draft,
+  creating,
+  creationError,
+  createdRoomId,
+  onSendDraft,
+  onClearCreationError,
+  onDiscardDraft,
+  onDraftSaved,
+}: RoomPanelProps) {
   const roomId = useSelectedRoomId();
-  const visibleError = creationErrorSelection === roomId ? creationError : null;
+  // An open room hides a draft rather than ending it, so Back and Forward can return to it.
+  const openDraft = roomId === null ? draft : null;
+  const savedAs = draft?.savedAs ?? null;
+  useEffect(() => {
+    if (savedAs !== null && savedAs === roomId) onDraftSaved();
+  }, [savedAs, roomId, onDraftSaved]);
   // The server starts empty and the browser with the saved name, which cannot cause a hydration
   // mismatch: RoomContent renders the form only once hydrated.
   const [author, setAuthor] = useState(readSavedUsername);
@@ -111,21 +184,48 @@ export function RoomPanel({ creating, creationError, creationErrorSelection }: R
     setAuthor(next);
     saveUsername(next);
   }
+  function close() {
+    selectRoom(null);
+    onDiscardDraft();
+  }
+  const raised = roomId !== null || openDraft !== null;
   return (
-    <PanelFrame raised={roomId !== null}>
-      {roomId !== null && <SheetHeader />}
+    <PanelFrame raised={raised}>
+      {raised && (
+        <SheetHeader
+          onClose={close}
+          leading={openDraft && <DiscardButton onClick={onDiscardDraft} />}
+        />
+      )}
       {creating && (
         <p role="status" className="mb-2 text-sm text-foreground/60">
           Creating a chatroom…
         </p>
       )}
-      {visibleError && (
-        <VisibleAlert message={createRoomErrorMessage(visibleError)} className="mb-2 text-sm text-red-700 dark:text-red-400" />
-      )}
-      {roomId === null ? <p>{EMPTY_STATE}</p> : (
+      {roomId !== null ? (
         // Keyed so each room mounts its own message log, which then does not read out the history
         // it opens with, and its own form, so a half-written message stays with its room.
-        <RoomContent key={roomId} roomId={roomId} author={author} onAuthorChange={changeAuthor} />
+        <RoomContent
+          key={roomId}
+          roomId={roomId}
+          author={author}
+          onAuthorChange={changeAuthor}
+          autoFocusBody={roomId === createdRoomId}
+        />
+      ) : openDraft ? (
+        // Not keyed by the draft: moving the pin keeps what has been typed, since the place was
+        // probably just misjudged.
+        <DraftContent
+          author={author}
+          onAuthorChange={changeAuthor}
+          send={(sentAuthor, body, onSent) => onSendDraft(openDraft, sentAuthor, body, onSent)}
+          clearError={onClearCreationError}
+          isPending={creating}
+          error={creationError}
+          onDiscard={onDiscardDraft}
+        />
+      ) : (
+        <p>{EMPTY_STATE}</p>
       )}
     </PanelFrame>
   );

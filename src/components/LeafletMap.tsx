@@ -1,7 +1,7 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { useMapItems } from "@/hooks/useMapItems";
 import { useRoom } from "@/hooks/useRoom";
@@ -9,7 +9,7 @@ import { useSelectedRoomId } from "@/hooks/useSelectedRoom";
 import { INITIAL_VIEW, tileConfigFromEnv } from "@/lib/map-config";
 import type { Bbox, MapItem } from "@/lib/types";
 import { nextViewportQuery, type ViewportQuery } from "@/lib/viewport";
-import { MapMarkers, type Cluster, type PinAnchor, type PinRoom } from "./MapMarkers";
+import { MapMarkers, type Cluster, type DraftPosition, type PinAnchor, type PinRoom } from "./MapMarkers";
 
 export type { PinAnchor } from "./MapMarkers";
 
@@ -17,20 +17,37 @@ const tileConfig = tileConfigFromEnv();
 
 // Waits for the map to settle, so a drag or a run of zoom clicks makes one request, not one per step.
 const VIEWPORT_DEBOUNCE_MS = 250;
+const DOUBLE_CLICK_WAIT_MS = 250;
 
 export interface LeafletMapProps {
   pinAnchor: PinAnchor | null;
+  draft: DraftPosition | null;
   onMapClick: (lat: number, lng: number) => void;
+  onDoubleClickUndo: () => void;
   onRoomClick: (id: string) => void;
 }
 
-// Leaflet sends no click after a drag, so panning never creates a room. The browser counts the
-// clicks of a double-click in `detail`; only the first one creates a room.
-function ClickToCreate({ onMapClick }: Pick<LeafletMapProps, "onMapClick">) {
+// Leaflet sends no click after a drag, so panning never drops a pin. The browser counts the clicks
+// of a double-click in `detail`. A double-click zooms and should leave no pin, so a click waits to
+// see if another follows; a slower double-click, one that outlasts the wait, takes its pin back.
+function ClickToDraft({ onMapClick, onDoubleClickUndo }: Pick<LeafletMapProps, "onMapClick" | "onDoubleClickUndo">) {
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const droppedByLastClick = useRef(false);
+  useEffect(() => () => clearTimeout(timer.current), []);
   useMapEvents({
     click: (event) => {
-      if (event.originalEvent.detail > 1) return;
-      onMapClick(event.latlng.lat, event.latlng.lng);
+      clearTimeout(timer.current);
+      const dropped = droppedByLastClick.current;
+      droppedByLastClick.current = false;
+      if (event.originalEvent.detail > 1) {
+        if (dropped) onDoubleClickUndo();
+        return;
+      }
+      const { lat, lng } = event.latlng;
+      timer.current = setTimeout(() => {
+        droppedByLastClick.current = true;
+        onMapClick(lat, lng);
+      }, DOUBLE_CLICK_WAIT_MS);
     },
   });
   return null;
@@ -84,7 +101,7 @@ function splitItems(items: MapItem[]): { rooms: PinRoom[]; clusters: Cluster[] }
   return { rooms, clusters };
 }
 
-export default function LeafletMap({ pinAnchor, onMapClick, onRoomClick }: LeafletMapProps) {
+export default function LeafletMap({ pinAnchor, draft, onMapClick, onDoubleClickUndo, onRoomClick }: LeafletMapProps) {
   const [viewport, setViewport] = useState<ViewportQuery | null>(null);
   const onViewChange = useCallback(
     (bounds: Bbox, zoom: number) => setViewport((current) => nextViewportQuery(current, bounds, zoom)),
@@ -98,16 +115,9 @@ export default function LeafletMap({ pinAnchor, onMapClick, onRoomClick }: Leafl
   if (selectedRoom && !rooms.some((room) => room.id === selectedRoom.id)) rooms.push(selectedRoom);
 
   return (
-    <MapContainer
-      center={INITIAL_VIEW.center}
-      zoom={INITIAL_VIEW.zoom}
-      // A double-click must not also zoom: its first click already creates a room (ClickToCreate
-      // ignores the second), so zooming as well would move the map away from the new pin.
-      doubleClickZoom={false}
-      className="h-full w-full"
-    >
+    <MapContainer center={INITIAL_VIEW.center} zoom={INITIAL_VIEW.zoom} className="h-full w-full">
       <TileLayer url={tileConfig.url} attribution={tileConfig.attribution} />
-      <ClickToCreate onMapClick={onMapClick} />
+      <ClickToDraft onMapClick={onMapClick} onDoubleClickUndo={onDoubleClickUndo} />
       <KeepSizeInSync />
       <TrackViewport onChange={onViewChange} />
       <MapMarkers
@@ -116,6 +126,7 @@ export default function LeafletMap({ pinAnchor, onMapClick, onRoomClick }: Leafl
         clusterZoom={data?.zoom ?? 0}
         pinAnchor={pinAnchor}
         selectedRoomId={selectedRoomId}
+        draft={selectedRoomId === null ? draft : null}
         onRoomClick={onRoomClick}
       />
     </MapContainer>

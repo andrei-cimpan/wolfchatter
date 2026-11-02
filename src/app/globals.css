@@ -36,6 +36,12 @@ body {
   line-height: 44px;
 }
 
+/* A pin not saved yet (MapMarkers), which must not pass for a room that exists. */
+.leaflet-container .draft-pin {
+  filter: grayscale(1);
+  opacity: 0.75;
+}
+
 /* Cluster count bubbles (MapMarkers). The element is the touch target (44 px or more); the
    disc inside is drawn 6 px smaller on each side, and its halo fills that gap so a bubble reads
    as "several pins here". The prefix outranks Leaflet's `.leaflet-marker-icon { display: block }`,

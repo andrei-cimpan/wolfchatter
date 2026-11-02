@@ -25,27 +25,29 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const FIRST_MESSAGE = { author: "ana", body: "hello" };
+
 describe("createRoom", () => {
   it("posts JSON and returns the created room", async () => {
     const fetchMock = stubFetch(Response.json(ROOM, { status: 201 }));
-    await expect(createRoom({ lat: 48, lng: 20 })).resolves.toEqual(ROOM);
+    await expect(createRoom({ lat: 48, lng: 20, firstMessage: FIRST_MESSAGE })).resolves.toEqual(ROOM);
     expect(fetchMock).toHaveBeenCalledWith("/api/rooms", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat: 48, lng: 20 }),
+      body: JSON.stringify({ lat: 48, lng: 20, firstMessage: FIRST_MESSAGE }),
     });
   });
 
   it("turns a 429 into an ApiError with the Retry-After seconds", async () => {
     stubFetch(errorResponse(429, "rate_limited", "Too many requests", { "Retry-After": "42" }));
-    const error = await createRoom({ lat: 0, lng: 0 }).catch((e: unknown) => e);
+    const error = await createRoom({ lat: 0, lng: 0, firstMessage: FIRST_MESSAGE }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 429, code: "rate_limited", retryAfterSeconds: 42 });
   });
 
   it("keeps the API's message for a validation error", async () => {
     stubFetch(errorResponse(400, "validation_error", "lat: Too big"));
-    await expect(createRoom({ lat: 91, lng: 0 })).rejects.toMatchObject({
+    await expect(createRoom({ lat: 91, lng: 0, firstMessage: FIRST_MESSAGE })).rejects.toMatchObject({
       status: 400,
       code: "validation_error",
       message: "lat: Too big",
@@ -55,7 +57,7 @@ describe("createRoom", () => {
 
   it("copes with an error response that is not JSON", async () => {
     stubFetch(new Response("<html>Bad gateway</html>", { status: 502 }));
-    await expect(createRoom({ lat: 0, lng: 0 })).rejects.toMatchObject({
+    await expect(createRoom({ lat: 0, lng: 0, firstMessage: FIRST_MESSAGE })).rejects.toMatchObject({
       status: 502,
       code: "http_error",
       message: "Request failed with status 502",
@@ -64,7 +66,7 @@ describe("createRoom", () => {
 
   it("ignores a Retry-After that is not a positive whole number of seconds", async () => {
     stubFetch(errorResponse(429, "rate_limited", "Slow down", { "Retry-After": "soon" }));
-    await expect(createRoom({ lat: 0, lng: 0 })).rejects.toMatchObject({ retryAfterSeconds: undefined });
+    await expect(createRoom({ lat: 0, lng: 0, firstMessage: FIRST_MESSAGE })).rejects.toMatchObject({ retryAfterSeconds: undefined });
   });
 });
 

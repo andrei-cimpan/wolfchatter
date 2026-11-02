@@ -3,6 +3,9 @@ import { box, expect, makeTilesHitTestable, serveBlankTiles, test, tileZooms } f
 
 const ROOM_URL = /\?room=[0-9a-f-]{36}$/;
 const ROOM_TITLE = /^Chatroom \d+$/;
+const DRAFT_TITLE = "New chatroom";
+const DRAFT_NOTE = "Send the first message to create this chatroom. Until then, nobody else can see it.";
+const EMPTY_STATE = "Click on the map to start a chat";
 
 test.beforeEach(async ({ page }) => {
   await serveBlankTiles(page);
@@ -17,11 +20,28 @@ const panel = (page: Page) => page.getByRole("complementary", { name: "Chat" });
 const roomTitle = (page: Page) => panel(page).getByRole("heading", { level: 2 });
 const pin = (page: Page, title: string) => page.getByRole("button", { name: title, exact: true });
 
-/** Clicks the map at a point inside it and returns the new room's title once the panel shows it. */
-async function createRoomAt(page: Page, x: number, y: number): Promise<string> {
-  const before = page.url();
+const draftPin = (page: Page) => page.locator(".leaflet-marker-icon.draft-pin");
+const messageField = (page: Page) => panel(page).getByRole("textbox", { name: "Message" });
+const submit = (page: Page) => panel(page).getByRole("button", { name: "Submit" });
+const discard = (page: Page) => panel(page).getByRole("button", { name: "Discard" });
+
+/** Clicks the map at a point inside it and waits for the draft that opens. */
+async function startDraftAt(page: Page, x: number, y: number) {
   await page.locator(".leaflet-container").click({ position: { x, y } });
-  await expect(page).not.toHaveURL(before);
+  await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+  await expect(draftPin(page)).toBeVisible();
+}
+
+async function fillDraft(page: Page, body = "First message") {
+  await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
+  await messageField(page).fill(body);
+}
+
+/** Clicks the map at a point inside it, sends a first message and returns the new room's title. */
+async function createRoomAt(page: Page, x: number, y: number): Promise<string> {
+  await startDraftAt(page, x, y);
+  await fillDraft(page);
+  await submit(page).click();
   await expect(page).toHaveURL(ROOM_URL);
   await expect(roomTitle(page)).toHaveText(ROOM_TITLE);
   return (await roomTitle(page).textContent()) ?? "";
@@ -113,12 +133,29 @@ function countRoomPosts(page: Page) {
 test.describe("desktop", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
-  test("clicking the map creates a room, drops a pin and opens the room", async ({ page }) => {
+  test("a click drops a draft that saves nothing, and the first message creates the room", async ({ page }) => {
+    const posts = countRoomPosts(page);
     await openMap(page);
-    const title = await createRoomAt(page, 400, 300);
+    await startDraftAt(page, 400, 300);
+    await expect(panel(page)).toContainText(DRAFT_NOTE);
+    await expect(panel(page)).not.toContainText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveAttribute("title", "New chatroom (not created yet)");
+    await expect(page).toHaveURL(/\/$/);
+    expect(posts).toHaveLength(0);
+
+    await fillDraft(page, "Hello from a new room");
+    await submit(page).click();
+    await expect(page).toHaveURL(ROOM_URL);
+    await expect(roomTitle(page)).toHaveText(ROOM_TITLE);
+    const title = (await roomTitle(page).textContent()) ?? "";
     await expect(pin(page, title)).toBeVisible();
-    await expect(panel(page)).toContainText("No messages yet");
-    await expect(panel(page)).not.toContainText("Click on the map to start a chat");
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).not.toContainText(DRAFT_NOTE);
+    await expect(panel(page).getByRole("log", { name: "Messages" })).toContainText("Hello from a new room");
+    // The writer can carry on without clicking back in.
+    await expect(messageField(page)).toBeFocused();
+    await expect(messageField(page)).toHaveValue("");
+    expect(posts).toHaveLength(1);
   });
 
   test("a second click makes a second room; pins and Back switch between them", async ({ page }) => {
@@ -313,35 +350,50 @@ test.describe("desktop", () => {
     await expect(panel(page)).toHaveText("Click on the map to start a chat");
   });
 
-  test("double-clicking creates one room, not two, and does not zoom", async ({ page }) => {
+  test("double-clicking zooms in and drops no pin", async ({ page }) => {
     const posts = countRoomPosts(page);
     await openMap(page);
     await expect.poll(() => tileZooms(page)).toEqual(["5"]);
 
     await page.locator(".leaflet-container").dblclick({ position: { x: 500, y: 400 } });
-    await expect(page).toHaveURL(ROOM_URL);
-    await page.waitForTimeout(500);
-    expect(posts).toHaveLength(1);
-    expect(await tileZooms(page)).toEqual(["5"]);
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await page.waitForTimeout(400);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(page.locator(".leaflet-marker-icon")).toHaveCount(0);
+    expect(posts).toHaveLength(0);
   });
 
-  test("clicks while a room is still being created are ignored", async ({ page }) => {
+  test("double-clicking keeps a draft dropped earlier where it is", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page);
+    await page.locator(".leaflet-container").dblclick({ position: { x: 300, y: 500 } });
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await page.waitForTimeout(400);
+    await expect(draftPin(page)).toBeVisible();
+    await expect(messageField(page)).toHaveValue("First message");
+  });
+
+  test("clicks while the first message is being sent are ignored", async ({ page }) => {
     const posts = countRoomPosts(page);
     await page.route("**/api/rooms", async (route) => {
       if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 800));
       await route.fallback();
     });
     await openMap(page);
-    await page.mouse.click(400, 300);
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page);
+    await submit(page).click();
     await expect(panel(page).getByRole("status")).toHaveText("Creating a chatroom…");
-    await page.mouse.click(600, 450);
+    await page.mouse.click(300, 500);
     await expect(page).toHaveURL(ROOM_URL);
     await page.waitForTimeout(500);
     expect(posts).toHaveLength(1);
     await expect(page.locator(".leaflet-marker-icon")).toHaveCount(1);
+    await expect(draftPin(page)).toHaveCount(0);
   });
 
-  test("picking a pin while a room is being created keeps that pick, and creating still works", async ({
+  test("picking a pin while a first message is being sent keeps that pick, and creating still works", async ({
     page,
   }) => {
     const posts = countRoomPosts(page);
@@ -357,14 +409,16 @@ test.describe("desktop", () => {
     const created = page.waitForResponse(
       (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/rooms",
     );
-    await page.mouse.click(600, 450);
-    // The open room may still be loading its messages, which is a status of its own.
+    await startDraftAt(page, 600, 450);
+    await fillDraft(page);
+    await submit(page).click();
     await expect(panel(page).getByRole("status").filter({ hasText: "Creating a chatroom…" })).toBeVisible();
     await pin(page, first).click();
     await created;
     await page.waitForTimeout(300);
     await expect(page).toHaveURL(firstUrl);
     await expect(roomTitle(page)).toHaveText(first);
+    await expect(draftPin(page)).toHaveCount(0);
 
     slow = false;
     await createRoomAt(page, 800, 550);
@@ -394,38 +448,46 @@ test.describe("desktop", () => {
     expect(await page.evaluate(() => history.length)).toBe(before);
   });
 
-  test("a creation error goes away when the selection changes", async ({ page }) => {
-    await openMap(page);
-    await createRoomAt(page, 400, 300);
+  test("a creation error goes away with its draft", async ({ page }) => {
     await page.route("**/api/rooms", (route) =>
       route.request().method() === "POST"
         ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "x" } } })
         : route.fallback(),
     );
-    await page.mouse.click(600, 450);
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page);
+    await submit(page).click();
     await expect(panel(page).getByRole("alert")).toHaveText("Couldn't create the chatroom. Please try again.");
-    await page.goBack();
-    await expect(page).toHaveURL(/\/$/);
+
+    await discard(page).click();
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await startDraftAt(page, 600, 450);
     await expect(panel(page).getByRole("alert")).toHaveCount(0);
   });
 
-  test("the second click of a slow double-click creates nothing", async ({ page }) => {
+  test("a slow double-click zooms and takes back the pin its first click dropped", async ({ page }) => {
     const posts = countRoomPosts(page);
     await openMap(page);
-    await page.mouse.click(500, 400);
-    await expect(page).toHaveURL(ROOM_URL);
-    // The first room is already made; this is the second click of the same double-click
-    // (detail 2), just below the new pin's tip so it lands on the map rather than the pin.
-    await page.mouse.move(500, 404);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    await page.mouse.click(500, 150);
+    await expect(draftPin(page)).toBeVisible();
+    // The second click of the same double-click (detail 2), landing wherever the flight has got to.
+    // Up here it is on the map, whichever way the flight moved the pin.
+    await page.mouse.move(500, 40);
     await page.mouse.down({ clickCount: 2 });
     await page.mouse.up({ clickCount: 2 });
-    await page.waitForTimeout(500);
-    expect(posts).toHaveLength(1);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await expectWholeZoom(page);
+    expect(posts).toHaveLength(0);
   });
 
-  test("a rate-limited click explains the wait and creates nothing", async ({ page }) => {
+  test("a rate-limited first message explains the wait, keeps the text and creates nothing", async ({ page }) => {
+    let limited = true;
     await page.route("**/api/rooms", (route) =>
-      route.request().method() === "POST"
+      route.request().method() === "POST" && limited
         ? route.fulfill({
             status: 429,
             headers: { "Retry-After": "30" },
@@ -434,12 +496,106 @@ test.describe("desktop", () => {
         : route.fallback(),
     );
     await openMap(page);
-    await page.locator(".leaflet-container").click({ position: { x: 400, y: 300 } });
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page, "Worth keeping");
+    await submit(page).click();
     await expect(panel(page).getByRole("alert")).toHaveText(
       "You're creating chatrooms too quickly. Try again in 30 seconds.",
     );
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.locator(".leaflet-marker-icon")).toHaveCount(0);
+    await expect(draftPin(page)).toBeVisible();
+    await expect(messageField(page)).toHaveValue("Worth keeping");
+
+    limited = false;
+    await submit(page).click();
+    await expect(page).toHaveURL(ROOM_URL);
+    await expect(panel(page).getByRole("log", { name: "Messages" })).toContainText("Worth keeping");
+  });
+
+  test("clicking elsewhere moves the draft and keeps what was typed", async ({ page }) => {
+    const posts = countRoomPosts(page);
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page, "Still here");
+    await page.locator(".leaflet-container").click({ position: { x: 200, y: 600 } });
+    await expect(async () => {
+      const after = await draftPin(page).boundingBox();
+      expect(Math.abs((after?.x ?? 0) + 12 - CARD_FOCUS_X)).toBeLessThan(3);
+      expect(Math.abs((after?.y ?? 0) + 41 - 360)).toBeLessThan(3);
+    }).toPass({ timeout: 10_000 });
+    await expect(draftPin(page)).toHaveCount(1);
+    await expect(messageField(page)).toHaveValue("Still here");
+    expect(posts).toHaveLength(0);
+  });
+
+  test("the draft's pin is centred clear of the card, as a room's is", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 100, 600);
+    await expect(async () => {
+      const icon = await draftPin(page).boundingBox();
+      expect(Math.abs((icon?.x ?? 0) + 12 - CARD_FOCUS_X)).toBeLessThan(3);
+      expect(Math.abs((icon?.y ?? 0) + 41 - 360)).toBeLessThan(3);
+    }).toPass({ timeout: 10_000 });
+  });
+
+  test("Discard removes the draft and saves nothing", async ({ page }) => {
+    const posts = countRoomPosts(page);
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await fillDraft(page, "Never mind");
+    await discard(page).click();
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+    expect(posts).toHaveLength(0);
+
+    await startDraftAt(page, 600, 450);
+    await expect(messageField(page)).toHaveValue("");
+  });
+
+  test("opening a room discards the draft", async ({ page }) => {
+    await openMap(page);
+    const title = await createRoomAt(page, 400, 300);
+    await startDraftAt(page, 200, 150);
+    await pin(page, title).click();
+    await expect(roomTitle(page)).toHaveText(title);
+    await expect(draftPin(page)).toHaveCount(0);
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+  });
+
+  test("a draft over an open room comes and goes with Back and Forward", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await startDraftAt(page, 200, 600);
+    await fillDraft(page, "Half written");
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.goBack();
+    await expect(roomTitle(page)).toHaveText(room.title);
+    await expect(draftPin(page)).toHaveCount(0);
+
+    await page.goForward();
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await expect(draftPin(page)).toBeVisible();
+  });
+
+  test("saving a draft from the empty map leaves Back on the empty map", async ({ page }) => {
+    await openMap(page);
+    await createRoomAt(page, 400, 300);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("reloading loses a draft", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await page.reload();
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
   });
 
   test("a room that fails to load says so within a few seconds", async ({ page }) => {
@@ -540,6 +696,57 @@ test.describe("narrow screen", () => {
         ),
       )
       .toBe(true);
+  });
+
+  test("a draft raises the sheet with the note and form on screen; the header's Discard lowers it", async ({
+    page,
+  }) => {
+    await openMap(page);
+    await page.locator(".leaflet-container").click({ position: { x: 180, y: 250 } });
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await expect(panel(page)).toContainText(DRAFT_NOTE);
+    const sheet = await box(page, "aside");
+    expect(sheet.y + sheet.height).toBe(667);
+    await expect(submit(page)).toBeInViewport({ ratio: 1 });
+    const button = await discard(page).boundingBox();
+    expect(button?.height).toBeGreaterThanOrEqual(44);
+
+    await discard(page).click();
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("saving a draft never lowers the sheet, even for a frame", async ({ page }) => {
+    await openMap(page);
+    await page.locator(".leaflet-container").click({ position: { x: 180, y: 250 } });
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await fillDraft(page);
+    await page.evaluate(() => {
+      const heights: number[] = [];
+      Object.assign(window, { sheetHeights: heights });
+      const sample = () => {
+        heights.push(document.querySelector("aside")?.getBoundingClientRect().height ?? 0);
+        requestAnimationFrame(sample);
+      };
+      sample();
+    });
+    await submit(page).click();
+    await expect(page).toHaveURL(ROOM_URL);
+    await expect(roomTitle(page)).toHaveText(ROOM_TITLE);
+    await page.waitForTimeout(200);
+
+    const heights = await page.evaluate(() => (window as unknown as { sheetHeights: number[] }).sheetHeights);
+    expect(heights.length).toBeGreaterThan(0);
+    expect(Math.min(...heights)).toBeCloseTo(667 / 2, 0);
+  });
+
+  test("the close button also discards a draft", async ({ page }) => {
+    await openMap(page);
+    await page.locator(".leaflet-container").click({ position: { x: 180, y: 250 } });
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await page.getByRole("button", { name: "Close chat" }).click();
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
   });
 
   test("the close button is a 44 px touch target", async ({ page }) => {

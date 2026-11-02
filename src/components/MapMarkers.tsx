@@ -29,10 +29,15 @@ const pinIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
-/** The longitude a room was clicked at, possibly on a repeated copy of the world. */
+/** The same pin greyed out (globals.css), so a draft does not look like a room that exists. */
+const draftPinIcon = new L.Icon({ ...pinIcon.options, className: "draft-pin" });
+const DRAFT_PIN_TITLE = "New chatroom (not created yet)";
+
+/** The longitude a pin was clicked at, possibly on a repeated copy of the world. */
 export type PinAnchor = { roomId: string; lng: number };
 
 export type PinRoom = Pick<Room, "id" | "title" | "lat" | "lng">;
+export type DraftPosition = { id: string; lat: number; lng: number; savedAs?: string };
 export type Cluster = { lat: number; lng: number; count: number };
 
 // Leaflet makes markers focusable buttons but only handles Enter when a popup is bound.
@@ -94,24 +99,43 @@ export interface MapMarkersProps {
   clusterZoom: number;
   pinAnchor: PinAnchor | null;
   selectedRoomId: string | null;
+  /** Only while no room is open. */
+  draft: DraftPosition | null;
   onRoomClick: (id: string) => void;
 }
 
 // Rooms store a wrapped longitude, but the map repeats the world sideways. Each marker is drawn on
 // the copy nearest the view's centre, recomputed after every move. At low zoom several copies are
-// on screen at once, so the room just created stays on the copy that was clicked until the user
-// drags or zooms. Not on any move: raising the mobile sheet moves the map too.
-export function MapMarkers({ rooms, clusters, clusterZoom, pinAnchor, selectedRoomId, onRoomClick }: MapMarkersProps) {
+// on screen at once, so the newest pin stays on the copy that was clicked until the user drags or
+// zooms. Not on any move: raising the mobile sheet moves the map too.
+export function MapMarkers({
+  rooms,
+  clusters,
+  clusterZoom,
+  pinAnchor,
+  selectedRoomId,
+  draft,
+  onRoomClick,
+}: MapMarkersProps) {
   const map = useMap();
   const [centerLng, setCenterLng] = useState(() => map.getCenter().lng);
   const [releasedAnchor, setReleasedAnchor] = useState<PinAnchor | null>(null);
   const anchor = pinAnchor !== releasedAnchor ? pinAnchor : null;
-  const pinLng = (room: PinRoom) => nearestWorldCopy(room.lng, room.id === anchor?.roomId ? anchor.lng : centerLng);
+  const pinLng = (pin: { id: string; lng: number }) =>
+    nearestWorldCopy(pin.lng, pin.id === anchor?.roomId ? anchor.lng : centerLng);
 
+  // Once saved, the anchor is under the room's id. Mid-flight, the nearest copy to a centre that has
+  // not been updated yet could be another one, and the pin would hop a whole world.
+  const draftLng = draft && pinLng({ id: draft.savedAs ?? draft.id, lng: draft.lng });
   const selected = rooms.find((room) => room.id === selectedRoomId);
   // Before useMapEvents: flyTo fires zoomstart, and here it finds that render's handlers not yet
-  // added. Otherwise the new room's pin would lose its anchor and hop as the flight starts.
-  useFlyToRoom(selectedRoomId, selected && { ...selected, lng: pinLng(selected) });
+  // added. Otherwise the new pin would lose its anchor and hop as the flight starts.
+  useFlyToRoom(
+    draft?.id ?? selectedRoomId,
+    draft && draftLng !== null
+      ? { id: draft.id, lat: draft.lat, lng: draftLng }
+      : selected && { id: selected.id, lat: selected.lat, lng: pinLng(selected) },
+  );
   useMapEvents({
     moveend: () => setCenterLng(map.getCenter().lng),
     dragstart: () => setReleasedAnchor(pinAnchor),
@@ -141,6 +165,18 @@ export function MapMarkers({ rooms, clusters, clusterZoom, pinAnchor, selectedRo
           }}
         />
       ))}
+      {draft && draftLng !== null && (
+        // The same key for every draft, so moving one moves the pin. Not a keyboard stop: Enter
+        // would have nothing to open, since the panel already shows it.
+        <Marker
+          key="draft"
+          position={[draft.lat, draftLng]}
+          icon={draftPinIcon}
+          title={DRAFT_PIN_TITLE}
+          alt={DRAFT_PIN_TITLE}
+          keyboard={false}
+        />
+      )}
     </>
   );
 }

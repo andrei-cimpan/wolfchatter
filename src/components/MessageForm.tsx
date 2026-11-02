@@ -7,17 +7,50 @@ import { VisibleAlert } from "./VisibleAlert";
 
 const FIELD = "h-11 min-w-0 rounded border border-foreground/30 bg-background px-3";
 
-interface MessageFormProps {
-  roomId: string;
+interface MessageFieldsProps {
   /** Owned by the panel, so the username carries over when the user switches rooms. */
   author: string;
   onAuthorChange: (author: string) => void;
-  onSent: () => void;
+  onSent?: () => void;
+  /** For the room just created, so the writer can carry on without clicking back in. */
+  autoFocusBody?: boolean;
+}
+
+interface MessageFormProps extends MessageFieldsProps {
+  /** Sends unless one is already on its way; `onSent` runs only while still mounted. */
+  send: (author: string, body: string, onSent: () => void) => void;
+  clearError: () => void;
+  isPending: boolean;
+  /** What went wrong with the last send, ready to show. */
+  errorMessage: string | null;
+}
+
+/** The form of a room that exists: each message is posted to it. */
+export function RoomMessageForm({ roomId, ...fields }: MessageFieldsProps & { roomId: string }) {
+  const { send, clearError, isPending, error } = usePostMessage(roomId);
+  return (
+    <MessageForm
+      {...fields}
+      send={send}
+      clearError={clearError}
+      isPending={isPending}
+      errorMessage={error ? postMessageErrorMessage(error) : null}
+    />
+  );
 }
 
 // maxLength counts UTF-16 units and the API counts code points, so the fields are at most as
 // lenient as the API: an emoji-heavy text can be cut short, but never rejected as too long.
-export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageFormProps) {
+export function MessageForm({
+  author,
+  onAuthorChange,
+  onSent,
+  autoFocusBody = false,
+  send,
+  clearError,
+  isPending,
+  errorMessage,
+}: MessageFormProps) {
   const [body, setBody] = useState("");
   // Worked out from the current input, so the hint goes away as soon as the input is fixed.
   const inputError = messageInputError(author, body);
@@ -25,7 +58,6 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
   // Once fixed, the next hint waits for another attempt: clearing the field to retype is not one.
   if (triedInvalid && inputError === null) setTriedInvalid(false);
   const bodyRef = useRef<HTMLInputElement>(null);
-  const { send, clearError, isPending, error } = usePostMessage(roomId);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,11 +70,11 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
     send(author, body, () => {
       setBody("");
       bodyRef.current?.focus();
-      onSent();
+      onSent?.();
     });
   }
 
-  const shownError = (triedInvalid ? inputError : null) ?? (error ? postMessageErrorMessage(error) : null);
+  const shownError = (triedInvalid ? inputError : null) ?? errorMessage;
   return (
     <form onSubmit={handleSubmit} className="mt-4 flex shrink-0 flex-col gap-2">
       <label htmlFor="message-author" className="sr-only">
@@ -71,6 +103,7 @@ export function MessageForm({ roomId, author, onAuthorChange, onSent }: MessageF
           placeholder="Write a message"
           maxLength={BODY_MAX}
           autoComplete="off"
+          autoFocus={autoFocusBody}
           required
           className={`${FIELD} flex-[1_1_8rem]`}
         />
