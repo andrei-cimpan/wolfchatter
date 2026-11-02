@@ -109,8 +109,18 @@ test("rooms close together cluster when zoomed out, through the real API, and a 
     ),
   );
 
+  // A page opened on a room shows the default view until the room loads, and a bubble there can have
+  // the same name, so the search starts once the map has reached the room and that bubble is off-screen.
+  const arrived = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    if (response.request().method() !== "GET" || !isViewportRequest(url)) return false;
+    const [boxWest, , boxEast] = (url.searchParams.get("bbox") ?? "").split(",").map(Number);
+    return (boxWest ?? 0) < west && west < (boxEast ?? 0);
+  });
   await page.goto(`/?room=${opened.id}`);
+  await arrived;
   const bubble = page.getByRole("button", { name: `${count} chatrooms`, exact: true });
+  await expect(bubble).toBeInViewport();
   await expect(bubble).toHaveText(String(count));
   for (const { title } of rooms) await expect(page.getByRole("button", { name: title, exact: true })).toHaveCount(0);
 
