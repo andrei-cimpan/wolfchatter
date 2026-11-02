@@ -305,6 +305,36 @@ test.describe("desktop", () => {
     await expectWholeZoom(page);
   });
 
+  test("a zoom that starts just after a flight does, then a drag, still ends on a whole zoom", async ({ page }) => {
+    // Leaflet starts a button's zoom on the next animation frame. Which comes first, that frame or
+    // the flight the selection starts, is a race, so this holds the frame back to force the order.
+    await page.addInitScript(() => {
+      const request = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => {
+        const { dataset } = document.documentElement;
+        if (dataset.holdNextFrame === undefined) return request(callback);
+        delete dataset.holdNextFrame;
+        return window.setTimeout(() => callback(performance.now()), 200);
+      };
+    });
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    const near = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page);
+    await selectInPage(page, far.id);
+    await expectPinTipAt(page, far.title, { x: CARD_FOCUS_X, y: 360 });
+    await selectInPage(page, near.id);
+    await expectPinTipAt(page, near.title, { x: CARD_FOCUS_X, y: 360 });
+
+    await page.evaluate((room) => {
+      document.documentElement.dataset.holdNextFrame = "";
+      document.querySelector<HTMLElement>(".leaflet-control-zoom-out")?.click();
+      history.pushState(null, "", `/?room=${room}`);
+    }, far.id);
+    await page.waitForTimeout(700);
+    await dragWithoutInertia(page);
+    await expectWholeZoom(page);
+  });
+
   test("selecting again just after a drag stopped a flight still ends on a whole zoom", async ({ page }) => {
     const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
     const other = await postRoom(page, { lat: 60, lng: -100 });
