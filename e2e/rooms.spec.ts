@@ -701,6 +701,45 @@ test.describe("desktop", () => {
     await expect(panel(page)).toHaveText(EMPTY_STATE);
   });
 
+  test("a double-tap reporting two single clicks still only zooms", async ({ page }) => {
+    await openMap(page);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    // Some touch platforms send no native dblclick and always report detail 1; Leaflet simulates
+    // the dblclick for them. Dispatched here because a real browser's clicks count properly.
+    await page.evaluate(() => {
+      const target = document.elementFromPoint(500, 400);
+      const at = { bubbles: true, cancelable: true, clientX: 500, clientY: 400, view: window, detail: 1 };
+      target?.dispatchEvent(new MouseEvent("click", at));
+      target?.dispatchEvent(new MouseEvent("click", at));
+      target?.dispatchEvent(new MouseEvent("dblclick", { ...at, detail: 2 }));
+    });
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await page.waitForTimeout(600);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+  });
+
+  test("a slow double-tap reporting two single clicks takes back its pin", async ({ page }) => {
+    await openMap(page);
+    await expect.poll(() => tileZooms(page)).toEqual(["5"]);
+    const dispatch = (type: string, y: number) =>
+      page.evaluate(
+        ({ eventType, clientY }) => {
+          const at = { bubbles: true, cancelable: true, clientX: 500, clientY, view: window, detail: 1 };
+          document.elementFromPoint(500, clientY)?.dispatchEvent(new MouseEvent(eventType, at));
+        },
+        { eventType: type, clientY: y },
+      );
+    await dispatch("click", 150);
+    await expect(draftPin(page)).toBeVisible();
+    // Up here it is on the map, whichever way the flight moved the pin.
+    await dispatch("click", 40);
+    await dispatch("dblclick", 40);
+    await expect.poll(() => tileZooms(page)).toEqual(["6"]);
+    await page.waitForTimeout(600);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
   test("reloading loses a draft", async ({ page }) => {
     await openMap(page);
     await startDraftAt(page, 400, 300);

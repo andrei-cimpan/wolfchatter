@@ -45,6 +45,7 @@ function ClickToDraft({
   somethingOpen: boolean;
 }) {
   const droppedByLastClick = useRef(false);
+  const droppedBeforeThisClick = useRef(false);
   useEffect(() => {
     const cancel = () => clearTimeout(timerRef.current);
     window.addEventListener("popstate", cancel);
@@ -59,17 +60,20 @@ function ClickToDraft({
     zoomstart: () => clearTimeout(timerRef.current),
     click: (event) => {
       clearTimeout(timerRef.current);
-      const dropped = droppedByLastClick.current;
+      droppedBeforeThisClick.current = droppedByLastClick.current;
       droppedByLastClick.current = false;
-      if (event.originalEvent.detail > 1) {
-        if (dropped) onDoubleClickUndo();
-        return;
-      }
+      if (event.originalEvent.detail > 1) return;
       const { lat, lng } = event.latlng;
       timerRef.current = setTimeout(() => {
         droppedByLastClick.current = true;
         onMapClick(lat, lng);
       }, somethingOpen ? DOUBLE_CLICK_WAIT_MS : EMPTY_MAP_CLICK_WAIT_MS);
+    },
+    // Not only `detail`: some touch platforms always report 1, and Leaflet simulates this event.
+    dblclick: () => {
+      clearTimeout(timerRef.current);
+      if (droppedBeforeThisClick.current) onDoubleClickUndo();
+      droppedBeforeThisClick.current = false;
     },
   });
   return null;
