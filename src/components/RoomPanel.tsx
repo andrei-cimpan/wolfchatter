@@ -12,8 +12,9 @@ import { VisibleAlert } from "./VisibleAlert";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 
-// The form and headers take about 237 px, so 20rem leaves the list at least one whole message.
-const RAISED_SHEET = "h-[max(50dvh,20rem)]";
+// The form and headers take about 237 px, so 20rem leaves the list at least one whole message. The
+// cap leaves the map's zoom buttons (102 px) and attribution on a very short screen; the panel scrolls.
+const RAISED_SHEET = "h-[min(max(50dvh,20rem),calc(100dvh-7rem))]";
 // Half the screen is too short for the chat here, and a taller sheet would leave no map, so the
 // half goes beside the map. The map shrinks as it does for the sheet, keeping its attribution.
 const RAISED_BESIDE_MAP =

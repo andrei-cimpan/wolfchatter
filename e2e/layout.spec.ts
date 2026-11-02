@@ -220,6 +220,23 @@ for (const { width, height } of [
   });
 }
 
+for (const { width, height } of [
+  { width: 360, height: 400 },
+  { width: 300, height: 310 },
+]) {
+  test.describe(`short upright window, ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("the sheet leaves room for the map's zoom buttons and attribution", async ({ page }) => {
+      await openFullRoom(page);
+      await expect(page.getByRole("button", { name: "Zoom out" })).toBeInViewport({ ratio: 1 });
+      await expect(page.locator(".leaflet-control-attribution")).toBeInViewport({ ratio: 1 });
+      expect((await box(page, "aside")).y + (await box(page, "aside")).height).toBe(height);
+      await expectNoPageScroll(page);
+    });
+  });
+}
+
 test.describe("short upright screen", () => {
   test.use({ viewport: { width: 320, height: 568 } });
 
