@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import type { MapItem, Room } from "@/lib/types";
+import type { MapItem, Message, Room } from "@/lib/types";
 import { roomCreationLimiter } from "@/server/http/rate-limit";
 import { getPool } from "@/server/repositories/db";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
@@ -43,6 +43,33 @@ describe("POST /api/rooms", () => {
     const room: Room = await response.json();
     expect(room).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 0 });
     expect(response.headers.get("location")).toBe(`/api/rooms/${room.id}`);
+  });
+
+  it("saves a first message with the room, in one request", async () => {
+    const response = await postRoom(
+      JSON.stringify({ lat: 44.43, lng: 26.1, firstMessage: { author: " ana ", body: "hello" } }),
+    );
+    expect(response.status).toBe(201);
+    const room: Room & { firstMessage: Message } = await response.json();
+    expect(room).toMatchObject({ title: "Chatroom 1", messageCount: 1 });
+    expect(room.firstMessage).toMatchObject({ roomId: room.id, author: "ana", body: "hello" });
+    expect(response.headers.get("location")).toBe(`/api/rooms/${room.id}`);
+  });
+
+  it("leaves the first message out of a room created without one", async () => {
+    expect(await createRoom(1, 2)).not.toHaveProperty("firstMessage");
+  });
+
+  it.each([
+    ["an empty author", { author: " ", body: "hello" }, /^firstMessage\.author: /],
+    ["a body with nothing visible", { author: "ana", body: "​" }, /^firstMessage\.body: /],
+    ["a missing body", { author: "ana" }, /^firstMessage\.body: /],
+    ["a null message", null, /^firstMessage: /],
+  ])("rejects a first message with %s, and creates no room", async (_label, firstMessage, message) => {
+    const body = JSON.stringify({ lat: 67.5, lng: 12.5, firstMessage });
+    expect(await expectError(await postRoom(body), 400, "validation_error")).toMatch(message);
+    const rooms = await getRooms("?bbox=12,67,13,68&zoom=16");
+    expect(await rooms.json()).toEqual([]);
   });
 
   it("wraps a longitude from a repeated copy of the world", async () => {

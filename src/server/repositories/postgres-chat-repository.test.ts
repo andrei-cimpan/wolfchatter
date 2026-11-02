@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import type pg from "pg";
+import { describe, expect, it, vi } from "vitest";
 import type { Bbox, MapItem } from "@/lib/types";
 import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import { RoomNotFoundError } from "./chat-repository";
@@ -39,6 +40,67 @@ describe("rooms", () => {
   it("returns null for an unknown or malformed id", async () => {
     expect(await repo().getRoom(UNKNOWN_ID)).toBeNull();
     expect(await repo().getRoom("not-a-uuid")).toBeNull();
+  });
+});
+
+describe("createRoomWithMessage", () => {
+  it("saves the room and its first message together", async () => {
+    const { room, message } = await repo().createRoomWithMessage(
+      { lat: 44.43, lng: 26.1 },
+      { author: "ana", body: "hello" },
+    );
+    expect(room).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 1 });
+    expect(message).toMatchObject({ roomId: room.id, author: "ana", body: "hello" });
+    expect(await repo().getRoom(room.id)).toEqual(room);
+    expect(bodies(await repo().listMessages(room.id))).toEqual(["hello"]);
+  });
+
+  it("saves no room when the message cannot be saved", async () => {
+    // Over the column's limit, which the API's schema would catch first.
+    const tooLong = { author: "x".repeat(33), body: "hello" };
+    await expect(repo().createRoomWithMessage({ lat: 12.5, lng: 34.5 }, tooLong)).rejects.toThrow();
+
+    expect(await repo().listMapItems({ bbox: WORLD, zoom: 16 })).toEqual([]);
+  });
+});
+
+describe("createRoomWithMessage on a failing connection", () => {
+  function repoWithFailingClient(failRollback: boolean) {
+    const insertFailed = new Error("insert failed");
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        if (sql === "begin") return { rows: [] };
+        if (sql === "rollback" && !failRollback) return { rows: [] };
+        throw sql === "rollback" ? new Error("rollback failed") : insertFailed;
+      }),
+      on: vi.fn(),
+      off: vi.fn(),
+      release: vi.fn(),
+    };
+    const pool = { connect: async () => client } as unknown as pg.Pool;
+    const create = () =>
+      new PostgresChatRepository(pool).createRoomWithMessage({ lat: 0, lng: 0 }, { author: "ana", body: "hi" });
+    return { client, insertFailed, create };
+  }
+
+  it("reports the real error when the rollback fails too, and does not reuse the connection", async () => {
+    const { client, insertFailed, create } = repoWithFailingClient(true);
+    await expect(create()).rejects.toBe(insertFailed);
+    expect(client.release).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it("returns a connection whose rollback worked to the pool", async () => {
+    const { client, insertFailed, create } = repoWithFailingClient(false);
+    await expect(create()).rejects.toBe(insertFailed);
+    expect(client.release).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it("listens for the connection dying, which would otherwise be an uncaught exception", async () => {
+    const { client, create } = repoWithFailingClient(false);
+    await create().catch(() => undefined);
+    const [event, listener] = client.on.mock.calls[0] ?? [];
+    expect(event).toBe("error");
+    expect(client.off).toHaveBeenCalledExactlyOnceWith("error", listener);
   });
 });
 

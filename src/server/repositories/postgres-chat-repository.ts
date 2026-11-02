@@ -108,6 +108,44 @@ export class PostgresChatRepository implements ChatRepository {
     return toRoom(rows[0]!);
   }
 
+  async createRoomWithMessage(
+    { lat, lng }: { lat: number; lng: number },
+    { author, body }: { author: string; body: string },
+  ): Promise<{ room: Room; message: Message }> {
+    const client = await this.pool.connect();
+    // The pool only listens while a connection is idle. One that dies while checked out emits here,
+    // and unheard that would be an uncaught exception; the query in progress reports the failure.
+    const onConnectionError = (error: Error) => console.error("Postgres: connection lost in a transaction:", error);
+    client.on("error", onConnectionError);
+    let connectionBroken = false;
+    try {
+      await client.query("begin");
+      const inserted = await client.query<{ id: string }>("insert into rooms (lat, lng) values ($1, $2) returning id", [
+        lat,
+        lng,
+      ]);
+      const roomId = inserted.rows[0]!.id;
+      const message = await client.query<MessageRow>(
+        `insert into messages (room_id, author, body) values ($1, $2, $3) returning ${MESSAGE_COLUMNS}`,
+        [roomId, author, body],
+      );
+      // Read after the insert, whose trigger is what counts the message.
+      const room = await client.query<RoomRow>(`select ${ROOM_COLUMNS} from rooms where id = $1`, [roomId]);
+      await client.query("commit");
+      return { room: toRoom(room.rows[0]!), message: toMessage(message.rows[0]!) };
+    } catch (error) {
+      // A failed rollback must not hide the real error, and the transaction may still be open on
+      // that connection, so the pool should not hand it out again.
+      await client.query("rollback").catch(() => {
+        connectionBroken = true;
+      });
+      throw error;
+    } finally {
+      client.off("error", onConnectionError);
+      client.release(connectionBroken);
+    }
+  }
+
   async listMapItems({ bbox, zoom }: { bbox: Bbox; zoom: number }): Promise<MapItem[]> {
     if (zoom >= CLUSTER_MAX_ZOOM) {
       const { rows } = await this.pool.query<RoomRow>(

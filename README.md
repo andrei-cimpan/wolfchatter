@@ -1,10 +1,11 @@
 # Wolfchatter
 
-A real-time chat app built on a map. Click the map to drop a pin and start a conversation for that place. Anyone can open a pin and join in.
+A real-time chat app built on a map. Click the map to drop a pin, and send the first message to start a conversation for that place. Anyone can open a pin and join in.
 
 ## Features
 
-- Click the map to create a pin and a chatroom; the panel switches to that room.
+- Click the map to drop a draft pin, and send the first message to create the chatroom. Until then nothing is saved, and the panel says so.
+- Double-click the map to zoom in.
 - Click an existing pin to open its room.
 - Post messages with a username and a message. Rooms and messages are stored in PostgreSQL and survive restarts.
 - Messages from other users appear in real time (Server-Sent Events).

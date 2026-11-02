@@ -20,20 +20,20 @@ async function openMap(page: Page) {
 
 type CreatedRoom = { id: string; title: string; lat: number; lng: number };
 
-/** Creates a room by clicking the map, posts one message in it, and returns the room. */
+/** Creates a room by clicking the map and sending its first message, and returns the room. */
 async function createRoomWithMessage(page: Page, x: number, y: number, body: string): Promise<CreatedRoom> {
   const before = page.url();
   const created = page.waitForResponse(
     (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/rooms",
   );
   await page.locator(".leaflet-container").click({ position: { x, y } });
-  const room = (await (await created).json()) as CreatedRoom;
-  await expect(page).not.toHaveURL(before);
-  await expect(page).toHaveURL(ROOM_URL);
-  await expect(messages(page)).toBeAttached();
+  await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText("New chatroom");
   await usernameField(page).fill("ana");
   await panel(page).getByRole("textbox", { name: "Message" }).fill(body);
   await panel(page).getByRole("button", { name: "Submit" }).click();
+  const room = (await (await created).json()) as CreatedRoom;
+  await expect(page).not.toHaveURL(before);
+  await expect(page).toHaveURL(ROOM_URL);
   await expect(messages(page)).toContainText(body);
   return room;
 }

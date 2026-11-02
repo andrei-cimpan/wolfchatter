@@ -45,15 +45,16 @@ function queryNumber<T extends z.ZodType<number, number>>(schema: T) {
 
 export const roomIdSchema = z.uuid();
 
+export const postMessageSchema = z.object({
+  author: requiredText("Author", AUTHOR_MAX),
+  body: requiredText("Message", BODY_MAX),
+});
+
 export const createRoomSchema = z.object({
   lat: z.number().min(-90).max(90),
   // A click on a repeated copy of the world gives Leaflet a longitude such as 200.
   lng: z.number().transform(wrapLongitude),
-});
-
-export const postMessageSchema = z.object({
-  author: requiredText("Author", AUTHOR_MAX),
-  body: requiredText("Message", BODY_MAX),
+  firstMessage: postMessageSchema.optional(),
 });
 
 const bboxParam = z

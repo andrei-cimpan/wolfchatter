@@ -1,8 +1,13 @@
 import { createRoomSchema, mapItemsQuerySchema } from "@/lib/schemas";
+import type { Room, RoomWithFirstMessage } from "@/lib/types";
 import { readJson, validationError, withErrorHandling } from "@/server/http/api-errors";
 import { queryInput } from "@/server/http/query-input";
 import { enforceRateLimit, roomCreationLimiter } from "@/server/http/rate-limit";
 import { getChatRepository } from "@/server/repositories";
+
+function roomCreated(room: Room | RoomWithFirstMessage): Response {
+  return Response.json(room, { status: 201, headers: { Location: `/api/rooms/${room.id}` } });
+}
 
 /** Rooms and clusters in the viewport: `?bbox=west,south,east,north&zoom=z`. */
 export const GET = withErrorHandling(async (request: Request) => {
@@ -13,7 +18,7 @@ export const GET = withErrorHandling(async (request: Request) => {
   return Response.json(await getChatRepository().listMapItems(query.data));
 });
 
-/** Creates a room at `{ lat, lng }`. */
+/** Creates a room at `{ lat, lng }`, together with `firstMessage: { author, body }` if given. */
 export const POST = withErrorHandling(async (request: Request) => {
   // Counted before validation, so a flood of invalid requests spends the budget too.
   const limited = enforceRateLimit(roomCreationLimiter, request);
@@ -24,6 +29,9 @@ export const POST = withErrorHandling(async (request: Request) => {
   const input = createRoomSchema.safeParse(body.value);
   if (!input.success) return validationError(input.error);
 
-  const room = await getChatRepository().createRoom(input.data);
-  return Response.json(room, { status: 201, headers: { Location: `/api/rooms/${room.id}` } });
+  const { firstMessage, ...position } = input.data;
+  const repository = getChatRepository();
+  if (!firstMessage) return roomCreated(await repository.createRoom(position));
+  const { room, message } = await repository.createRoomWithMessage(position, firstMessage);
+  return roomCreated({ ...room, firstMessage: message });
 });

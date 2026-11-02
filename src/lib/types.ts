@@ -17,6 +17,8 @@ export type Message = {
   createdAt: string;
 };
 
+export type RoomWithFirstMessage = Room & { firstMessage: Message };
+
 export type MapItem =
   | { type: "room"; id: string; title: string; lat: number; lng: number; messageCount: number }
   | { type: "cluster"; lat: number; lng: number; count: number };

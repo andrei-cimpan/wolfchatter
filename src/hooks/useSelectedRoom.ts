@@ -14,6 +14,13 @@ export function currentSelectedRoomId(): string | null {
   return new URL(window.location.href).searchParams.get(ROOM_PARAM) || null;
 }
 
+function urlWithRoom(id: string | null): string {
+  const url = new URL(window.location.href);
+  if (id) url.searchParams.set(ROOM_PARAM, id);
+  else url.searchParams.delete(ROOM_PARAM);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 /**
  * Switches the selected room, adding a history entry so Back returns to the previous room.
  * Next.js syncs native pushState with useSearchParams, without a server round trip.
@@ -21,8 +28,10 @@ export function currentSelectedRoomId(): string | null {
 export function selectRoom(id: string | null): void {
   // Re-selecting the current room would add an entry that Back seems to skip over.
   if (id === currentSelectedRoomId()) return;
-  const url = new URL(window.location.href);
-  if (id) url.searchParams.set(ROOM_PARAM, id);
-  else url.searchParams.delete(ROOM_PARAM);
-  window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  window.history.pushState(null, "", urlWithRoom(id));
+}
+
+/** Switches the selected room in the current history entry, so Back skips the one it replaces. */
+export function replaceSelectedRoom(id: string): void {
+  window.history.replaceState(null, "", urlWithRoom(id));
 }

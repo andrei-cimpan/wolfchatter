@@ -4,7 +4,7 @@ Draft v0.1 · 31 Oct 2026 · Status: pre-build
 
 ## 1. Overview
 
-Wolfchatter is a real-time chat app built on a map. A user clicks the map to drop a pin, which creates a chatroom anchored to that place. Anyone can open a pin and talk in its room. This PRD is the starting context for the build and for the AI tooling used to build it.
+Wolfchatter is a real-time chat app built on a map. A user clicks the map to drop a draft pin, and sending the first message creates a chatroom anchored to that place. Anyone can open a pin and talk in its room. This PRD is the starting context for the build and for the AI tooling used to build it.
 
 ## 2. Scope and versions
 
@@ -18,7 +18,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 ## 3. Functional requirements (v1)
 
 - **FR1** The initial view is an empty map with the message "Click on the map to start a chat".
-- **FR2** Clicking the map creates a pin and a chatroom, and the right-hand panel switches to that room.
+- **FR2** Clicking the map drops a draft pin, and the right-hand panel opens a draft that says the room is created by its first message. Nothing is saved or visible to others until then. Sending the first message creates the chatroom, and the panel switches to it. Clicking elsewhere moves the draft, and it can be discarded. Double-clicking the map zooms in.
 - **FR3** Clicking an existing pin switches the panel to that room (title and messages).
 - **FR4** In a room, the user enters a username and a message and submits. The message appears in the room with author and timestamp.
 - **FR5** Rooms and messages persist across sessions.
@@ -26,7 +26,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 - **FR7** Pins load by map viewport. Zoomed out, nearby rooms collapse into clusters that show a count, and clicking a cluster zooms in.
 - **FR8** The layout is responsive. On desktop the chat panel sits on the right of the map. On narrow screens it becomes a bottom sheet: with no room selected, a banner below the map, so the map's attribution stays visible; once a room is open, a sheet raised over the map. A phone on its side is too short for a sheet, so there the open room sits beside the map instead.
 
-**Usability improvements (beyond the brief):** remember the username locally, auto-scroll to the newest message, disable Submit when a field is empty, and fly the map to the selected pin.
+**Usability improvements (beyond the brief):** remember the username locally, auto-scroll to the newest message, disable Submit when a field is empty, fly the map to the selected pin, and save a room only when its first message is sent, so a stray click leaves nothing behind.
 
 ## 4. Technical decisions
 
@@ -50,7 +50,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 **API (REST, JSON).**
 
 - `GET /api/rooms?bbox=<w,s,e,n>&zoom=<z>`: rooms and clusters inside the viewport
-- `POST /api/rooms` and `GET /api/rooms/:id`
+- `POST /api/rooms` (optionally with the room's first message, saved together) and `GET /api/rooms/:id`
 - `GET /api/rooms/:id/messages?before=<cursor>&after=<cursor>` and `POST /api/rooms/:id/messages`
 - `GET /api/rooms/:id/stream` (Server-Sent Events, FR6)
 

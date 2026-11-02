@@ -61,6 +61,8 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T5.3** Fly the map to the selected room.
 - [x] **T5.4** Keep the chat usable in a short sheet.
   *Carried over from the PR #17 review:* the raised sheet is half the screen and its form has a fixed height, so at 667x375 (a phone on its side) the message list is 0 px tall and Submit runs past the bottom of the screen, and at 320x568 the list is only 47 px. Done: the sheet is at least 320 px tall, and a phone on its side shows the chat beside the map.
+- [x] **T5.5** Draft pins: a click drops a draft that saves nothing, and the first message creates the room. Double-clicking the map zooms in.
+  *Check:* a stray click leaves nothing on the server, the draft says the room is created by its first message, and a double-click zooms and leaves no pin.
 
 ## 6. Quality
 
@@ -69,6 +71,11 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   - `a flight started during a zoom animation still ends on a whole zoom when dragged` failed in CI, including its retry, with the map left between zoom levels (tiles about 338 px wide, not 256). Locally it failed once in 95 runs on the PR's first commit and passed 40 of 40 on `main`, too few runs to tell them apart. This may be a real bug in the flight code, since a map left between zoom levels looks blurry.
   - `a second click makes a second room; pins and Back switch between them` needed a retry in CI: the second title read the same as the first. `createRoomAt` may read the old title before the panel updates; not confirmed.
   - `Back flies to the previous room` needed a retry in CI on `main` and on the T5.3 branch.
+  Test titles above are as of PR #19; T5.5 renamed some room creation tests, and its helper now sends a first message.
+  *Carried over from the PR #20 review:*
+  - If the user goes Back while a first message is being sent and the send fails, Forward shows that error above an empty form, because the draft cannot be ended while sending.
+  - Keyboard-only users cannot start a room at all, since dropping a pin needs a click on the map. This was already true before draft pins.
+  - Double-tap is tested only with dispatched events, not on a device. It needs trying on a real phone, as does sending a first message with the keyboard open.
   *Carried over from the PR #19 review:* add tests at the layout's boundaries (500 and 501 px high, 767 and 768 px wide), and for the desktop card having no list minimum in a quiet room. Also, on a phone 768 px or wider on its side, with 47 px insets at 844x390, Submit sits 14 px under the notch, because the card's `md:right-4` ignores the safe area; this was measured in emulation, not on a device.
   *Carried over from the PR #15 review:* `useRoomStream` itself (the effect, and closing the stream on unmount or a room change) has no unit test, because hooks are tested here without React Testing Library or jsdom. The e2e tests cover it; add a hook test if those tools are ever added (ask first: new dependencies).
   *Carried over from the PR #18 review:* on narrow screens, a flight that raises the sheet makes one extra viewport request at a mid-flight zoom (for example 5, 4, then 5), because the resize ends a move and `TrackViewport` reports it. It is one wasted request and may briefly draw clusters for the wrong zoom. Skip the report while a flight is under way, and extend the "one viewport request" e2e test to a narrow screen.

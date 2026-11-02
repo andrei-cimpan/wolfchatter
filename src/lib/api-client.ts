@@ -1,4 +1,4 @@
-import type { Bbox, MapItem, Message, Room } from "./types";
+import type { Bbox, MapItem, Message, Room, RoomWithFirstMessage } from "./types";
 
 /** A non-2xx API response, carrying the `{ error: { code, message } }` body when there is one. */
 export class ApiError extends Error {
@@ -53,8 +53,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function createRoom(input: { lat: number; lng: number }): Promise<Room> {
-  return request<Room>("/api/rooms", {
+/** Saves the room and its first message together: both or neither. */
+export function createRoom(input: {
+  lat: number;
+  lng: number;
+  firstMessage: { author: string; body: string };
+}): Promise<RoomWithFirstMessage> {
+  return request<RoomWithFirstMessage>("/api/rooms", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
