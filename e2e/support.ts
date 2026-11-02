@@ -104,22 +104,6 @@ export async function box(page: Page, selector: string) {
   return b;
 }
 
-/** Empties part of the map, for a test that needs exact counts there, even on a retry. */
-export async function deleteRoomsIn(area: { west: number; south: number; east: number; north: number }): Promise<void> {
-  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
-  await client.connect();
-  try {
-    await client.query("delete from rooms where lng between $1 and $3 and lat between $2 and $4", [
-      area.west,
-      area.south,
-      area.east,
-      area.north,
-    ]);
-  } finally {
-    await client.end();
-  }
-}
-
 /**
  * Ends the app server's LISTEN connection, as a database restart or a dropped network would. The
  * hub then closes every stream, and the source reconnects after its 1 s backoff, so messages

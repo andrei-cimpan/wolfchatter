@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { deleteRoomsIn, expect, serveBlankTiles, test, tileZooms } from "./support";
+import { expect, serveBlankTiles, test, tileZooms } from "./support";
 
 // About the real viewport requests, so the map sees every room in the e2e database. Other tests'
 // rooms may share the view, so assertions never depend on an area being empty.
@@ -86,22 +86,32 @@ test("a cluster shows its count, and clicking it zooms into its cell", async ({ 
 test("rooms close together cluster when zoomed out, through the real API, and a click expands them", async ({
   page,
   request,
-}) => {
-  // Mid-Pacific, where no other test puts rooms, so this is the only bubble in view.
-  await deleteRoomsIn({ west: -165, south: -45, east: -140, north: -30 });
+}, testInfo) => {
+  // Each attempt (a retry, or a copy under --repeat-each) gets its own zoom-5 cell in the mid-Pacific,
+  // where no other test puts rooms, and its own count, which makes its bubble the only one of that name.
+  const attempt = testInfo.repeatEachIndex * 2 + testInfo.retry;
+  const count = 3 + attempt;
+  const cell = 360 / 2 ** 5 / 4;
+  const west = -157.5 + 2 * cell * (attempt % 8);
+  // Towards the equator: Mercator stretches cells further south, and one past 50°S no longer fits at zoom 8.
+  const south = -39.375 + 2 * cell * Math.floor(attempt / 8);
   const post = async (lat: number, lng: number) => {
     const created = await request.post("/api/rooms", { data: { lat, lng } });
     expect(created.status()).toBe(201);
     return (await created.json()) as { id: string; title: string };
   };
-  // Opening this room brings the map here. Its zoom-5 cell is not the others'.
-  const opened = await post(-40, -150);
-  // One zoom-5 cell (39.375°S to 36.5625°S, 157.5°W to 154.6875°W), and a different zoom-8 cell each.
-  const rooms = [await post(-39, -157), await post(-38, -156), await post(-37, -155)];
+  // Opening this room brings the map here. It is in the next cell, so it is not in the bubble.
+  const opened = await post(south + cell / 2, west + cell * 1.5);
+  // Eight zoom-8 cells fit across each zoom-5 cell, and each room is in the middle of its own.
+  const rooms = await Promise.all(
+    Array.from({ length: count }, (_, i) =>
+      post(south + (cell / 8) * (Math.floor(i / 8) + 0.5), west + (cell / 8) * (i % 8 + 0.5)),
+    ),
+  );
 
   await page.goto(`/?room=${opened.id}`);
-  const bubble = page.getByRole("button", { name: "3 chatrooms", exact: true });
-  await expect(bubble).toHaveText("3");
+  const bubble = page.getByRole("button", { name: `${count} chatrooms`, exact: true });
+  await expect(bubble).toHaveText(String(count));
   for (const { title } of rooms) await expect(page.getByRole("button", { name: title, exact: true })).toHaveCount(0);
 
   await bubble.click();
