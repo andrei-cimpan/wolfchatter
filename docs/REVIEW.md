@@ -74,7 +74,7 @@ Everything above this note is the reviewer's report, unedited. It was run by a f
 | 3 | Minor | Docs only | The README now warns against exposing the image without a proxy. A proxy in Compose would add a moving part for a case that is not deployed. |
 | 4 | Minor | Won't fix | Removing the path changes the API and the tests and script that use it, this late, to stop something a direct API call can do within the rate limit. Stays in Known limitations. |
 | 5 | Minor | Fixed | A click or Enter past the edge of the map's world drops nothing. New e2e test, which also fails when the click check alone is removed. |
-| 6 | Minor | Doc corrected, decision deferred | `DESIGN.md` no longer claims 44 px for pins. Whether they need a larger hit area is decided on a real phone in T7.4. |
+| 6 | Minor | Doc corrected, pins kept | `DESIGN.md` no longer claims 44 px for pins. Tried on a real phone in T7.4, they worked at this size, so they keep it. |
 | 7 | Minor | Won't fix | Rare, Medium confidence, and the fix is a new interaction. Added to Known limitations. |
 | 8 | Minor | Won't fix | Small case, and the fix touches `useFlyToRoom`, whose timing has been the most fragile part of the map. Added to Known limitations. |
 | 9 | Minor | Fixed, beyond the suggestion | The app now exits with code 1 at startup. Loading the limits in `instrumentation.ts` was not enough: run against the production server, Next logged the error and went on listening, so the hook exits explicitly. |

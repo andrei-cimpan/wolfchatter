@@ -47,6 +47,8 @@ npm run db:migrate            # create tables
 npm run dev                   # http://localhost:3000
 ```
 
+`npm install` reports a deprecated ESLint and moderate vulnerabilities. These come only from ESLint and its plugins, not from what the app ships (`npm audit --omit=dev` finds none). Do not run `npm audit fix --force`: it downgrades ESLint.
+
 To see real-time delivery, open the app in two browser windows, open the same room in both, and post a message in one.
 
 **Or run everything in Docker**, with no local Node.js and no `.env`. This builds the production image, applies the migrations, and serves the app at http://localhost:3000:
