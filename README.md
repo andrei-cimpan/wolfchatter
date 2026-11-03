@@ -22,7 +22,7 @@ A real-time chat app built on a map. Click the map to drop a pin, and send the f
 - After a dropped connection, the chat reconnects by itself and fills in the messages it missed.
 - Keyboard use: Enter on the focused map drops a draft at its centre, and the arrow keys move the map first.
 - A phone on its side shows the chat beside the map, so the form stays usable.
-- Ready to deploy: a Docker image, a `/health` endpoint, and a clean shutdown with chats open.
+- Ready to deploy behind a proxy: a Docker image, a `/health` endpoint, and a clean shutdown with chats open.
 
 ## Tech stack
 
@@ -134,7 +134,7 @@ The project was built docs-first with Claude.
 The main ones are below. The full list is in [the design note](docs/DESIGN.md#known-limitations-documented-not-built).
 
 - Rooms created by other users appear only when the map next fetches that area: on moving to an area or zoom it has no fresh result for, or when the window regains focus. Real-time covers messages only.
-- No authentication: usernames are self-declared. Basic per-IP rate limiting is the only abuse protection.
+- No authentication: usernames are self-declared. Basic per-IP rate limiting is the only abuse protection, and it needs a proxy that appends to `X-Forwarded-For`. Do not expose the Docker image directly: a client could set that header and escape the limit.
 - A room shows only its latest 50 messages; there is no "load older" yet.
 - Clustering is grid-based over a plain `(lat, lng)` index; PostGIS is the next step at larger scale.
 - OpenStreetMap public tiles are for development and light use only.
