@@ -293,6 +293,31 @@ test.describe("live messages", () => {
     await send("after");
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/, /after/]);
   });
+
+  test("a hidden tab gives up its stream and catches up when it returns", async ({ page }) => {
+    const id = await newRoom(page.request);
+    const send = (body: string) => page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
+    const setHidden = (hidden: boolean) =>
+      page.evaluate((value) => {
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => value });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }, hidden);
+    const stream = page.waitForRequest((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    await openRoom(page, id);
+    const first = await stream;
+
+    const ended = page.waitForEvent("requestfailed", (r) => r === first);
+    await setHidden(true);
+    await ended;
+    await send("sent while hidden");
+
+    const reopened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    await setHidden(false);
+    await reopened;
+    await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/]);
+    await send("sent after returning");
+    await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/, /sent after returning/]);
+  });
 });
 
 test.describe("following the conversation", () => {
