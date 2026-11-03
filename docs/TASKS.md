@@ -94,6 +94,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   - `flightDragged` in `useFlyToRoom` stays true after a drag until the next flight, so a sheet resizing the map during a pinch could call `setZoom` mid-gesture. From reading only, not reproduced; it targets the zoom the pinch would snap to anyway. Clearing the flag once its `moveend` is handled would remove the case.
 - [ ] **T7.4** Final check from a clean clone, then email the repo link before the deadline.
   *Moved from T6.1, needs a real phone:* double-tap the map, which is tested only with dispatched events, and send a first message with the keyboard open.
+  *Moved from the final review (#6), needs a real phone:* try tapping pins, which are 25x41 px, and decide whether they need a larger hit area, since a tap that misses closes an open room.
 
 ## 8. v2 (separate branch, only after v1 is complete)
 
