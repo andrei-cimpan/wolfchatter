@@ -49,6 +49,7 @@ To see real-time delivery, open the app in two browser windows, open the same ro
 | `npm run typecheck` | TypeScript check |
 | `npm test` | Unit and API tests (needs the database running) |
 | `npm run e2e` | Playwright end-to-end tests |
+| `docker compose --profile app up --build` | Build the app image and run it with the database and migrations, at http://localhost:3000 (`APP_PORT` changes the port) |
 
 ## Configuration
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/lib/types";
 import type { RealtimeHub, Subscriber } from "@/server/realtime";
-import { openRoomEventStream } from "./room-event-stream";
+import { openRoomEventStream, STREAM_MAX_BACKLOG } from "./room-event-stream";
 
 // A hub whose subscribe settles only when the test says so.
 class FakeHub implements RealtimeHub {
@@ -157,5 +157,59 @@ describe("openRoomEventStream", () => {
     const { drain } = open(hub);
     hub.reject();
     expect(await drain()).toEqual({ text: "retry: 1000\n\n", done: true });
+  });
+
+  describe("a client that stops reading", () => {
+    // Nothing reads, like a connection that has stalled. `retry` and `ready` are queued already.
+    async function openStalled() {
+      const hub = new FakeHub();
+      const stream = openRoomEventStream(hub, "r1", new AbortController().signal, { timeoutMs: 10_000, retryMs: 1000 });
+      hub.resolve();
+      await settle();
+      const send = (count: number) => {
+        for (let i = 0; i < count; i++) hub.subscriber!.send(message);
+      };
+      return { hub, stream, send };
+    }
+
+    it("is left alone up to the limit", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { hub, send } = await openStalled();
+      send(STREAM_MAX_BACKLOG - 1);
+      expect(hub.unsubscribe).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("is dropped past the limit, discarding the queue, which a close would keep until it is read", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { hub, stream, send } = await openStalled();
+      send(STREAM_MAX_BACKLOG);
+      expect(hub.unsubscribe).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledOnce();
+      await expect(stream.getReader().read()).rejects.toThrow("stopped reading");
+    });
+
+    it("does not throw at the hub for the write that crossed the limit, or fail on a late close", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { hub, send } = await openStalled();
+      expect(() => send(STREAM_MAX_BACKLOG)).not.toThrow();
+      expect(() => hub.subscriber!.close()).not.toThrow();
+      expect(hub.unsubscribe).toHaveBeenCalledOnce();
+    });
+
+    it("never applies to a client that keeps reading, however many messages arrive", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const hub = new FakeHub();
+      const { drain } = open(hub);
+      hub.resolve();
+      await settle();
+      for (let i = 0; i < STREAM_MAX_BACKLOG * 2; i++) {
+        hub.subscriber!.send(message);
+        if (i % 50 === 0) await settle();
+      }
+      expect((await drain()).done).toBe(false);
+      expect(hub.unsubscribe).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+    });
   });
 });

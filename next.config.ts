@@ -5,7 +5,8 @@ import { tileConfigFromEnv } from "./src/lib/map-config";
 tileConfigFromEnv();
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // A self-contained server for the Docker image only: `next start` warns about this output.
+  output: process.env.DOCKER_BUILD ? "standalone" : undefined,
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

@@ -17,6 +17,8 @@ export class RoomNotFoundError extends Error {
 }
 
 export interface ChatRepository {
+  /** Rejects if the store cannot answer right now. */
+  ping(): Promise<void>;
   getRoom(id: string): Promise<Room | null>;
   listMapItems(query: { bbox: Bbox; zoom: number }): Promise<MapItem[]>;
   createRoom(input: { lat: number; lng: number }): Promise<Room>;

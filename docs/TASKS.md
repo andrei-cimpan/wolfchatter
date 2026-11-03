@@ -77,9 +77,10 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   *Carried over from the PR #19 review:* done: tests at the layout's boundaries and for the desktop card in a quiet room, and the card now clears the notch.
   *Carried over from the PR #18 review:* done: no viewport request for a zoom a flight is only passing, tested on a narrow screen.
   *Not built, see Known limitations in `DESIGN.md`:* merging a refetch into the cached list (PR #17 review) and a unit test for `useRoomStream` (PR #15 review).
-- [ ] **T6.2** Dockerfile for the app and a `/health` endpoint.
-  *Carried over from T4.2:* nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if the deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers, so check what actually reaches the clients.
-  *Carried over from the PR #15 review:* the stream writes with `controller.enqueue` without checking `desiredSize`, so for a client whose connection has stalled (a backgrounded phone, a NAT that forgot it) messages pile up in server memory until TCP gives up. Ending the stream past a small backlog would let the client reconnect and catch up, but first check that Next reads the body with backpressure (otherwise the backlog sits in the socket buffer and `desiredSize` never drops), under the production server.
+- [x] **T6.2** Dockerfile for the app and a `/health` endpoint.
+  *Carried over from T4.2:* done: `stopRealtimeHub()` runs on SIGTERM and SIGINT. Next does not exit straight away, as this note used to say: it waits for every request, so one open stream held the process until Docker killed it. See Deployment in `DESIGN.md`.
+  *Carried over from the PR #15 review:* done: a stream ends past 256 queued writes. Next does read the body with backpressure, measured under the production server.
+  *Not fixed from the PR #22 review, see Known limitations in `DESIGN.md`:* `/health` shares the app's pool; a bulk insert can trip the backlog limit; the shutdown deadline cuts off slow requests.
 
 ## 7. Documents and review
 
