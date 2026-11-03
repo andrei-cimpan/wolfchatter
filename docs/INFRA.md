@@ -1,6 +1,6 @@
 # Wolfchatter: Infrastructure & Cost Estimate
 
-How I would deploy Wolfchatter on AWS, with staging and production environments. This is a paper exercise: nothing is deployed. Estimated cost: **about $65/month for staging and about $775/month for production**, of which $450 is map tiles.
+How I would deploy Wolfchatter on AWS, with staging and production environments. This is a paper exercise: nothing is deployed. Estimated cost: **about $65/month for staging and about $405/month for production**, of which $80 is map tiles.
 
 ## Assumptions
 
@@ -8,7 +8,7 @@ How I would deploy Wolfchatter on AWS, with staging and production environments.
 - **Launch load (production):** 50k monthly active users, about 3 sessions each, so **150k map loads/month**; about 15M HTTP requests/month; about 150 GB/month internet egress; about 2,000 concurrent SSE connections at peak.
 - **Availability:** production runs across 2 availability zones with a Multi-AZ database. Staging is a single-AZ, scaled-down copy.
 - **Containers:** ARM (Graviton) images on Fargate, on-demand, no reserved capacity or savings plans. The pipeline therefore builds for arm64.
-- **Map tiles:** v1 uses public OpenStreetMap tiles, which are not meant for production traffic, so production uses Mapbox. That needs the v2 work (T8.3). Until then, v1 can use any raster tile provider through `NEXT_PUBLIC_MAP_TILE_URL`, which is not priced here.
+- **Map tiles:** the app keeps Leaflet, which is free. Its default public OpenStreetMap tiles are not meant for production traffic, so production points `NEXT_PUBLIC_MAP_TILE_URL` at a paid raster provider, with no code change. Assumed: **about 50 tiles per map load**. A full view takes about 30 tiles on a desktop and 12 on a phone, and panning and zooming add more. This is my estimate, not a measurement, and it is the least certain number here.
 
 ## Architecture
 
@@ -38,6 +38,7 @@ CloudFront has its own subdomain because Route 53 cannot split traffic by path. 
 | ECS stop timeout | 30 s (default) | Above the app's 2-second shutdown deadline, so the app exits by itself |
 | ALB idle timeout | 60 s (default) | Above the 25-second SSE heartbeat, so streams are not cut |
 | Migrations | `node scripts/migrate.mts` as a one-off ECS task | Runs once, before the new tasks start. The command is in the same image. A rolling deploy runs old and new code together, so migrations must work with both |
+| Tile provider | Set `NEXT_PUBLIC_MAP_TILE_URL` and `NEXT_PUBLIC_MAP_ATTRIBUTION` when building the image | They are inlined in the browser bundle, so anything in the URL is public |
 | Images | One per environment if their tiles differ | `NEXT_PUBLIC_MAP_*` are inlined at build time, so such an image cannot be promoted from staging to production |
 
 ## Cost table
@@ -52,9 +53,9 @@ CloudFront has its own subdomain because Route 53 cannot split traffic by path. 
 | Static assets | CloudFront | Caches the Next.js static files near users | 1 | 7 |
 | Internet egress | ALB / AWS data transfer | JSON and SSE responses at $0.09/GB | 1 | 14 |
 | Observability and misc | CloudWatch Logs, Secrets Manager, Route 53, ECR, S3 (Terraform state) | Logs, secrets, DNS, images, IaC state | 4 | 15 |
-| Map tiles | Mapbox GL JS | Managed vector tiles (needs T8.3); staging stays inside the free tier | 0 | 450 |
+| Map tiles | Stadia Maps, Standard plan, with Leaflet | Works through the existing tile setting; commercial use allowed. Staging shares the production plan, since the free tier does not allow commercial use | 0 | 80 |
 | CI/CD and IaC | GitHub Actions, Terraform | Free for a public repo; OIDC deploys, no long-lived keys | 0 | 0 |
-| **Total** | | | **about 65** | **about 775** |
+| **Total** | | | **about 65** | **about 405** |
 
 Production infrastructure alone is about $323/month. The services listed under "Estimates" below were not re-checked against a price page.
 
@@ -65,12 +66,12 @@ Production infrastructure alone is about $323/month. The services listed under "
 - **NAT:** $0.045/hour plus $0.045/GB. Production: 2 x $32.85 + 20 GB + 2 public IPv4 = $73.90.
 - **RDS:** db.t4g.medium Multi-AZ at $0.130/hour = $94.90, plus 50 GB gp3 at $0.115/GB billed on both nodes = $11.50. Staging: db.t4g.micro at $0.016/hour = $11.68, plus 20 GB = $2.30.
 - **WAF:** $5 web ACL + 3 rules at $1 (managed common rules, IP reputation, a per-IP rate limit) + 15M requests at $0.60 per million = $17.
-- **Mapbox:** 50k free map loads, then $5 per 1,000 up to 100k and $4 per 1,000 up to 200k. 150k loads = $250 + $200 = $450.
+- **Map tiles:** a raster tile costs 1 credit, and the Standard plan is $80 for 7.5M credits, then $0.02 per 1,000. 150k loads x 50 tiles = 7.5M credits = $80. At 100 tiles per load: 15M credits = $80 + $150 = $230.
 - **Estimates (not re-checked):** CloudFront, CloudWatch Logs, Secrets Manager, Route 53, ECR, S3.
 
 ## What drives the cost
 
-Map tiles are the biggest line: $450 of the $775. Infrastructure is about $323, and the database and NAT gateways make up more than half of that. At 1M monthly users (about 3M map loads) the same Mapbox tiers would cost roughly $8,050/month, far more than all other infrastructure combined.
+The database is the biggest line at $106, followed by map tiles at $80 and NAT gateways at $74. Infrastructure is about $323, and the database and NAT gateways make up more than half of that. Tiles grow fastest with users: at 1M monthly users (about 3M map loads, 150M credits) the Professional plan, $250 for 25M credits and then $0.015 per 1,000, would cost roughly $2,125/month.
 
 ## Path to millions of users
 
@@ -78,8 +79,7 @@ Map tiles are the biggest line: $450 of the $775. Infrastructure is about $323, 
 - **Database:** larger instance, a connection pooler (RDS Proxy or PgBouncer), and a read replica for message history. Move spatial queries to PostGIS with a GiST index. `LISTEN` must bypass the pooler: it pins an RDS Proxy session and does not work through PgBouncer's transaction mode. That needs a second URL setting, since the app has only `DATABASE_URL` today.
 - **Real-time:** Postgres LISTEN/NOTIFY is fine early on. At high connection counts, move fan-out to Redis pub/sub (ElastiCache) or a dedicated WebSocket service.
 - **Map API:** cache viewport responses at CloudFront with a short TTL, since many users look at the same areas. With CloudFront in front of the API, `client-ip.ts` must stop reading the rightmost `X-Forwarded-For` entry as the client, or all users behind one edge share a rate limit.
-- **Tiles:** negotiate Mapbox volume pricing, or self-host vector tiles (for example PMTiles on S3 behind CloudFront, rendered with MapLibre).
-- **v2 alternative:** hosted Supabase would replace RDS and the custom real-time layer. It is not priced here.
+- **Tiles:** move to a higher plan and negotiate volume pricing, or self-host vector tiles (for example PMTiles on S3 behind CloudFront, rendered with MapLibre in place of Leaflet).
 
 ## Cost levers
 
@@ -98,7 +98,10 @@ Prices checked 31 Oct 2026:
 - NAT gateway rates and Frankfurt uplift: https://cloudburn.io/blog/aws-nat-gateway-pricing
 - Internet egress rate: https://www.opslyft.com/blog/aws-nat-gateway-cost
 - WAF: https://aws.amazon.com/waf/pricing
-- Mapbox: https://www.mapbox.com/pricing and https://superdupr.com/blog/mapbox-pricing
+
+Map tile prices checked 3 Nov 2026:
+
+- Stadia Maps: https://stadiamaps.com/pricing/
 
 Service behaviour checked 3 Nov 2026:
 
