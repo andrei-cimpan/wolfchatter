@@ -1,7 +1,8 @@
 import { stopRealtimeHub } from ".";
 
-// Time for requests in flight to finish, which take milliseconds. Short because a plain `docker stop`
-// was measured killing the process after about 3 s (Docker 29), whatever its documented default.
+// Time for requests in flight to finish, which take milliseconds with a healthy database. Short because
+// a plain `docker stop` was measured killing the process after about 3 s (Docker 29), whatever its
+// documented default.
 export const SHUTDOWN_DEADLINE_MS = 2_000;
 
 const EXIT_CODES = { SIGTERM: 143, SIGINT: 130 };

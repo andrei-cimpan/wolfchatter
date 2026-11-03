@@ -8,6 +8,7 @@ export const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;
 // Writes queued for a client whose connection has stalled, once its socket buffer is full. Measured
 // on the production server: a stalled client's queue grows by one per write, while a reading client's
 // stayed under 5 through 20,000 messages in 8 s. Past this, it is cheaper for the client to catch up.
+// A bulk insert in one transaction can reach this for a reading client too (DESIGN.md, Known limitations).
 export const STREAM_MAX_BACKLOG = 256;
 
 /**

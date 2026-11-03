@@ -80,6 +80,7 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T6.2** Dockerfile for the app and a `/health` endpoint.
   *Carried over from T4.2:* done: `stopRealtimeHub()` runs on SIGTERM and SIGINT. Next does not exit straight away, as this note used to say: it waits for every request, so one open stream held the process until Docker killed it. See Deployment in `DESIGN.md`.
   *Carried over from the PR #15 review:* done: a stream ends past 256 queued writes. Next does read the body with backpressure, measured under the production server.
+  *Not fixed from the PR #22 review, see Known limitations in `DESIGN.md`:* `/health` shares the app's pool; a bulk insert can trip the backlog limit; the shutdown deadline cuts off slow requests.
 
 ## 7. Documents and review
 
