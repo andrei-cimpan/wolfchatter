@@ -143,7 +143,9 @@ The main ones are below. The full list is in [the design note](docs/DESIGN.md#kn
 
 ## Roadmap (v2, separate branch)
 
+v2 is a personal idea outside the brief: a smaller version for a small userbase, easy to deploy.
+
 - Supabase for Postgres and Realtime, replacing the SSE hub behind the same `ChatRepository` interface.
 - Supabase Auth: anyone can read, signed-in users post, enforced with row-level security.
 - Mapbox via react-map-gl instead of OpenStreetMap tiles.
-- Deployment to AWS, following `docs/INFRA.md`.
+- Deployment to a simple host, for example Vercel.

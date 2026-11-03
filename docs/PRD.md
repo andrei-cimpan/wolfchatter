@@ -11,7 +11,7 @@ Wolfchatter is a real-time chat app built on a map. A user clicks the map to dro
 | Version | Goal | Notes |
 |---|---|---|
 | **v1** (main branch) | Complete test requirements, runs locally with no keys or accounts | Leaflet, Postgres via Docker Compose, Next.js |
-| **v2** (separate branch) | Production-oriented evolution | Supabase (Postgres, Realtime, Auth), Mapbox, signed-in posting |
+| **v2** (separate branch, optional) | A personal idea outside the brief: a smaller version for a small userbase, easy to deploy | Supabase (Postgres, Realtime, Auth), Mapbox, signed-in posting |
 
 v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 
@@ -75,7 +75,7 @@ The brief gives no load figures. Assumed: ~50k monthly users at launch, with a d
 
 - Supabase for Postgres, Realtime, and Auth. Row-level security: anyone can read; inserts require a signed-in user where `user_id = auth.uid()`.
 - Mapbox via react-map-gl.
-- Deployment to a cloud environment (staging and production), per `INFRA.md`.
+- Deployment to a simple host, for example Vercel. `INFRA.md` is separate: it plans v1 on AWS and does not depend on v2.
 
 ## 7. Working with AI
 
