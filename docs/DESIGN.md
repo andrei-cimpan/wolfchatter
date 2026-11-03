@@ -57,7 +57,7 @@ The mockups show a room as soon as the map is clicked. Since T5.5 a click opens 
 - **Basemap:** OpenStreetMap tiles by default. `NEXT_PUBLIC_MAP_TILE_URL` and `NEXT_PUBLIC_MAP_ATTRIBUTION` swap the provider (for example Stadia's Stamen Watercolor, the mockups' style, which needs an API key outside localhost). A custom URL without an attribution stops `next dev` and `next build` at startup (`next.config.ts` calls `tileConfigFromEnv` in `src/lib/map-config.ts`), rather than crashing the page in the browser.
 - The page uses `100dvh` so mobile browser toolbars do not cut off the form, and the viewport meta tag is set.
 - A `ResizeObserver` on the map's container calls Leaflet's `invalidateSize()` whenever the raised sheet changes the map's height, so the strip the sheet uncovers never stays grey. Leaflet handles window resizes itself.
-- Touch targets are at least 44 px, except room pins, which are Leaflet's default 25x41 px. A tap that just misses a pin counts as a click on the map, which closes an open room and drops a draft; whether that needs a larger hit area is decided on a real phone in T7.4. Dragging the map must never create a room; only a tap does.
+- Touch targets are at least 44 px, except room pins, which are Leaflet's default 25x41 px. A tap that just misses a pin counts as a click on the map, which closes an open room and drops a draft. Tried on a real phone in T7.4, pins worked at this size, so they have no larger hit area. Dragging the map must never create a room; only a tap does.
 
 ## Repository interface
 

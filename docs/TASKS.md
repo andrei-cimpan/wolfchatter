@@ -92,9 +92,11 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   *Carried over from the PR #21 review, kept as they are; see the Resolution note in `REVIEW.md`:*
   - A failed first message after Back and Forward says nothing to the user; see Known limitations in `DESIGN.md`. Kept for now, since Back already discards a draft's text.
   - `flightDragged` in `useFlyToRoom` stays true after a drag until the next flight, so a sheet resizing the map during a pinch could call `setZoom` mid-gesture. From reading only, not reproduced; it targets the zoom the pinch would snap to anyway. Clearing the flag once its `moveend` is handled would remove the case.
-- [ ] **T7.4** Final check from a clean clone, then email the repo link before the deadline.
-  *Moved from T6.1, needs a real phone:* double-tap the map, which is tested only with dispatched events, and send a first message with the keyboard open.
-  *Moved from the final review (#6), needs a real phone:* try tapping pins, which are 25x41 px, and decide whether they need a larger hit area, since a tap that misses closes an open room.
+- [x] **T7.4** Final check from a clean clone, then email the repo link before the deadline.
+  *Clean clone of `6dc9146`:* done, with an empty database and empty npm and Playwright caches: the README's local route, the Docker route with no `.env` and an uncached build, tests on port 3100 (563 unit and API, 153 e2e), and two windows on port 3000.
+  *From the check:* `npm install` warned that `fsevents` and `unrs-resolver` have install scripts. Nothing needs them, as all of the above ran with them skipped, so `package.json` now denies them. The deprecated ESLint and its moderate audit findings stay, since they are dev-only and an upgrade this late could change lint results; the README says so.
+  *Moved from T6.1:* done on a real phone: double-tap the map, and send a first message with the keyboard open.
+  *Moved from the final review (#6):* done on a real phone: pins of 25x41 px can be tapped, so they keep their size.
 
 ## 8. v2 (separate branch, only after v1 is complete)
 
