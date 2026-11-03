@@ -85,7 +85,8 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 ## 7. Documents and review
 
 - [x] **T7.1** README: prerequisites, run locally, tests, improvements made, v2 plan.
-- [ ] **T7.2** `docs/INFRA.md`: component, service, why, monthly cost for staging and production, with assumptions.
+- [x] **T7.2** `docs/INFRA.md`: component, service, why, monthly cost for staging and production, with assumptions.
+  *Not built, since deployment is out of scope for v1; see Deployment settings in `INFRA.md`:* the RDS CA bundle in the image, and `assetPrefix` for CloudFront.
 - [ ] **T7.3** Review skill in `.claude/`, run on the final code, commit `docs/REVIEW.md` (report) and the fixed/not-fixed note.
   *Carried over from T7.1:* the README already links to `docs/REVIEW.md` and describes this review (How I worked with AI). Check that the wording matches what was done.
   *Carried over from the PR #21 review:*

@@ -7,19 +7,38 @@ How I would deploy Wolfchatter on AWS, with staging and production environments.
 - **Prices:** AWS us-east-1 on-demand list prices, 730 hours/month, checked on 31 Oct 2026 (see Sources). Frankfurt (eu-central-1) is roughly 15-20% higher on the lines I checked (ALB +20%, NAT +16%), so expect about +$50 on production infrastructure if deployed in the EU.
 - **Launch load (production):** 50k monthly active users, about 3 sessions each, so **150k map loads/month**; about 15M HTTP requests/month; about 150 GB/month internet egress; about 2,000 concurrent SSE connections at peak.
 - **Availability:** production runs across 2 availability zones with a Multi-AZ database. Staging is a single-AZ, scaled-down copy.
-- **Containers:** ARM (Graviton) images on Fargate, on-demand, no reserved capacity or savings plans.
-- **Map tiles:** v1 uses public OpenStreetMap tiles, which are not meant for production traffic, so production uses Mapbox (the v2 plan).
+- **Containers:** ARM (Graviton) images on Fargate, on-demand, no reserved capacity or savings plans. The pipeline therefore builds for arm64.
+- **Map tiles:** v1 uses public OpenStreetMap tiles, which are not meant for production traffic, so production uses Mapbox. That needs the v2 work (T8.3). Until then, v1 can use any raster tile provider through `NEXT_PUBLIC_MAP_TILE_URL`, which is not priced here.
 
 ## Architecture
 
 ```
-Users -> Route 53 -> CloudFront (static assets)
-                  -> WAF -> ALB -> ECS Fargate (Next.js container, 2 AZs) -> RDS PostgreSQL (Multi-AZ)
-                                   (REST + SSE; Postgres LISTEN/NOTIFY fans out new messages)
-GitHub Actions -> ECR -> ECS rolling deploy      Terraform manages all of the above
+Users -> Route 53 -> assets.<domain>: CloudFront (static files; origin is the ALB)
+                  -> <domain>: WAF -> ALB -> ECS Fargate (Next.js container, 2 AZs) -> RDS PostgreSQL (Multi-AZ)
+                                             (REST + SSE; Postgres LISTEN/NOTIFY fans out new messages)
+GitHub Actions -> ECR -> one-off ECS task (migrations) -> ECS rolling deploy      Terraform manages all of the above
 ```
 
-The ALB idle timeout stays above the 25-second SSE heartbeat, so streams are not cut.
+CloudFront has its own subdomain because Route 53 cannot split traffic by path. It stays out of the API's path because the rate limiter takes the client IP from the rightmost `X-Forwarded-For` entry, which would then be CloudFront's.
+
+## Deployment settings
+
+**Needed before the first deploy; not built yet:**
+
+- **RDS certificate:** RDS for PostgreSQL 15 and later requires TLS by default. The `pg` driver treats `sslmode=require` as `verify-full`, and the image does not contain the RDS CA, so a plain `sslmode=require` should fail with a certificate error (read from the driver's source, not run against RDS). Add the RDS CA bundle to the image and set `sslmode=verify-full&sslrootcert=<path>` in `DATABASE_URL`. The app's pool, `LISTEN`, and migrations all read that URL.
+- **Static file location:** set `assetPrefix` in `next.config.ts` to the CloudFront domain, at build time. Without it the browser fetches static files from the ALB and CloudFront is never used.
+
+**Settings to choose:**
+
+| Setting | Value | Why |
+|---|---|---|
+| ALB health check | `GET /favicon.ico` | ECS replaces any task that fails its load balancer check, so checking `/health` would replace every task during a database outage, for nothing, since each recovers by itself. Measured on the production image with no database reachable: `/favicon.ico` 200, `/health` 503. The cost is that the check only proves the process is up, so a task that alone cannot reach the database keeps its traffic |
+| `/health` | Post-deploy check and external monitor | It reports whether the database is reachable, and nothing acts on it automatically |
+| Deregistration delay | 30 s, not the default 300 s | ECS waits for draining before sending SIGTERM, and SSE streams never finish by themselves, so the default would hold each old task for 5 minutes on every deploy. Clients reconnect and catch up |
+| ECS stop timeout | 30 s (default) | Above the app's 2-second shutdown deadline, so the app exits by itself |
+| ALB idle timeout | 60 s (default) | Above the 25-second SSE heartbeat, so streams are not cut |
+| Migrations | `node scripts/migrate.mts` as a one-off ECS task | Runs once, before the new tasks start. The command is in the same image. A rolling deploy runs old and new code together, so migrations must work with both |
+| Images | One per environment if their tiles differ | `NEXT_PUBLIC_MAP_*` are inlined at build time, so such an image cannot be promoted from staging to production |
 
 ## Cost table
 
@@ -28,16 +47,16 @@ The ALB idle timeout stays above the 25-second SSE heartbeat, so streams are not
 | App compute | ECS Fargate, ARM | No servers to manage; stateless container; about 20% cheaper than x86. Staging: 1 task (0.5 vCPU, 1 GB). Production: 2 tasks (1 vCPU, 2 GB), autoscaling | 14 | 58 |
 | Load balancer | Application Load Balancer | TLS, health checks, and long-lived SSE connections; spans 2 AZs (includes its public IPv4 addresses) | 27 | 32 |
 | Networking | NAT gateways (production), public subnets (staging) | Production tasks sit in private subnets, one NAT per AZ for resilience. Staging skips NAT to save about $66 and relies on locked-down security groups | 4 | 74 |
-| Database | RDS for PostgreSQL | Same engine as local dev; managed backups. Staging: db.t4g.micro single-AZ, 20 GB. Production: db.t4g.medium Multi-AZ, 50 GB gp3 | 14 | 106 |
+| Database | RDS for PostgreSQL | PostgreSQL 17, as in local dev; managed backups. Staging: db.t4g.micro single-AZ, 20 GB. Production: db.t4g.medium Multi-AZ, 50 GB gp3 | 14 | 106 |
 | Web firewall | AWS WAF | Rate limiting and managed rules matter because posting is anonymous in v1. Not used in staging | 0 | 17 |
 | Static assets | CloudFront | Caches the Next.js static files near users | 1 | 7 |
 | Internet egress | ALB / AWS data transfer | JSON and SSE responses at $0.09/GB | 1 | 14 |
 | Observability and misc | CloudWatch Logs, Secrets Manager, Route 53, ECR, S3 (Terraform state) | Logs, secrets, DNS, images, IaC state | 4 | 15 |
-| Map tiles | Mapbox GL JS | Managed vector tiles; staging stays inside the free tier | 0 | 450 |
+| Map tiles | Mapbox GL JS | Managed vector tiles (needs T8.3); staging stays inside the free tier | 0 | 450 |
 | CI/CD and IaC | GitHub Actions, Terraform | Free for a public repo; OIDC deploys, no long-lived keys | 0 | 0 |
 | **Total** | | | **about 65** | **about 775** |
 
-Production infrastructure alone is about $323/month. Rows marked "estimate" below were not re-checked against a price page.
+Production infrastructure alone is about $323/month. The services listed under "Estimates" below were not re-checked against a price page.
 
 ## How the main numbers are calculated
 
@@ -55,10 +74,10 @@ Map tiles are the biggest line: $450 of the $775. Infrastructure is about $323, 
 
 ## Path to millions of users
 
-- **App tier:** autoscale Fargate on CPU and connection count; the container is already stateless.
-- **Database:** larger instance, a connection pooler (RDS Proxy or PgBouncer), and a read replica for message history. Move spatial queries to PostGIS with a GiST index.
+- **App tier:** autoscale Fargate on CPU and connection count. The container stores no data; only its rate-limit counters are per task, so the app's limit multiplies with the task count and the WAF rule is the real ceiling.
+- **Database:** larger instance, a connection pooler (RDS Proxy or PgBouncer), and a read replica for message history. Move spatial queries to PostGIS with a GiST index. `LISTEN` must bypass the pooler: it pins an RDS Proxy session and does not work through PgBouncer's transaction mode. That needs a second URL setting, since the app has only `DATABASE_URL` today.
 - **Real-time:** Postgres LISTEN/NOTIFY is fine early on. At high connection counts, move fan-out to Redis pub/sub (ElastiCache) or a dedicated WebSocket service.
-- **Map API:** cache viewport responses at CloudFront with a short TTL, since many users look at the same areas.
+- **Map API:** cache viewport responses at CloudFront with a short TTL, since many users look at the same areas. With CloudFront in front of the API, `client-ip.ts` must stop reading the rightmost `X-Forwarded-For` entry as the client, or all users behind one edge share a rate limit.
 - **Tiles:** negotiate Mapbox volume pricing, or self-host vector tiles (for example PMTiles on S3 behind CloudFront, rendered with MapLibre).
 - **v2 alternative:** hosted Supabase would replace RDS and the custom real-time layer. It is not priced here.
 
@@ -71,7 +90,7 @@ Map tiles are the biggest line: $450 of the $775. Infrastructure is about $323, 
 
 ## Sources
 
-Checked 31 Oct 2026.
+Prices checked 31 Oct 2026:
 
 - Fargate ARM and Spot rates: https://cloudchipr.com/blog/aws-fargate-pricing
 - RDS PostgreSQL rates: https://infratally.com/articles/aws-rds-pricing-explained-2026/ and https://www.bytebase.com/dbcost/rds/compare/t-medium.md
@@ -80,3 +99,10 @@ Checked 31 Oct 2026.
 - Internet egress rate: https://www.opslyft.com/blog/aws-nat-gateway-cost
 - WAF: https://aws.amazon.com/waf/pricing
 - Mapbox: https://www.mapbox.com/pricing and https://superdupr.com/blog/mapbox-pricing
+
+Service behaviour checked 3 Nov 2026:
+
+- ECS replaces a task that fails its load balancer check: https://aws.amazon.com/blogs/containers/a-deep-dive-into-amazon-ecs-task-health-and-task-replacement/
+- Stopping a task, draining, and the deregistration delay: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-lifecycle-explanation.html and https://docs.aws.amazon.com/AmazonECS/latest/developerguide/load-balancer-connection-draining.html
+- RDS TLS default: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Concepts.General.SSL.html
+- RDS Proxy pinning on `LISTEN`: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html
