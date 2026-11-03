@@ -65,5 +65,31 @@ The code is careful and well tested: every automated check passes, FR1 to FR8 ar
 - **Not exercised, for T7.4:** a clean clone; `docker compose --profile app up`; browsers other than Chromium; real phones (double-tap, on-screen keyboard); a real proxy or ALB; several app instances; restarting Postgres itself (the shared container was left alone, so recovery rests on `pg_terminate_backend` in e2e and on `postgres-message-source.test.ts`). `npm run dev` on port 3000 was not started by hand, but e2e runs the same command on 3100. CI results were not checked. The README's wording about this review (T7.3) can only be checked once the Resolution note is written.
 
 ## Resolution note
-(Left empty by the reviewer. The author fills it in after triage: what was fixed,
-what was deliberately not fixed, and why.)
+Everything above this note is the reviewer's report, unedited. It was run by a fresh AI agent on commit 0adfdf8. Before triage, the two Majors and finding 8 were reproduced independently, and findings 4, 6, 10, 11 and 12 were checked against the code. I decided what to fix; each fix is one commit with "(review #N)" in its subject.
+
+| # | Severity | Decision | What was done, or why not |
+|---|---|---|---|
+| 1 | Major | Fixed | A cluster click now always goes at least one zoom level up. New e2e tests at lat 80 and at lat 83 on a phone failed first (zoom stayed at 5, and went out to 4). Near the poles some of the cell's rooms can start off-screen. |
+| 2 | Major | Fixed, in part | A hidden tab now holds no stream and catches up when shown. With six hidden tabs a seventh loaded in about 0.1 s, where before it had not loaded after 15 s. Six *visible* windows still block a seventh; this is in Known limitations. HTTP/2 at a load balancer should remove it, which was not tested. Tabs were hidden by simulating the browser's visibility state, not by real tab switching. |
+| 3 | Minor | Docs only | The README now warns against exposing the image without a proxy. A proxy in Compose would add a moving part for a case that is not deployed. |
+| 4 | Minor | Won't fix | Removing the path changes the API and the tests and script that use it, this late, to stop something a direct API call can do within the rate limit. Stays in Known limitations. |
+| 5 | Minor | Fixed | A click or Enter past the edge of the map's world drops nothing. New e2e test, which also fails when the click check alone is removed. |
+| 6 | Minor | Doc corrected, decision deferred | `DESIGN.md` no longer claims 44 px for pins. Whether they need a larger hit area is decided on a real phone in T7.4. |
+| 7 | Minor | Won't fix | Rare, Medium confidence, and the fix is a new interaction. Added to Known limitations. |
+| 8 | Minor | Won't fix | Small case, and the fix touches `useFlyToRoom`, whose timing has been the most fragile part of the map. Added to Known limitations. |
+| 9 | Minor | Fixed, beyond the suggestion | The app now exits with code 1 at startup. Loading the limits in `instrumentation.ts` was not enough: run against the production server, Next logged the error and went on listening, so the hook exits explicitly. |
+| 10 | Minor | Fixed | Docs updated. |
+| 11 | Nit | Won't fix | No flakes seen; rewriting 43 waits this late is riskier than leaving them. |
+| 12 | Nit | Fixed | Unused types removed. |
+| 13 | Nit | Won't fix | Reachable only by calling the API directly, and the only harm is a misplaced room. |
+| 14 | Nit | Fixed | Comments corrected. |
+| 15 | Nit | Fixed | Docs now say stderr where errors are logged. |
+| 16 | Nit | Fixed | The bubble is now `#2577c0`, about 4.7:1 with white text (calculated). |
+
+**Open notes I kept as they are:**
+
+- A failed first message after Back and Forward says nothing to the user. It is rare, and Back already discards a draft's text. In Known limitations.
+- `flightDragged` in `useFlyToRoom` stays true after a drag. It was never reproduced, the reviewer only read it, and its effect targets the zoom a pinch would snap to anyway.
+- Any 400 on the message form shows the same text. The form cannot reach this today, because it checks with the API's own schema first.
+
+**Not exercised by this review:** a clean clone, `docker compose --profile app up`, other browsers, and real phones are left for T7.4; CI runs `scripts/check-docker-shutdown.sh`. A real ALB and several app instances were not exercised, since nothing is deployed.
