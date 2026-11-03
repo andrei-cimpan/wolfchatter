@@ -21,7 +21,7 @@ src/
   app/                    # pages and route handlers
     api/rooms/...         # REST + SSE endpoints
     health/               # GET /health
-  instrumentation.ts      # registers the shutdown handler
+  instrumentation.ts      # checks the rate limits, registers the shutdown handler
   components/             # MapView, RoomPanel, MessageList, MessageForm
   hooks/                  # useRooms, useMessages, useRoomStream
   lib/                    # shared types, zod schemas, api client
@@ -158,7 +158,7 @@ Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The he
 
 Both POST routes are limited per client IP, in fixed one-minute windows: **10 rooms** (`POST /api/rooms`, whose optional first message counts only here) and **30 messages** (`POST /api/rooms/:id/messages`). Creating rooms gets the tighter budget because every room litters the shared map. The limiters live in `src/server/http/rate-limit.ts`.
 
-- **Configuration:** `RATE_LIMIT_ROOMS_PER_MINUTE` and `RATE_LIMIT_MESSAGES_PER_MINUTE` override the defaults. Unset or empty means the default; anything but a positive integer throws when the module loads, so a typo cannot silently change or disable a limit. Playwright sets both to 10,000 for its dev server, because every test browser posts from one address.
+- **Configuration:** `RATE_LIMIT_ROOMS_PER_MINUTE` and `RATE_LIMIT_MESSAGES_PER_MINUTE` override the defaults. Unset or empty means the default; anything but a positive integer throws when the module loads, so a typo cannot silently change or disable a limit. `src/instrumentation.ts` loads it at startup and exits with an error, because Next would only log a failed startup hook and go on listening, answering 500. Playwright sets both to 10,000 for its dev server, because every test browser posts from one address.
 
 - **Order:** the limit is checked first, before the room id, `Content-Type`, and body. Every attempt spends budget, so a flood of invalid requests is limited too. GET routes are not limited.
 - **Client IP:** route handlers cannot see the socket, so the IP is the **rightmost** `X-Forwarded-For` entry (`src/server/http/client-ip.ts`). Next.js sets that header to the socket address only when it is absent (`??=` in its base server), and a proxy such as the ALB appends the address it saw, so the rightmost entry is written by our side. Entries to its left are client-supplied and ignored. Requests with no usable address share one `unknown` key.
