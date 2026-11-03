@@ -23,7 +23,7 @@ src/
     health/               # GET /health
   instrumentation.ts      # checks the rate limits, registers the shutdown handler
   components/             # MapView, RoomPanel, MessageList, MessageForm
-  hooks/                  # useRooms, useMessages, useRoomStream
+  hooks/                  # useMapItems, useMessages, useRoomStream
   lib/                    # shared types, zod schemas, api client
   server/
     repositories/         # ChatRepository + PostgresChatRepository, PostgresMessageSource (pg LISTEN)
@@ -74,6 +74,10 @@ interface ChatRepository {
     zoom: number;
   }): Promise<MapItem[]>;
   createRoom(input: { lat: number; lng: number }): Promise<Room>;
+  createRoomWithMessage(
+    room: { lat: number; lng: number },
+    message: { author: string; body: string }
+  ): Promise<{ room: Room; message: Message }>;
   listMessages(
     roomId: string,
     opts?: { before?: string; after?: string; limit?: number }
