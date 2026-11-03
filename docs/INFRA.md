@@ -8,7 +8,7 @@ How I would deploy Wolfchatter on AWS, with staging and production environments.
 - **Launch load (production):** 50k monthly active users, about 3 sessions each, so **150k map loads/month**; about 15M HTTP requests/month; about 150 GB/month internet egress; about 2,000 concurrent SSE connections at peak.
 - **Availability:** production runs across 2 availability zones with a Multi-AZ database. Staging is a single-AZ, scaled-down copy.
 - **Containers:** ARM (Graviton) images on Fargate, on-demand, no reserved capacity or savings plans. The pipeline therefore builds for arm64.
-- **Map tiles:** the app keeps Leaflet, which is free. Its default public OpenStreetMap tiles are not meant for production traffic, so production points `NEXT_PUBLIC_MAP_TILE_URL` at a paid raster provider, with no code change. Assumed: **about 50 tiles per map load**. A full view takes about 30 tiles on a desktop and 12 on a phone, and panning and zooming add more. This is my estimate, not a measurement, and it is the least certain number here.
+- **Map tiles:** the app keeps Leaflet, which is free. Local development and staging keep its default public OpenStreetMap tiles, which need no key or account. Those tiles are not meant for production traffic, and access can be withdrawn without notice, so production points `NEXT_PUBLIC_MAP_TILE_URL` at a paid raster provider, with no code change. Assumed: **about 50 tiles per map load**. A full view takes about 30 tiles on a desktop and 12 on a phone, and panning and zooming add more. This is my estimate, not a measurement, and it is the least certain number here.
 
 ## Architecture
 
@@ -38,8 +38,8 @@ CloudFront has its own subdomain because Route 53 cannot split traffic by path. 
 | ECS stop timeout | 30 s (default) | Above the app's 2-second shutdown deadline, so the app exits by itself |
 | ALB idle timeout | 60 s (default) | Above the 25-second SSE heartbeat, so streams are not cut |
 | Migrations | `node scripts/migrate.mts` as a one-off ECS task | Runs once, before the new tasks start. The command is in the same image. A rolling deploy runs old and new code together, so migrations must work with both |
-| Tile provider | Set `NEXT_PUBLIC_MAP_TILE_URL` and `NEXT_PUBLIC_MAP_ATTRIBUTION` when building the image | They are inlined in the browser bundle, so anything in the URL is public |
-| Images | One per environment if their tiles differ | `NEXT_PUBLIC_MAP_*` are inlined at build time, so such an image cannot be promoted from staging to production |
+| Tile provider | Production: set `NEXT_PUBLIC_MAP_TILE_URL` and `NEXT_PUBLIC_MAP_ATTRIBUTION` when building the image. Staging: leave them unset | They are inlined in the browser bundle, so anything in the URL is public. Staging must stay at the light, human browsing that OpenStreetMap's tile policy allows, so load tests must not fetch its tiles |
+| Images | One per environment, since their tiles differ | `NEXT_PUBLIC_MAP_*` are inlined at build time, so the staging image cannot be promoted to production. Build both from the same commit, and check after each production deploy that the map shows tiles, since staging never uses the paid provider |
 
 ## Cost table
 
@@ -53,7 +53,7 @@ CloudFront has its own subdomain because Route 53 cannot split traffic by path. 
 | Static assets | CloudFront | Caches the Next.js static files near users | 1 | 7 |
 | Internet egress | ALB / AWS data transfer | JSON and SSE responses at $0.09/GB | 1 | 14 |
 | Observability and misc | CloudWatch Logs, Secrets Manager, Route 53, ECR, S3 (Terraform state) | Logs, secrets, DNS, images, IaC state | 4 | 15 |
-| Map tiles | Stadia Maps, Standard plan, with Leaflet | Works through the existing tile setting; commercial use allowed. Staging shares the production plan, since the free tier does not allow commercial use | 0 | 80 |
+| Map tiles | Stadia Maps, Standard plan, with Leaflet (production); OpenStreetMap public tiles (staging) | Works through the existing tile setting; commercial use allowed. Staging's light use needs no key or plan | 0 | 80 |
 | CI/CD and IaC | GitHub Actions, Terraform | Free for a public repo; OIDC deploys, no long-lived keys | 0 | 0 |
 | **Total** | | | **about 65** | **about 405** |
 
@@ -102,6 +102,7 @@ Prices checked 31 Oct 2026:
 Map tile prices checked 3 Nov 2026:
 
 - Stadia Maps: https://stadiamaps.com/pricing/
+- OpenStreetMap tile usage policy: https://operations.osmfoundation.org/policies/tiles/
 
 Service behaviour checked 3 Nov 2026:
 
