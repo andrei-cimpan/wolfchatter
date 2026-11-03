@@ -37,7 +37,11 @@ services:
   app:
     profiles: [app]
     build: *app-build
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      # Blank means the app's default.
+      RATE_LIMIT_ROOMS_PER_MINUTE: ${RATE_LIMIT_ROOMS_PER_MINUTE:-}
+      RATE_LIMIT_MESSAGES_PER_MINUTE: ${RATE_LIMIT_MESSAGES_PER_MINUTE:-}
     ports:
       - "${APP_PORT:-3000}:3000"
     depends_on:

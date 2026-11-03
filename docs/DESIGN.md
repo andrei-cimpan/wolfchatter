@@ -226,7 +226,7 @@ Two interfaces keep the hub independent of where messages come from and how they
 
 ## Deployment
 
-**The image.** The `Dockerfile` builds Next's standalone server (`output: "standalone"`, turned on by `DOCKER_BUILD` so that `next start` does not warn about it elsewhere), runs as the non-root `node` user, and needs only `DATABASE_URL` at run time. `NEXT_PUBLIC_MAP_*` are build args, since they are inlined into client code. `docker compose --profile app up --build` runs it with the database; the profile leaves `docker compose up -d db` starting only the database.
+**The image.** The `Dockerfile` builds Next's standalone server (`output: "standalone"`, turned on by `DOCKER_BUILD` so that `next start` does not warn about it elsewhere), runs as the non-root `node` user, and needs only `DATABASE_URL` at run time; the optional `RATE_LIMIT_*` are read at run time too, and Compose passes them on. `NEXT_PUBLIC_MAP_*` are build args, since they are inlined into client code. `docker compose --profile app up --build` runs it with the database; the profile leaves `docker compose up -d db` starting only the database.
 
 **Migrations** are a separate command in the same image (`node scripts/migrate.mts`, Compose's `migrate` service), not part of starting the app, so a deployment runs them once and before the new instances.
 
