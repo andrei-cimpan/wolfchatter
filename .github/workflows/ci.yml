@@ -51,15 +51,7 @@ jobs:
           curl --fail --silent --show-error http://localhost:3000/health | grep '"status":"ok"'
           curl --fail --silent --show-error --output /dev/null http://localhost:3000/
       - name: An open stream does not hold up shutdown
-        run: |
-          room=$(curl --fail --silent --show-error http://localhost:3000/api/rooms \
-            --header 'content-type: application/json' --data '{"lat":44.43,"lng":26.1}' | jq --raw-output .id)
-          curl --silent --no-buffer "http://localhost:3000/api/rooms/$room/stream" > /dev/null &
-          sleep 1
-          # A longer timeout than the app's own deadline, so 137 means the app did not exit by itself.
-          docker compose --profile app stop --timeout 30 app
-          test "$(docker inspect --format '{{.State.ExitCode}}' wolfchatter-app-1)" = 143
-          wait
+        run: bash scripts/check-docker-shutdown.sh
       - name: Health reports a database that is down
         run: |
           docker compose --profile app start app
