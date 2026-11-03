@@ -38,5 +38,9 @@
   },
   "engines": {
     "node": ">=26"
+  },
+  "allowScripts": {
+    "fsevents": false,
+    "unrs-resolver": false
   }
 }
