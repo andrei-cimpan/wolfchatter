@@ -94,6 +94,10 @@ export class PostgresChatRepository implements ChatRepository {
     this.pool = pool;
   }
 
+  async ping(): Promise<void> {
+    await this.pool.query("select 1");
+  }
+
   async getRoom(id: string): Promise<Room | null> {
     if (!isUuid(id)) return null;
     const { rows } = await this.pool.query<RoomRow>(`select ${ROOM_COLUMNS} from rooms where id = $1`, [id]);

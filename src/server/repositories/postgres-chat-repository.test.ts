@@ -29,6 +29,18 @@ function byType(items: MapItem[]) {
   };
 }
 
+describe("ping", () => {
+  it("resolves while the database answers", async () => {
+    await expect(repo().ping()).resolves.toBeUndefined();
+  });
+
+  it("rejects when the database fails", async () => {
+    const failure = new Error("connection refused");
+    const failing = new PostgresChatRepository({ query: () => Promise.reject(failure) } as unknown as pg.Pool);
+    await expect(failing.ping()).rejects.toBe(failure);
+  });
+});
+
 describe("rooms", () => {
   it("creates a room and reads it back", async () => {
     const created = await repo().createRoom({ lat: 44.43, lng: 26.1 });
