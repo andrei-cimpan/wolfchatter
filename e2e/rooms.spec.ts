@@ -50,6 +50,23 @@ async function createRoomAt(page: Page, x: number, y: number): Promise<string> {
 /** Where the selected room's pin ends up on a 1280 px view: centred in the map left of the card. */
 const CARD_FOCUS_X = (1280 - 396) / 2;
 
+const CARD_SHIFT_PX = 396 / 2;
+/** A whole world is 256 * 2^5 px wide at the zoom the map opens at. */
+const ZOOM_5_PX_PER_DEGREE = (256 * 2 ** 5) / 360;
+
+/** Where the next room is created, read from its request. A pin always flies to the same spot on screen, wherever it was dropped. */
+async function postedRoomPosition(page: Page) {
+  const request = await page.waitForRequest(
+    (r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/rooms",
+  );
+  return request.postDataJSON() as { lat: number; lng: number };
+}
+
+function expectPosition(actual: { lat: number; lng: number }, expected: { lat: number; lng: number }) {
+  expect(Math.abs(actual.lat - expected.lat)).toBeLessThan(0.1);
+  expect(Math.abs(actual.lng - expected.lng)).toBeLessThan(0.1);
+}
+
 async function postRoom(page: Page, position: { lat: number; lng: number }) {
   const response = await page.request.post("/api/rooms", { data: position });
   expect(response.status()).toBe(201);
@@ -136,6 +153,20 @@ function countRoomPosts(page: Page) {
     }
   });
   return posts;
+}
+
+/** Holds the next room creation until the returned function is called, which then fails it. */
+async function holdRoomPost(page: Page) {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/rooms", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    await held;
+    await route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "boom" } } });
+  });
+  return release;
 }
 
 test.describe("desktop", () => {
@@ -305,6 +336,36 @@ test.describe("desktop", () => {
     await expectWholeZoom(page);
   });
 
+  test("a zoom that starts just after a flight does, then a drag, still ends on a whole zoom", async ({ page }) => {
+    // Leaflet starts a button's zoom on the next animation frame. Which comes first, that frame or
+    // the flight the selection starts, is a race, so this holds the frame back to force the order.
+    await page.addInitScript(() => {
+      const request = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => {
+        const { dataset } = document.documentElement;
+        if (dataset.holdNextFrame === undefined) return request(callback);
+        delete dataset.holdNextFrame;
+        return window.setTimeout(() => callback(performance.now()), 200);
+      };
+    });
+    const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
+    const near = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page);
+    await selectInPage(page, far.id);
+    await expectPinTipAt(page, far.title, { x: CARD_FOCUS_X, y: 360 });
+    await selectInPage(page, near.id);
+    await expectPinTipAt(page, near.title, { x: CARD_FOCUS_X, y: 360 });
+
+    await page.evaluate((room) => {
+      document.documentElement.dataset.holdNextFrame = "";
+      document.querySelector<HTMLElement>(".leaflet-control-zoom-out")?.click();
+      history.pushState(null, "", `/?room=${room}`);
+    }, far.id);
+    await page.waitForTimeout(700);
+    await dragWithoutInertia(page);
+    await expectWholeZoom(page);
+  });
+
   test("selecting again just after a drag stopped a flight still ends on a whole zoom", async ({ page }) => {
     const far = await postRoom(page, { lat: -33.87, lng: 151.2 });
     const other = await postRoom(page, { lat: 60, lng: -100 });
@@ -432,6 +493,113 @@ test.describe("desktop", () => {
     await createRoomAt(page, 800, 550);
     expect(posts).toHaveLength(3);
   });
+
+  test("with only a keyboard, Enter on the map drops a draft in the clear part, and the form can be reached", async ({ page }) => {
+    const posts = countRoomPosts(page);
+    await openMap(page);
+    await page.locator(".leaflet-container").focus();
+    await page.keyboard.press("Enter");
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    expect(posts).toHaveLength(0);
+
+    const username = panel(page).getByRole("textbox", { name: "Username" });
+    await expect(async () => {
+      await page.keyboard.press("Tab");
+      await expect(username).toBeFocused({ timeout: 100 });
+    }).toPass({ timeout: 10_000, intervals: [0] });
+    await page.keyboard.type("ana");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("Typed, never clicked");
+    await page.keyboard.press("Tab");
+    const posted = postedRoomPosition(page);
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(ROOM_URL);
+    expect(posts).toHaveLength(1);
+    // The map opens centred on 48, 20; the clear part's centre is CARD_SHIFT_PX west of that.
+    expectPosition(await posted, { lat: 48, lng: 20 - CARD_SHIFT_PX / ZOOM_5_PX_PER_DEGREE });
+  });
+
+  test("Enter drops the draft where the arrow keys moved the map", async ({ page }) => {
+    await openMap(page);
+    await page.locator(".leaflet-container").focus();
+    await page.keyboard.press("Enter");
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    const before = await draftPin(page).boundingBox();
+
+    await page.keyboard.press("ArrowLeft");
+    let panned = 0;
+    await expect(async () => {
+      const moved = await draftPin(page).boundingBox();
+      panned = (moved?.x ?? 0) - (before?.x ?? 0);
+      expect(panned).toBeGreaterThanOrEqual(80);
+    }).toPass();
+
+    await page.keyboard.press("Enter");
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    await fillDraft(page);
+    const posted = postedRoomPosition(page);
+    await submit(page).click();
+    expectPosition(await posted, { lat: 48, lng: 20 - (CARD_SHIFT_PX + panned) / ZOOM_5_PX_PER_DEGREE });
+  });
+
+  test("after dragging the map, Enter keeps an open room and its unsent reply", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await messageField(page).fill("Half written");
+    await dragWithoutInertia(page);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(100);
+    await expect(roomTitle(page)).toHaveText(room.title);
+    await expect(messageField(page)).toHaveValue("Half written");
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("after dragging the map, Enter leaves a draft where it is", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
+    await fillDraft(page, "Half written");
+    await dragWithoutInertia(page);
+    const before = await draftPin(page).boundingBox();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    expect(await draftPin(page).boundingBox()).toEqual(before);
+    await expect(messageField(page)).toHaveValue("Half written");
+  });
+
+  test("Enter works again once the keyboard brings the focus back to a dragged map", async ({ page }) => {
+    await openMap(page);
+    await dragWithoutInertia(page);
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(page.locator(".leaflet-container")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+  });
+
+  test("holding Enter on Discard does not drop a new draft on the map that takes the focus", async ({ page }) => {
+    await openMap(page);
+    await startDraftAt(page, 400, 300);
+    await discard(page).focus();
+    await page.keyboard.down("Enter");
+    await expect(page.locator(".leaflet-container")).toBeFocused();
+    await page.keyboard.down("Enter");
+    await page.keyboard.up("Enter");
+    await page.waitForTimeout(100);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+  });
+
+  for (const key of ["Control+Enter", "Meta+Enter", "Alt+Enter", "Shift+Enter"]) {
+    test(`${key} on the map drops no draft`, async ({ page }) => {
+      await openMap(page);
+      await page.locator(".leaflet-container").focus();
+      await page.keyboard.press(key);
+      await page.waitForTimeout(100);
+      await expect(draftPin(page)).toHaveCount(0);
+    });
+  }
 
   test("a focused pin opens its room with Enter or Space", async ({ page }) => {
     await openMap(page);
@@ -586,6 +754,45 @@ test.describe("desktop", () => {
 
     await page.goForward();
     await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("a first message that fails after Back leaves no error for Forward to show", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await startDraftAt(page, 200, 600);
+    await fillDraft(page, "Sent, then left");
+    const failPost = await holdRoomPost(page);
+    await submit(page).click();
+    await expect(panel(page)).toContainText("Creating a chatroom…");
+
+    await page.goBack();
+    await expect(roomTitle(page)).toHaveText(room.title);
+    failPost();
+    await expect(panel(page)).not.toContainText("Creating a chatroom…");
+
+    await page.goForward();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel(page)).toHaveText(EMPTY_STATE);
+    await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("a first message that fails after Back and Forward leaves no error either", async ({ page }) => {
+    const room = await postRoom(page, { lat: 48, lng: 20 });
+    await openMap(page, `/?room=${room.id}`);
+    await startDraftAt(page, 200, 600);
+    await fillDraft(page, "Sent, then left");
+    const failPost = await holdRoomPost(page);
+    await submit(page).click();
+    await expect(panel(page)).toContainText("Creating a chatroom…");
+
+    await page.goBack();
+    await expect(roomTitle(page)).toHaveText(room.title);
+    await page.goForward();
+    await expect(page).toHaveURL(/\/$/);
+    failPost();
+
     await expect(panel(page)).toHaveText(EMPTY_STATE);
     await expect(draftPin(page)).toHaveCount(0);
   });
@@ -1044,6 +1251,17 @@ test.describe("narrow screen", () => {
     await page.getByRole("button", { name: "Close chat" }).click();
     await expect(panel(page)).toHaveText(EMPTY_STATE);
     await expect(draftPin(page)).toHaveCount(0);
+  });
+
+  test("Enter on the map drops the draft at the map's centre, with no card to clear", async ({ page }) => {
+    await openMap(page);
+    await page.locator(".leaflet-container").focus();
+    await page.keyboard.press("Enter");
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await fillDraft(page);
+    const posted = postedRoomPosition(page);
+    await submit(page).click();
+    expectPosition(await posted, { lat: 48, lng: 20 });
   });
 
   test("the close button is a 44 px touch target", async ({ page }) => {

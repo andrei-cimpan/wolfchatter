@@ -66,20 +66,17 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 
 ## 6. Quality
 
-- [ ] **T6.1** Playwright tests: create pin and post, reload persistence, two-browser live message, clusters appear when zoomed out and expand on click, and the bottom-sheet layout at a 375 px wide viewport.
-  *Flaky e2e tests seen on PR #19, look at these first:*
-  - `a flight started during a zoom animation still ends on a whole zoom when dragged` failed in CI, including its retry, with the map left between zoom levels (tiles about 338 px wide, not 256). Locally it failed once in 95 runs on the PR's first commit and passed 40 of 40 on `main`, too few runs to tell them apart. This may be a real bug in the flight code, since a map left between zoom levels looks blurry.
-  - `a second click makes a second room; pins and Back switch between them` needed a retry in CI: the second title read the same as the first. `createRoomAt` may read the old title before the panel updates; not confirmed.
-  - `Back flies to the previous room` needed a retry in CI on `main` and on the T5.3 branch.
-  Test titles above are as of PR #19; T5.5 renamed some room creation tests, and its helper now sends a first message.
+- [x] **T6.1** Playwright tests: create pin and post, reload persistence, two-browser live message, clusters appear when zoomed out and expand on click, and the bottom-sheet layout at a 375 px wide viewport.
+  *Flaky e2e tests seen on PR #19:*
+  - Done: `a flight started during a zoom animation still ends on a whole zoom when dragged` was a real bug. A button's zoom starts a frame after its click, so its `zoomstart` could clear the zoom of a flight begun in between, and a drag then left the map between levels. A test now forces that order.
+  - Done: `a second click makes a second room; pins and Back switch between them`, `Back flies to the previous room`, and `two rooms created in quick succession keep the zoom` fit one cause, not reproduced: the old `createRoomAt` could read the previous room's title. T5.5's helper waits for the draft first. With the zoom fix, these three and the test above passed 800 of 800 runs (200 each, 12 workers).
   *Carried over from the PR #20 review:*
-  - If the user goes Back while a first message is being sent and the send fails, Forward shows that error above an empty form, because the draft cannot be ended while sending.
-  - Keyboard-only users cannot start a room at all, since dropping a pin needs a click on the map. This was already true before draft pins.
-  - Double-tap is tested only with dispatched events, not on a device. It needs trying on a real phone, as does sending a first message with the keyboard open.
-  *Carried over from the PR #19 review:* add tests at the layout's boundaries (500 and 501 px high, 767 and 768 px wide), and for the desktop card having no list minimum in a quiet room. Also, on a phone 768 px or wider on its side, with 47 px insets at 844x390, Submit sits 14 px under the notch, because the card's `md:right-4` ignores the safe area; this was measured in emulation, not on a device.
-  *Carried over from the PR #15 review:* `useRoomStream` itself (the effect, and closing the stream on unmount or a room change) has no unit test, because hooks are tested here without React Testing Library or jsdom. The e2e tests cover it; add a hook test if those tools are ever added (ask first: new dependencies).
-  *Carried over from the PR #18 review:* on narrow screens, a flight that raises the sheet makes one extra viewport request at a mid-flight zoom (for example 5, 4, then 5), because the resize ends a move and `TrackViewport` reports it. It is one wasted request and may briefly draw clusters for the wrong zoom. Skip the report while a flight is under way, and extend the "one viewport request" e2e test to a narrow screen.
-  *Carried over from the PR #17 review:* a refetch replaces the list with the latest 50 messages, so with 50 loaded plus 5 live, a reader at the very top who refocuses the tab loses the five oldest and the view starts at the sixth. Readers further down keep their place in Chromium through scroll anchoring; Safari, which has none, was not tested. Consider merging the refetch into the cached list, and add a test when browsers other than Chromium are configured.
+  - Done: a first message that fails after Back and Forward ends the draft, with no error above an empty form. A failure after Back alone never showed one, since Forward ends the draft.
+  - Done: Enter on the focused map drops a draft, so keyboard-only users can start a room. There is no visible hint for sighted keyboard users yet.
+  - Moved to T7.4: trying double-tap, and a first message with the keyboard open, on a real phone.
+  *Carried over from the PR #19 review:* done: tests at the layout's boundaries and for the desktop card in a quiet room, and the card now clears the notch.
+  *Carried over from the PR #18 review:* done: no viewport request for a zoom a flight is only passing, tested on a narrow screen.
+  *Not built, see Known limitations in `DESIGN.md`:* merging a refetch into the cached list (PR #17 review) and a unit test for `useRoomStream` (PR #15 review).
 - [ ] **T6.2** Dockerfile for the app and a `/health` endpoint.
   *Carried over from T4.2:* nothing calls `stopRealtimeHub()` yet. Wire it to shutdown if the deployment needs open streams closed (so clients move to another instance) before the process exits; `next start` exits on SIGTERM without waiting for async handlers, so check what actually reaches the clients.
   *Carried over from the PR #15 review:* the stream writes with `controller.enqueue` without checking `desiredSize`, so for a client whose connection has stalled (a backgrounded phone, a NAT that forgot it) messages pile up in server memory until TCP gives up. Ending the stream past a small backlog would let the client reconnect and catch up, but first check that Next reads the body with backpressure (otherwise the backlog sits in the socket buffer and `desiredSize` never drops), under the production server.
@@ -89,7 +86,11 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [ ] **T7.1** README: prerequisites, run locally, tests, improvements made, v2 plan.
 - [ ] **T7.2** `docs/INFRA.md`: component, service, why, monthly cost for staging and production, with assumptions.
 - [ ] **T7.3** Review skill in `.claude/`, run on the final code, commit `docs/REVIEW.md` (report) and the fixed/not-fixed note.
+  *Carried over from the PR #21 review:*
+  - A failed first message after Back and Forward says nothing to the user; see Known limitations in `DESIGN.md`. Kept for now, since Back already discards a draft's text.
+  - `flightDragged` in `useFlyToRoom` stays true after a drag until the next flight, so a sheet resizing the map during a pinch could call `setZoom` mid-gesture. From reading only, not reproduced; it targets the zoom the pinch would snap to anyway. Clearing the flag once its `moveend` is handled would remove the case.
 - [ ] **T7.4** Final check from a clean clone, then email the repo link before the deadline.
+  *Moved from T6.1, needs a real phone:* double-tap the map, which is tested only with dispatched events, and send a first message with the keyboard open.
 
 ## 8. v2 (separate branch, only after v1 is complete)
 

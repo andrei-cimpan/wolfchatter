@@ -385,6 +385,53 @@ test.describe("large phone on its side", () => {
   });
 });
 
+test.describe("large phone on its side, under a notch", () => {
+  test.use({ viewport: { width: 844, height: 390 } });
+
+  test("the card and Submit stay clear of the notch", async ({ page }) => {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setSafeAreaInsetsOverride", { insets: { top: 0, left: 47, bottom: 21, right: 47 } });
+    await openFullRoom(page);
+    const card = await box(page, "aside");
+    expect(card.x + card.width).toBe(844 - 47);
+    const button = await submit(page).boundingBox();
+    expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(844 - 47);
+  });
+});
+
+// The switch from the sheet to the panel beside the map is at 500 px high, and to the card at 768 px wide.
+test.describe("layout boundaries", () => {
+  for (const { width, height, expected } of [
+    { width: 767, height: 500, expected: { x: 383.5, y: 0, width: 383.5, height: 500 } },
+    { width: 767, height: 501, expected: { x: 0, y: 181, width: 767, height: 320 } },
+    { width: 768, height: 500, expected: { x: 372, y: 16, width: 380 } },
+  ]) {
+    test.describe(`${width}x${height}`, () => {
+      test.use({ viewport: { width, height } });
+
+      test("the panel takes the layout for its size, with a usable chat", async ({ page }) => {
+        await openFullRoom(page);
+        expect(await box(page, "aside")).toMatchObject(expected);
+        await expectUsableChat(page, height);
+      });
+    });
+  }
+});
+
+test.describe("desktop card in a quiet room", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test("the card fits its one message, with no minimum height for the list", async ({ page }) => {
+    const response = await page.request.post("/api/rooms", { data: { lat: 48, lng: 20 } });
+    const { id } = (await response.json()) as { id: string };
+    await page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body: "Only message" } });
+    await page.goto(`/?room=${id}`);
+    await expect(messages(page).getByRole("listitem")).toHaveCount(1);
+    expect(await listHeight(page)).toBeLessThan(MIN_LIST_PX);
+    await expect(submit(page)).toBeInViewport({ ratio: 1 });
+  });
+});
+
 for (const { width, height, layout } of [
   { width: 800, height: 200, layout: "card" },
   { width: 300, height: 260, layout: "beside the map" },

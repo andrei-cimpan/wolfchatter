@@ -18,7 +18,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 ## 3. Functional requirements (v1)
 
 - **FR1** The initial view is an empty map with the message "Click on the map to start a chat".
-- **FR2** Clicking the map drops a draft pin, and the right-hand panel opens a draft that says the room is created by its first message. Nothing is saved or visible to others until then. Sending the first message creates the chatroom, and the panel switches to it. Clicking elsewhere moves the draft, and it can be discarded. Double-clicking the map zooms in.
+- **FR2** Clicking the map drops a draft pin, and the right-hand panel opens a draft that says the room is created by its first message. Nothing is saved or visible to others until then. Sending the first message creates the chatroom, and the panel switches to it. Clicking elsewhere moves the draft, and it can be discarded. Double-clicking the map zooms in. With only a keyboard, Enter on the focused map drops the draft at the centre of the visible map.
 - **FR3** Clicking an existing pin switches the panel to that room (title and messages).
 - **FR4** In a room, the user enters a username and a message and submits. The message appears in the room with author and timestamp.
 - **FR5** Rooms and messages persist across sessions.

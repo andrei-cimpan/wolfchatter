@@ -43,7 +43,7 @@ function PanelFrame({ raised, busy = false, children }: { raised: boolean; busy?
       aria-label="Chat"
       aria-busy={busy || undefined}
       data-raised={raised || undefined}
-      className={`relative flex flex-col overflow-y-auto rounded-t-2xl border-t border-foreground/15 bg-background px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgb(0_0_0/0.1)] md:absolute md:top-4 md:right-4 md:h-auto md:max-h-[calc(100dvh-2rem)] md:w-[380px] md:rounded-md md:border md:border-foreground/30 md:pb-4 md:shadow-md ${raised ? `${RAISED_SHEET} ${RAISED_BESIDE_MAP}` : ""}`}
+      className={`relative flex flex-col overflow-y-auto rounded-t-2xl border-t border-foreground/15 bg-background px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgb(0_0_0/0.1)] md:absolute md:top-4 md:right-[max(1rem,env(safe-area-inset-right))] md:h-auto md:max-h-[calc(100dvh-2rem)] md:w-[380px] md:rounded-md md:border md:border-foreground/30 md:pb-4 md:shadow-md ${raised ? `${RAISED_SHEET} ${RAISED_BESIDE_MAP}` : ""}`}
     >
       {children}
     </aside>

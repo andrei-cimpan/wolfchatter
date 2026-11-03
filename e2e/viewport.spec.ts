@@ -83,6 +83,54 @@ test("a cluster shows its count, and clicking it zooms into its cell", async ({ 
   await expect(page).not.toHaveURL(/\?room=/);
 });
 
+test("rooms close together cluster when zoomed out, through the real API, and a click expands them", async ({
+  page,
+  request,
+}, testInfo) => {
+  // Each attempt (a retry, or a copy under --repeat-each) gets its own zoom-5 cell in the mid-Pacific,
+  // where no other test puts rooms, and its own count, which makes its bubble the only one of that name.
+  const attempt = testInfo.repeatEachIndex * 2 + testInfo.retry;
+  const count = 3 + attempt;
+  const cell = 360 / 2 ** 5 / 4;
+  const west = -157.5 + 2 * cell * (attempt % 8);
+  // Towards the equator: Mercator stretches cells further south, and one past 50°S no longer fits at zoom 8.
+  const south = -39.375 + 2 * cell * Math.floor(attempt / 8);
+  const post = async (lat: number, lng: number) => {
+    const created = await request.post("/api/rooms", { data: { lat, lng } });
+    expect(created.status()).toBe(201);
+    return (await created.json()) as { id: string; title: string };
+  };
+  // Opening this room brings the map here. It is in the next cell, so it is not in the bubble.
+  const opened = await post(south + cell / 2, west + cell * 1.5);
+  // Eight zoom-8 cells fit across each zoom-5 cell, and each room is in the middle of its own.
+  const rooms = await Promise.all(
+    Array.from({ length: count }, (_, i) =>
+      post(south + (cell / 8) * (Math.floor(i / 8) + 0.5), west + (cell / 8) * (i % 8 + 0.5)),
+    ),
+  );
+
+  // A page opened on a room shows the default view until the room loads, and a bubble there can have
+  // the same name, so the search starts once the map has reached the room and that bubble is off-screen.
+  const arrived = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    if (response.request().method() !== "GET" || !isViewportRequest(url)) return false;
+    const [boxWest, , boxEast] = (url.searchParams.get("bbox") ?? "").split(",").map(Number);
+    return (boxWest ?? 0) < west && west < (boxEast ?? 0);
+  });
+  await page.goto(`/?room=${opened.id}`);
+  await arrived;
+  const bubble = page.getByRole("button", { name: `${count} chatrooms`, exact: true });
+  await expect(bubble).toBeInViewport();
+  await expect(bubble).toHaveText(String(count));
+  for (const { title } of rooms) await expect(page.getByRole("button", { name: title, exact: true })).toHaveCount(0);
+
+  await bubble.click();
+  await expect.poll(() => tileZooms(page)).toEqual(["8"]);
+  for (const { title } of rooms) await expect(page.getByRole("button", { name: title, exact: true })).toBeVisible();
+  await expect(bubble).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`\\?room=${opened.id}$`));
+});
+
 async function serveOneCluster(page: Page) {
   await page.route(isViewportRequest, (route) =>
     route.request().method() === "GET"
@@ -99,6 +147,20 @@ test("a focused cluster zooms in with Enter, and focus moves to the map", async 
   await expect.poll(() => tileZooms(page)).toEqual(["8"]);
   // The bubble is gone after the zoom; without this, focus would fall back to the page's start.
   await expect(page.locator(".leaflet-container")).toBeFocused();
+  // Enter on the map itself drops a draft, and this one started on the bubble.
+  await expect(page.locator(".draft-pin")).toHaveCount(0);
+});
+
+test("holding Enter on a focused cluster zooms in and drops no draft", async ({ page }) => {
+  await serveOneCluster(page);
+  await openMap(page);
+  await page.getByRole("button", { name: "12 chatrooms", exact: true }).focus();
+  await page.keyboard.down("Enter");
+  await expect(page.locator(".leaflet-container")).toBeFocused();
+  await page.keyboard.down("Enter");
+  await page.keyboard.up("Enter");
+  await expect.poll(() => tileZooms(page)).toEqual(["8"]);
+  await expect(page.locator(".draft-pin")).toHaveCount(0);
 });
 
 test("a focused cluster keeps a visible focus ring in forced-colours mode", async ({ page }) => {
@@ -149,6 +211,24 @@ test("flying to a far room makes one viewport request, once the map arrives", as
   const [west, , east] = (requests[1]?.get("bbox") ?? "").split(",").map(Number);
   expect(west).toBeLessThan(151.2);
   expect(east).toBeGreaterThan(151.2);
+});
+
+test.describe("narrow screen", () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("a flight that raises the sheet makes one viewport request, once the map arrives", async ({ page, request }) => {
+    const created = await request.post("/api/rooms", { data: { lat: -33.87, lng: 151.2 } });
+    const { id } = (await created.json()) as { id: string };
+    const requests = countViewportRequests(page);
+    await openMap(page);
+    await expect.poll(() => requests.length).toBe(1);
+
+    await page.evaluate((room) => history.pushState(null, "", `/?room=${room}`), id);
+    await expect.poll(() => requests.length, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(3000);
+    // The sheet ends a move in mid-air; a report then would ask for a zoom the flight is only passing.
+    expect(requests.map((query) => query.get("zoom"))).toEqual(["5", "5"]);
+  });
 });
 
 test("a small pan reuses the loaded pins instead of asking again", async ({ page }) => {

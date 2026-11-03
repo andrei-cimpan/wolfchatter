@@ -47,12 +47,14 @@ export function useFlyToRoom(selectedRoomId: string | null, target: FlyTarget | 
       flightDragged.current = true;
     },
     moveend: () => {
-      const zoom = flightZoom.current;
       // Only after a drag: a sheet resizing the map also ends a move in mid-air, and a flight
       // carries on through that. A drag is what stops a flight and leaves the map between zooms,
       // apart from a two-finger tap whose fingers do not move, which ends no move for this to see.
       // Real fingers nearly always move, and the next drag or zoom puts it right.
-      if (zoom === null || !flightDragged.current || Number.isInteger(map.getZoom())) return;
+      if (!flightDragged.current || Number.isInteger(map.getZoom())) return;
+      // Rounded when no zoom is known: a button's zoom starts a frame after its click, so its
+      // zoomstart can clear the zoom of a flight begun in between, which it does not stop.
+      const zoom = flightZoom.current ?? Math.round(map.getZoom());
       map.setZoom(zoom);
       flightZoom.current = zoom;
     },

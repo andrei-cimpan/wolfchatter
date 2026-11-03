@@ -6,6 +6,7 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { useMapItems } from "@/hooks/useMapItems";
 import { useRoom } from "@/hooks/useRoom";
 import { useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import { focusShiftPx, WIDE_SCREEN_QUERY } from "@/lib/map-focus";
 import { INITIAL_VIEW, tileConfigFromEnv } from "@/lib/map-config";
 import type { Bbox, MapItem } from "@/lib/types";
 import { nextViewportQuery, type ViewportQuery } from "@/lib/viewport";
@@ -83,6 +84,55 @@ function ClickToDraft({
   return null;
 }
 
+// A click has no keyboard equivalent otherwise. The map is focusable for Leaflet's arrow-key panning,
+// so Enter drops a pin where a selected room would land: the middle of what the card leaves clear.
+// A focused pin or bubble handles its own Enter, and the event reaches the map as well. Leaflet also
+// focuses the map on any press, so someone who typed a message and dragged the map may press Enter
+// to send it, which must not replace their room or move their draft. `:focus-visible` cannot tell
+// these apart: it can match after a drag too.
+function EnterToDraft({ onMapClick }: Pick<LeafletMapProps, "onMapClick">) {
+  const map = useMap();
+  const focusFromPointer = useRef(false);
+  useEffect(() => {
+    const container = map.getContainer();
+    container.setAttribute("role", "group");
+    container.setAttribute("aria-label", "Map. Arrow keys move it, and Enter drops a pin at its centre.");
+    let pressing = false;
+    const onPress = () => {
+      pressing = true;
+      focusFromPointer.current = true;
+    };
+    const onRelease = () => {
+      pressing = false;
+    };
+    const onFocus = () => {
+      if (!pressing) focusFromPointer.current = false;
+    };
+    container.addEventListener("pointerdown", onPress);
+    container.addEventListener("focus", onFocus);
+    window.addEventListener("pointerup", onRelease);
+    window.addEventListener("pointercancel", onRelease);
+    return () => {
+      container.removeEventListener("pointerdown", onPress);
+      container.removeEventListener("focus", onFocus);
+      window.removeEventListener("pointerup", onRelease);
+      window.removeEventListener("pointercancel", onRelease);
+    };
+  }, [map]);
+  useMapEvents({
+    keydown: ({ originalEvent: event }) => {
+      // Not a repeat: Discard and a bubble's Enter move the focus here while the key is still down.
+      if (event.key !== "Enter" || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (event.target !== map.getContainer() || focusFromPointer.current) return;
+      const { x, y } = map.getSize();
+      const shiftX = focusShiftPx(map.getZoom(), window.matchMedia(WIDE_SCREEN_QUERY).matches);
+      const { lat, lng } = map.containerPointToLatLng([x / 2 - shiftX, y / 2]);
+      onMapClick(lat, lng);
+    },
+  });
+  return null;
+}
+
 // The mobile sheet changes the map's height, and the panel beside it on a phone on its side the
 // map's width; Leaflet only notices window resizes on its own.
 function KeepSizeInSync() {
@@ -100,6 +150,8 @@ function TrackViewport({ onChange }: { onChange: (bounds: Bbox, zoom: number) =>
   const map = useMap();
   useEffect(() => {
     const report = () => {
+      // In mid-flight: a sheet resizing the map ends a move there. The landing reports instead.
+      if (!Number.isInteger(map.getZoom())) return;
       const bounds = map.getBounds();
       onChange(
         { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() },
@@ -158,6 +210,7 @@ export default function LeafletMap({ pinAnchor, draft, onMapClick, onDoubleClick
         onMapClick={onMapClick}
         onDoubleClickUndo={onDoubleClickUndo}
       />
+      <EnterToDraft onMapClick={onMapClick} />
       <KeepSizeInSync />
       <TrackViewport onChange={onViewChange} />
       <MapMarkers

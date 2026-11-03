@@ -35,11 +35,15 @@ export type DraftToSend = {
  * Creates a room from a draft and its first message, caches both so the panel shows them without a
  * refetch, refreshes the map's pins, and selects the room unless the user picked another one meanwhile.
  */
-export function useCreateRoom(onCreated: (room: Room, clickedLng: number, userMovedOn: boolean) => void) {
+export function useCreateRoom(
+  onCreated: (room: Room, clickedLng: number, userMovedOn: boolean) => void,
+  onAbandonedSendFailed: () => void,
+) {
   const queryClient = useQueryClient();
   // A ref, not `isPending`: a second Enter can land before React re-renders with the new state.
   const sendingRef = useRef(false);
   const picksRef = useRef(0);
+  const abandonedRef = useRef(false);
 
   const mutation = useMutation({
     mutationFn: ({ lat, lng, author, body }: CreateRoomVariables) =>
@@ -57,8 +61,9 @@ export function useCreateRoom(onCreated: (room: Room, clickedLng: number, userMo
       else selectRoom(room.id);
     },
     // Hook-level, not per-call: per-call callbacks are skipped once the observer moves on.
-    onSettled: () => {
+    onSettled: (_data, error) => {
       sendingRef.current = false;
+      if (error && abandonedRef.current) onAbandonedSendFailed();
     },
   });
 
@@ -66,6 +71,7 @@ export function useCreateRoom(onCreated: (room: Room, clickedLng: number, userMo
   function send(draft: DraftToSend, author: string, body: string, onSent: () => void) {
     if (sendingRef.current) return;
     sendingRef.current = true;
+    abandonedRef.current = false;
     mutation.mutate(
       {
         lat: draft.lat,
@@ -86,6 +92,14 @@ export function useCreateRoom(onCreated: (room: Room, clickedLng: number, userMo
     selectRoom(id);
   }
 
+  /**
+   * Back or Forward during a send: its form is gone, and a new one would be empty, so a failure has
+   * nothing to explain the error beside. Not on the selection, which Forward can put back as it was.
+   */
+  function abandonSend() {
+    abandonedRef.current = true;
+  }
+
   /** Forgets the last result. Not while sending: a reset would drop that send's `onSent`. */
   function clearResult() {
     if (!sendingRef.current) mutation.reset();
@@ -94,6 +108,7 @@ export function useCreateRoom(onCreated: (room: Room, clickedLng: number, userMo
   return {
     send,
     pick,
+    abandonSend,
     clearResult,
     /** For callbacks: true from the moment of sending, before React re-renders. */
     isSending: () => sendingRef.current,
