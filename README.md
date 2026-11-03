@@ -14,7 +14,7 @@ A real-time chat app built on a map. Click the map to drop a pin, and send the f
 
 **Improvements beyond the brief**
 
-- A stray click costs nothing: a room exists only once its first message is sent, and a draft can be moved or discarded.
+- A stray click costs nothing: a room exists only once its first message is sent, and a draft can be moved or discarded. This differs from mockup 3 on purpose: a second click moves the draft, and a second pin appears once the first room has its message.
 - Username remembered between visits.
 - Auto-scroll to the newest message, unless you have scrolled up to read; Submit disabled until both fields are filled.
 - The map flies to the selected room.

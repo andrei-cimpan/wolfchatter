@@ -65,7 +65,7 @@ The code is careful and well tested: every automated check passes, FR1 to FR8 ar
 - **Not exercised, for T7.4:** a clean clone; `docker compose --profile app up`; browsers other than Chromium; real phones (double-tap, on-screen keyboard); a real proxy or ALB; several app instances; restarting Postgres itself (the shared container was left alone, so recovery rests on `pg_terminate_backend` in e2e and on `postgres-message-source.test.ts`). `npm run dev` on port 3000 was not started by hand, but e2e runs the same command on 3100. CI results were not checked. The README's wording about this review (T7.3) can only be checked once the Resolution note is written.
 
 ## Resolution note
-Everything above this note is the reviewer's report, unedited. It was run by a fresh AI agent on commit 0adfdf8. Before triage, the two Majors and finding 8 were reproduced independently, and findings 4, 6, 10, 11 and 12 were checked against the code. I decided what to fix; each fix is one commit with "(review #N)" in its subject.
+Everything above this note is the reviewer's report, unedited. It was run by a fresh AI agent on commit 0adfdf8. Before triage, the two Majors and finding 8 were reproduced independently, and findings 4, 6, 10, 11 and 12 were checked against the code. I decided what to fix; each fix is one commit with "(review #N)" in its subject. The fixes came after this report, so it describes the code before them. They were checked by the tests and by the clean-clone run in T7.4, not by repeating this review.
 
 | # | Severity | Decision | What was done, or why not |
 |---|---|---|---|
