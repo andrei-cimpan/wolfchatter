@@ -125,7 +125,7 @@ The project was built docs-first with Claude.
 
 1. The PRD, design note, and task list were written before any code and committed first.
 2. `CLAUDE.md` gives the AI tooling the stack, commands, architecture rules, and a working loop: one task at a time, a plan before multi-file changes, tests with every change, and small conventional commits.
-3. A task in `docs/TASKS.md` counts as done only when lint, typecheck, and tests pass, plus its acceptance check where it has one. Each task got its own branch and pull request, and I merged them myself.
+3. A task in `docs/TASKS.md` counts as done only when lint, typecheck, and tests pass, plus its acceptance check where it has one. From T1 on, each task got its own branch and pull request, and I merged them myself.
 4. Pull requests were reviewed by a fresh AI agent that had not written the code. Its main findings were reproduced before I decided what to fix. What was left open is recorded in `docs/TASKS.md` or in Known limitations in `docs/DESIGN.md`.
 5. The final code was reviewed with a dedicated skill (`.claude/skills/code-review/`), run in a fresh session. The report is in `docs/REVIEW.md`, together with a note on what I fixed and what I chose not to fix.
 
