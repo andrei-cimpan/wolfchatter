@@ -1,0 +1,16 @@
+# Keeps secrets and local state out of the build context and the image.
+.env*
+!.env.example
+.git
+.github
+.claude
+.next
+node_modules
+coverage
+test-results
+playwright-report
+blob-report
+*.tsbuildinfo
+.DS_Store
+docs
+e2e

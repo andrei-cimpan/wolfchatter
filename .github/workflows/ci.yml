@@ -40,6 +40,35 @@ jobs:
       - run: npm run db:migrate
       - run: npm test
 
+  # Nothing else builds the image, and shutdown only behaves this way under the production server.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose --profile app up --build --wait --wait-timeout 300
+      - name: The image serves the app and reports healthy
+        run: |
+          curl --fail --silent --show-error http://localhost:3000/health | grep '"status":"ok"'
+          curl --fail --silent --show-error --output /dev/null http://localhost:3000/
+      - name: An open stream does not hold up shutdown
+        run: |
+          room=$(curl --fail --silent --show-error http://localhost:3000/api/rooms \
+            --header 'content-type: application/json' --data '{"lat":44.43,"lng":26.1}' | jq --raw-output .id)
+          curl --silent --no-buffer "http://localhost:3000/api/rooms/$room/stream" > /dev/null &
+          sleep 1
+          # A longer timeout than the app's own deadline, so 137 means the app did not exit by itself.
+          docker compose --profile app stop --timeout 30 app
+          test "$(docker inspect --format '{{.State.ExitCode}}' wolfchatter-app-1)" = 143
+          wait
+      - name: Health reports a database that is down
+        run: |
+          docker compose --profile app start app
+          timeout 30 sh -c 'until curl --fail --silent http://localhost:3000/health; do sleep 1; done'
+          docker compose stop db
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:3000/health)" = 503
+      - if: failure()
+        run: docker compose --profile app logs
+
   e2e:
     runs-on: ubuntu-latest
     services:
