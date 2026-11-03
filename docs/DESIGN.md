@@ -156,7 +156,7 @@ Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The he
 | 415 | `unsupported_media_type` | A POST whose `Content-Type` is not `application/json` (parameters such as `; charset=utf-8` are fine, case is ignored; `+json` types are rejected). Checked before the body is read. |
 | 404 | `room_not_found` | Unknown or malformed room id. |
 | 429 | `rate_limited` | Too many POSTs from one IP (see Rate limiting). Sent with `Retry-After` in seconds. |
-| 500 | `internal_error` | Anything unexpected. The cause is logged to stdout, never returned. |
+| 500 | `internal_error` | Anything unexpected. The cause is logged to stderr, never returned. |
 
 ### Rate limiting
 
