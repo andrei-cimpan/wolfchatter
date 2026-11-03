@@ -83,6 +83,43 @@ test("a cluster shows its count, and clicking it zooms into its cell", async ({ 
   await expect(page).not.toHaveURL(/\?room=/);
 });
 
+// Mercator stretches a cell near the poles until it fits no higher zoom, and on a short map not even
+// its own: at lat 83 with the sheet raised, fitting it alone zoomed out.
+for (const { place, viewport, south, firstWest } of [
+  { place: "at lat 80", viewport: { width: 1280, height: 720 }, south: 78.75, firstWest: -146.25 },
+  {
+    place: "at lat 83 on a phone with the sheet raised",
+    viewport: { width: 375, height: 667 },
+    south: 81.5625,
+    firstWest: -90,
+  },
+]) {
+  test(`clicking a cluster ${place} zooms in`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize(viewport);
+    // Each attempt gets its own zoom-5 cell, and the two places are too far apart to share a view.
+    const attempt = testInfo.repeatEachIndex * 2 + testInfo.retry;
+    const cell = 360 / 2 ** 5 / 4;
+    const west = firstWest + 40 * cell * attempt;
+    const post = async (lat: number, lng: number) => {
+      const created = await request.post("/api/rooms", { data: { lat, lng } });
+      expect(created.status()).toBe(201);
+      return (await created.json()) as { id: string };
+    };
+    for (const part of [0.25, 0.5, 0.75]) await post(south + cell * part, west + cell * part);
+    const opened = await post(south + cell / 2, west + cell * 1.5);
+
+    const requests = countViewportRequests(page);
+    await page.goto(`/?room=${opened.id}`);
+    const bubble = page.getByRole("button", { name: "3 chatrooms", exact: true });
+    await expect(bubble).toBeInViewport();
+    await expect.poll(() => requests.at(-1)?.get("zoom")).toBe("5");
+    await bubble.click();
+
+    await expect.poll(() => requests.at(-1)?.get("zoom")).toBe("6");
+    await expect(bubble).toHaveCount(0);
+  });
+}
+
 test("rooms close together cluster when zoomed out, through the real API, and a click expands them", async ({
   page,
   request,
