@@ -87,13 +87,14 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T7.1** README: prerequisites, run locally, tests, improvements made, v2 plan.
 - [x] **T7.2** `docs/INFRA.md`: component, service, why, monthly cost for staging and production, with assumptions.
   *Not built, since deployment is out of scope for v1; see Deployment settings in `INFRA.md`:* the RDS CA bundle in the image, and `assetPrefix` for CloudFront.
-- [ ] **T7.3** Review skill in `.claude/`, run on the final code, commit `docs/REVIEW.md` (report) and the fixed/not-fixed note.
-  *Carried over from T7.1:* the README already links to `docs/REVIEW.md` and describes this review (How I worked with AI). Check that the wording matches what was done.
-  *Carried over from the PR #21 review:*
+- [x] **T7.3** Review skill in `.claude/`, run on the final code, commit `docs/REVIEW.md` (report) and the fixed/not-fixed note.
+  *Carried over from T7.1:* done: the README's wording now matches what was done (a fresh agent, not a fresh session).
+  *Carried over from the PR #21 review, kept as they are; see the Resolution note in `REVIEW.md`:*
   - A failed first message after Back and Forward says nothing to the user; see Known limitations in `DESIGN.md`. Kept for now, since Back already discards a draft's text.
   - `flightDragged` in `useFlyToRoom` stays true after a drag until the next flight, so a sheet resizing the map during a pinch could call `setZoom` mid-gesture. From reading only, not reproduced; it targets the zoom the pinch would snap to anyway. Clearing the flag once its `moveend` is handled would remove the case.
 - [ ] **T7.4** Final check from a clean clone, then email the repo link before the deadline.
   *Moved from T6.1, needs a real phone:* double-tap the map, which is tested only with dispatched events, and send a first message with the keyboard open.
+  *Moved from the final review (#6), needs a real phone:* try tapping pins, which are 25x41 px, and decide whether they need a larger hit area, since a tap that misses closes an open room.
 
 ## 8. v2 (separate branch, only after v1 is complete)
 

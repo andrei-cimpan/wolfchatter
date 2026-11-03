@@ -1272,3 +1272,36 @@ test.describe("narrow screen", () => {
     expect(close?.height).toBeGreaterThanOrEqual(44);
   });
 });
+
+test.describe("past the edge of the world", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test("neither a click nor Enter there drops a draft, whose pin could not be drawn where it was asked", async ({
+    page,
+  }) => {
+    const created = await page.request.post("/api/rooms", { data: { lat: 85, lng: 10 } });
+    const { id, title } = (await created.json()) as { id: string; title: string };
+    const map = page.locator(".leaflet-container");
+    await openMap(page, `/?room=${id}`);
+    await expect(pin(page, title)).toBeInViewport();
+    await page.waitForTimeout(1500);
+
+    // Six presses of 80 px put the map's centre well above the edge, which starts just above the pin.
+    await map.focus();
+    for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowUp");
+    await page.waitForTimeout(800);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(500);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(roomTitle(page)).toHaveText(title);
+
+    for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowDown");
+    await page.waitForTimeout(800);
+    await map.click({ position: { x: 200, y: 50 } });
+    await page.waitForTimeout(800);
+    await expect(draftPin(page)).toHaveCount(0);
+    await expect(roomTitle(page)).toHaveText(title);
+
+    await startDraftAt(page, 200, 600);
+  });
+});

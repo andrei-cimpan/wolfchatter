@@ -97,8 +97,3 @@ export const messageSchema = z.object({
   body: z.string(),
   createdAt: z.string(),
 });
-
-export type CreateRoomInput = z.output<typeof createRoomSchema>;
-export type PostMessageInput = z.output<typeof postMessageSchema>;
-export type MapItemsQuery = z.output<typeof mapItemsQuerySchema>;
-export type ListMessagesQuery = z.output<typeof listMessagesQuerySchema>;

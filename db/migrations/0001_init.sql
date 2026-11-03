@@ -20,7 +20,7 @@ create table messages (
 create index messages_room_created_idx on messages (room_id, created_at);
 create index rooms_location_idx on rooms (lat, lng);
 
--- One trigger keeps the pin badge count and real-time fan-out in step with every insert,
+-- One trigger keeps message_count and real-time fan-out in step with every insert,
 -- whichever app instance wrote the row.
 create function on_message_insert() returns trigger as $$
 begin

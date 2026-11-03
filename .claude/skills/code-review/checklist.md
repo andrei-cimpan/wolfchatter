@@ -4,7 +4,7 @@ Work through each category. Report only real findings.
 
 ## 1. Correctness
 
-- Creating a room stores the clicked lat/lng exactly, and the panel switches to it.
+- A click drops a draft that saves nothing; the first message creates the room at the clicked lat/lng exactly, and the panel switches to it.
 - Clicking a marker selects the right room; `?room=<id>` restores it on reload, even when the pin is outside the viewport.
 - Messages are ordered correctly and paging with `before` / `after` never skips or repeats a message.
 - Viewport query: bounds that cross the antimeridian, zoomed-out world views, and bounds beyond +/-180 or +/-90 are handled.
@@ -68,7 +68,7 @@ Work through each category. Report only real findings.
 - Form fields have labels; Submit is keyboard-reachable; focus is sensible after posting.
 - The message list auto-scrolls to new messages without fighting the user when they have scrolled up.
 - Loading, empty, and error states exist for rooms and messages.
-- The layout works at 375 px wide (bottom sheet) and on desktop (right column); the map resizes correctly when the sheet opens or closes; dragging the map on touch never creates a room.
+- The layout works at 375 px wide (bottom sheet), on desktop (card on the right), and on a phone on its side (room beside the map); the map resizes correctly when the sheet opens or closes; dragging the map on touch never drops a draft.
 - Color contrast and touch targets (at least 44 px) are reasonable on a small screen.
 
 ## 9. Docs and operations

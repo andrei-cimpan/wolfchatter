@@ -21,6 +21,11 @@ const VIEWPORT_DEBOUNCE_MS = 250;
 const DOUBLE_CLICK_WAIT_MS = 500;
 const EMPTY_MAP_CLICK_WAIT_MS = 250;
 
+// Leaflet's projection stops here (its SphericalMercator.MAX_LATITUDE, missing from the types), but
+// the map can be panned past it. A pin there would be drawn at this edge, away from where it was put.
+const MAX_MAP_LATITUDE = 85.0511287798;
+const isPastWorldEdge = (lat: number) => Math.abs(lat) > MAX_MAP_LATITUDE;
+
 export interface LeafletMapProps {
   pinAnchor: PinAnchor | null;
   draft: DraftPosition | null;
@@ -69,6 +74,7 @@ function ClickToDraft({
       clearTimeout(timerRef.current);
       if (event.originalEvent.detail > 1) return;
       const { lat, lng } = event.latlng;
+      if (isPastWorldEdge(lat)) return;
       timerRef.current = setTimeout(() => {
         droppedByLastClick.current = true;
         onMapClick(lat, lng);
@@ -127,7 +133,7 @@ function EnterToDraft({ onMapClick }: Pick<LeafletMapProps, "onMapClick">) {
       const { x, y } = map.getSize();
       const shiftX = focusShiftPx(map.getZoom(), window.matchMedia(WIDE_SCREEN_QUERY).matches);
       const { lat, lng } = map.containerPointToLatLng([x / 2 - shiftX, y / 2]);
-      onMapClick(lat, lng);
+      if (!isPastWorldEdge(lat)) onMapClick(lat, lng);
     },
   });
   return null;

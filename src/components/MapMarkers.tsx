@@ -67,13 +67,11 @@ function ClusterMarker({ cluster, zoom, centerLng }: { cluster: Cluster; zoom: n
   );
   const zoomIn = () => {
     const { west, south, east, north } = clusterCellBounds(cluster, zoom, centerLng);
-    map.fitBounds(
-      [
-        [south, west],
-        [north, east],
-      ],
-      { maxZoom: CLUSTER_MAX_ZOOM },
-    );
+    const cell = L.latLngBounds([south, west], [north, east]);
+    // Not fitBounds alone: Mercator stretches a cell near the poles until it fits no higher zoom, and
+    // the click would do nothing or zoom out. Some of its rooms may then start off-screen.
+    const target = Math.max(zoom + 1, map.getBoundsZoom(cell));
+    map.setView(cell.getCenter(), Math.min(target, CLUSTER_MAX_ZOOM));
   };
   // The zoom replaces this bubble, and focus on a removed element falls back to the page's start.
   // The map container is focusable (Leaflet's keyboard panning), so keyboard users stay on the map.

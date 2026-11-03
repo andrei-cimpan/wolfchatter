@@ -1,6 +1,6 @@
 # Wolfchatter: Technical PRD
 
-Draft v0.1 · 31 Oct 2026 · Status: pre-build
+v1 · 3 Nov 2026 · Status: built
 
 ## 1. Overview
 
@@ -32,7 +32,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 
 **Stack.** Next.js (App Router) with TypeScript and Tailwind. react-leaflet with the default OpenStreetMap tiles, kept behind a config so the basemap is swappable. Zod for input validation.
 
-**Cloud-portable by design.** Dockerfile for the app, `docker compose up` for local Postgres, all config via environment variables, a stateless app, logs to stdout, and a `/health` endpoint. The deployment target is described in `INFRA.md`.
+**Cloud-portable by design.** Dockerfile for the app, `docker compose up` for local Postgres, all config via environment variables, a stateless app, logs to stdout and stderr, and a `/health` endpoint. The deployment target is described in `INFRA.md`.
 
 **Data model (Postgres).**
 
@@ -45,7 +45,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 
 **Viewport loading and clustering.** The map requests only the pins in view (`bbox` and `zoom`). The server groups rooms into grid cells of roughly 64 px at that zoom and returns one cluster (count and centre) per crowded cell, and individual rooms elsewhere. At zoom 16 and above rooms are never clustered.
 
-**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime`). v1 provides `PostgresChatRepository`. v2 adds `SupabaseChatRepository` without changing UI code.
+**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `createRoomWithMessage`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime`). v1 provides `PostgresChatRepository`. v2 adds `SupabaseChatRepository` without changing UI code.
 
 **API (REST, JSON).**
 

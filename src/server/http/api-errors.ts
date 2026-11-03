@@ -32,8 +32,8 @@ export function rateLimited(retryAfterSeconds: number): Response {
   return response;
 }
 
-// The largest valid input, a 1000-character message, is under 8 KB even with every character
-// escaped as \uXXXX, so 16 KB leaves headroom while stopping one request from making the server
+// The largest valid input, a 1000-character message, is about 12 KB even with every character an
+// emoji escaped as two \uXXXX, so 16 KB leaves headroom while stopping one request from making the server
 // buffer and parse megabytes.
 export const JSON_BODY_MAX_BYTES = 16 * 1024;
 

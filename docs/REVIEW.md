@@ -1,0 +1,95 @@
+# Code review report
+
+Reviewed: 0adfdf8 on 2026-11-03
+
+## Summary
+The code is careful and well tested: every automated check passes, FR1 to FR8 are implemented and tested, and I found no data loss, no injection, and no architecture violation. The two most important risks are both reproduced: clicking a cluster does not zoom in at high latitudes (and zooms out in one case), and with six tabs holding a room open over HTTP/1.1, the only protocol v1 runs on, the next tab of the site never loads. There are no Blockers, so it is ready to submit once the author has triaged these findings; the checks left for T7.4 are listed under Clean areas.
+
+## Automated checks
+| Check | Result | Notes |
+|---|---|---|
+| `npm run lint` | Pass | Exit 0, no output. |
+| `npm run typecheck` | Pass | Exit 0. |
+| `npm test` | Pass | 40 files, 556 tests, against real Postgres. |
+| `npm run e2e` | Pass | 149 of 149 in 2.2 min, Chromium only, on port 3100. No failures to quote. |
+| `npm audit --omit=dev` | Pass | "found 0 vulnerabilities". The full tree reports 16 moderate, none in production dependencies. |
+| `npm ci` | Pass | Warns that `fsevents` and `unrs-resolver` have install scripts not covered by `allowScripts`. Lint and tests work regardless; recheck in T7.4 as already planned. |
+| `npm run build` | Pass | Extra check, as CI runs it. |
+| Docker image | Pass | Built with `docker build` under a review tag. `/health`, `/favicon.ico` and `/` answered 200, `node scripts/migrate.mts` ran in the image, and `docker stop` with one open stream took 0.27 s, exit 143. |
+| `docker compose --profile app up` | Not run | Its project name is fixed and shared with the `wolfchatter-db-1` container every checkout uses. The image and its commands were run directly instead. |
+| `scripts/check-docker-shutdown.sh` | Not run | It drives Compose, as above. The case of a stream that reopens on its connection was therefore not exercised. |
+
+## Requirements traceability
+| Requirement | Implemented in | Tested by | Status |
+|---|---|---|---|
+| FR1 Empty map and prompt | `src/components/RoomPanel.tsx`, `src/components/LeafletMap.tsx` | `e2e/layout.spec.ts:21`, `:74` | Met |
+| FR2 Draft pin, first message creates the room, move, discard, double-click, Enter | `src/components/ChatShell.tsx`, `src/components/LeafletMap.tsx` (`ClickToDraft`, `EnterToDraft`), `src/hooks/useCreateRoom.ts`, `src/app/api/rooms/route.ts` | `e2e/rooms.spec.ts:175`, `:422`, `:497`, `:691`, `:717`; `src/app/api/rooms/route.test.ts`; `postgres-chat-repository.test.ts:59` | Met; see 5. Real double-tap is T7.4 |
+| FR3 Pin switches the panel | `src/components/MapMarkers.tsx`, `src/hooks/useSelectedRoom.ts` | `e2e/rooms.spec.ts:200`, `:604` | Met; see 7 |
+| FR4 Username and message, shown with author and time | `src/components/MessageForm.tsx`, `src/components/MessageList.tsx`, `src/app/api/rooms/[id]/messages/route.ts` | `e2e/messages.spec.ts:38`, `:67`; `src/app/api/rooms/[id]/messages/route.test.ts` | Met |
+| FR5 Persistence | `src/server/repositories/postgres-chat-repository.ts`, `db/migrations/0001_init.sql` | `e2e/persistence.spec.ts:61`, `:159` | Met |
+| FR6 Real-time messages | `src/server/realtime/hub.ts`, `src/server/repositories/postgres-message-source.ts`, `src/app/api/rooms/[id]/stream/route.ts`, `src/hooks/useRoomStream.ts` | `e2e/messages.spec.ts:254`, `:273`, `:466`; `src/server/realtime/hub.test.ts`; `src/server/http/room-event-stream.test.ts`; `postgres-message-source.test.ts` | Met; see 2 |
+| FR7 Viewport loading, clusters, click zooms in | `src/server/repositories/postgres-chat-repository.ts` (`listMapItems`), `src/lib/viewport.ts`, `src/hooks/useMapItems.ts`, `src/components/MapMarkers.tsx` | `e2e/viewport.spec.ts:32`, `:53`, `:86`; `postgres-chat-repository.test.ts:239` to `:344` | Not met at high latitudes; see 1 |
+| FR8 Responsive layout | `src/components/RoomPanel.tsx`, `src/app/globals.css` | `e2e/layout.spec.ts:21`, `:74`, `:296`, `:403`; `e2e/rooms.spec.ts:1138` | Met; see 8. Real phones are T7.4 |
+
+## Findings
+| # | Severity | Confidence | Location | Problem and scenario | Suggested fix |
+|---|---|---|---|---|---|
+| 1 | Major | High, reproduced | `src/components/MapMarkers.tsx:68` | FR7: a cluster click can fail to zoom in. `fitBounds` fits a cell that is square in degrees, and Mercator stretches it vertically by about sec(latitude), so near the poles the cell no longer fits at a higher zoom. Measured from zoom 5, on a map 1280x720: lat 45 and lat 70 went to 7, lat 80 stayed at 5 with the bubble still there. On a 375x667 phone with the sheet open (map 334 px high): lat 60 went to 6, lat 69 (the latitude of Tromso) stayed at 5, lat 83 went **out** to 4. With the sheet closed (map 610 px), lat 80 stayed at 5. The click looks broken; the zoom buttons still work. No test covers it: `e2e/viewport.spec.ts:96` moves its rooms towards the equator because of this stretching. | Never end below the next zoom: `map.setView(center, Math.max(map.getZoom() + 1, map.getBoundsZoom(bounds)))`, capped at `CLUSTER_MAX_ZOOM`. Add an e2e case at high latitude. |
+| 2 | Major | High, reproduced in Chromium | `src/lib/room-stream.ts:43`, `src/hooks/useRoomStream.ts` | Every tab with a room open holds an `EventSource` for as long as it is open, hidden or not, and browsers allow six HTTP/1.1 connections per host. With six tabs on a room, a seventh tab's `page.goto` timed out after 20 s with nothing shown and no error. Closing one tab released it: a new tab then loaded in 440 ms. Both ways to run v1 (`npm run dev`, Docker) serve HTTP/1.1. The ALB in `INFRA.md` offers HTTP/2, which should avoid this, but that was not exercised. | Close the stream while `document.hidden` and reopen it on `visibilitychange`; `ready` already runs the catch-up, so nothing is lost. Add the limit to Known limitations if it is left as it is. |
+| 3 | Minor | High, reproduced | `src/server/http/client-ip.ts:16` | Already documented, but it fails the checklist as written. Against the production image with no proxy, 12 POSTs gave 201 ten times then 429, while 40 POSTs each with a different `X-Forwarded-For` all gave 201. That is every documented way to run v1, including the Compose profile that publishes port 3000 under a README line saying "Ready to deploy". Behind an appending proxy the rightmost entry is the right choice, so the planned ALB deployment should be fine (not exercised). Minor because nothing is exposed today. | Say in the README that the image must not be exposed without a proxy, or add a small reverse proxy to the Compose `app` profile. |
+| 4 | Minor | High, from the code | `src/lib/schemas.ts:57`, `src/app/api/rooms/route.ts:34` | Already documented, and I disagree that it should stay. PRD FR2 and its usability list say a room is saved only when its first message is sent, and `DESIGN.md` gives "no way to delete a room" as the reason. Yet a `curl` with `{lat, lng}` adds an empty, undeletable room to the shared map, up to 10 a minute per IP. The app never uses this path, so it exists only for callers outside the app. | Make `firstMessage` required and remove `createRoom`; change the tests and `scripts/check-docker-shutdown.sh`, which use it. |
+| 5 | Minor | High, reproduced | `src/components/LeafletMap.tsx:71` | The map can be panned past the edge of the Mercator world, and a click there is taken as it is. With the map near lat 85, a click in the band above the world sent `lat: 86.14797...`. Leaflet clamps projection to about 85.05, so the pin is drawn at that edge rather than where it was clicked, and the stored position is one no pin ever shows. | Ignore clicks beyond Leaflet's `SphericalMercator.MAX_LATITUDE`, or set vertical `maxBounds` on the map. |
+| 6 | Minor | High, measured | `src/components/MapMarkers.tsx:27`, `docs/DESIGN.md:60` | `DESIGN.md` says touch targets are at least 44 px, but a room pin is 25x41 px (measured). A tap that just misses a pin counts as a click on the map, which closes an open room and drops a draft, so the miss is visible and costly on a phone. Real-phone feel is for T7.4. | Enlarge the hit area with a transparent wrapper or `divIcon`, or correct the doc. |
+| 7 | Minor | Medium; positions measured, the click itself not | `src/components/MapMarkers.tsx` (room markers), `src/lib/map-grid.ts` | Two rooms at the identical point never separate. Below zoom 16 they form a cluster; at zoom 16 and above clustering stops, and at zoom 18 their pins had identical boxes, with no bubble. The lower pin should then be unreachable by pointer, since nothing can move them apart; Tab still reaches it. Identical points are plausible: Enter drops a draft at the centre of the map, so the same default view and window size give the same coordinates. | At maximum zoom, list the rooms at a point when one is clicked, or offset markers that share a position. |
+| 8 | Minor | High, reproduced | `src/hooks/useFlyToRoom.ts:24`, `src/lib/map-focus.ts` | The pin's offset for the card is applied only when the selection changes. Rotating a large phone across the 768 px line keeps it: a room opened at 844x390 had its pin at x=212, and after rotating to 390x844 at x=-15, so most of the 25 px pin is off the left edge. `e2e/layout.spec.ts:354` rotates only below 768 px. | Re-centre the selected pin when `WIDE_SCREEN_QUERY` changes, and add that case to the rotation test. |
+| 9 | Minor | High, reproduced | `src/server/http/rate-limit.ts:83`, `:99` | The comment says a typo in a limit "fails at startup". With `RATE_LIMIT_ROOMS_PER_MINUTE=abc` the production container starts and stays up, `/health` answers 200, and `GET` and `POST /api/rooms` answer 500 with an empty body, because the module throws when the route first loads, outside `withErrorHandling`. So a typo in a POST limit also takes away the map's pins, while the instance reports healthy. | Validate both limits in `src/instrumentation.ts` so the process exits at boot, and correct the comment and `docs/DESIGN.md:161` to match. |
+| 10 | Minor | High, from the code | `docs/DESIGN.md:26`, `docs/DESIGN.md:76`, `docs/PRD.md:3`, `docs/PRD.md:48` | Docs that contradict the code. `useRooms` does not exist (it is `useMapItems`). `ChatRepository` has `createRoomWithMessage`, which the interface in `DESIGN.md` and the method list in the PRD both leave out, although every room the app creates goes through it. The PRD still says "Draft v0.1 ... Status: pre-build". | Update the three places. |
+| 11 | Nit | High | `e2e/rooms.spec.ts`, `e2e/viewport.spec.ts`, `e2e/messages.spec.ts` | 43 fixed `waitForTimeout` calls, many before asserting that nothing happened, which can pass too early on a slow machine. No flake in my one full run. | Wait on a signal where one exists. |
+| 12 | Nit | High | `src/lib/schemas.ts:101` to `:104` | `CreateRoomInput`, `PostMessageInput`, `MapItemsQuery` and `ListMessagesQuery` are exported and used nowhere. | Delete them. |
+| 13 | Nit | High, reproduced | `src/lib/schemas.ts:56` | `lng` has no upper bound, so `lng: 1e308` is accepted and stored as 0. Precision is gone long before that, so the room lands somewhere the caller did not ask for. | Reject values beyond a sane range, such as ±1e6. |
+| 14 | Nit | High | `db/migrations/0001_init.sql:23`, `src/server/http/api-errors.ts:35` | Stale comments. "Pin badge count": no badge exists, and the UI does not use the count. "Under 8 KB even with every character escaped": an escaped emoji takes 12 bytes, so the worst case is about 12 KB. The 16 KB limit itself is still fine. | Reword them. |
+| 15 | Nit | High | `docs/DESIGN.md:155`, `docs/PRD.md:35` | The docs say errors and logs go to stdout, but the app logs errors with `console.error`, which writes to stderr. Containers collect both. | Say "stdout and stderr". |
+| 16 | Nit | Medium, calculated | `src/app/globals.css:65`, `:67` | White on `#2a81cb` is about 4.1:1 for the cluster count, which is bold at about 15 px in the smallest bubble, under the 4.5:1 AA asks for at that size. | Use a slightly darker blue. |
+
+## Clean areas
+- **Correctness:** clean apart from 1, 5 and 7. Paging, ordering, antimeridian and out-of-range bounds, cluster counts, zoom 16, `message_count`, and blank input on client and server all held; only the API-level cases were probed by hand, and the rest rest on the tests.
+- **Real-time:** clean apart from 2. Against the production image an event arrived 7 ms after the POST, with no leak from another room, no compression on the stream, and a heartbeat within 30 s. A worst-case payload (control characters, which `row_to_json` escapes) still fit `NOTIFY`. Listener cleanup rests on unit tests; memory growth was not measured.
+- **Security:** clean apart from 3 and 13. No `dangerouslySetInnerHTML`, all SQL parameterized (constants only are interpolated), no secrets in the tree or in history for the patterns searched, generic error bodies, 0 production advisories.
+- **Architecture and maintainability:** clean apart from 12. `pg` is imported in application code only under `src/server/repositories/`, and no `any` or global store. No unused dependencies by reading `package.json`; unused exports were checked with an ad hoc script, because `knip` could not be fetched here.
+- **AI-specific failure modes:** clean apart from the comments in 9 and 14. `next.config.ts` options exist in the installed Next's schema, and the `pg` TLS claim in `INFRA.md` matches `pg-connection-string` 2.14.1.
+- **Tests:** clean apart from 11 and the missing cases noted in 1 and 8. Every FR has a test, repository tests use real Postgres, API tests cover success, 400, 404 and 429, and the required e2e journeys exist.
+- **Performance:** clean. With 200k rooms and one room of 200k messages, the latest page and both cursor queries use `messages_room_created_idx` and take under 1 ms. The city and zoom 16 map queries use `rooms_location_idx`, though the rooms were spread over the world and those small windows matched no rows, so that shows the plan and not the time under load. The world view is a sequential scan at 99 ms, which the documented PostGIS step covers. Results are capped, and debouncing and cache reuse are tested.
+- **Usability and accessibility:** clean apart from 6, 8 and 16. Real OpenStreetMap tiles loaded in screenshots at 1280x720 and 375x667. The desktop room card matches mockup 2 (title, message rows, username, message and Submit); I did not compare mockups 1, 3 and 4 by eye. The basemap differs from the mockups' watercolor, as documented.
+- **Docs and operations:** clean apart from 9, 10 and 15. `INFRA.md` matches the code and its arithmetic adds up.
+- **Already documented:** I reviewed Known limitations in `DESIGN.md` and the open notes in `TASKS.md`. Only 3 and 4 deserve findings; I agree with leaving the others as they are, though the `flightDragged` note in T7.3 was read, not reproduced.
+- **Not exercised, for T7.4:** a clean clone; `docker compose --profile app up`; browsers other than Chromium; real phones (double-tap, on-screen keyboard); a real proxy or ALB; several app instances; restarting Postgres itself (the shared container was left alone, so recovery rests on `pg_terminate_backend` in e2e and on `postgres-message-source.test.ts`). `npm run dev` on port 3000 was not started by hand, but e2e runs the same command on 3100. CI results were not checked. The README's wording about this review (T7.3) can only be checked once the Resolution note is written.
+
+## Resolution note
+Everything above this note is the reviewer's report, unedited. It was run by a fresh AI agent on commit 0adfdf8. Before triage, the two Majors and finding 8 were reproduced independently, and findings 4, 6, 10, 11 and 12 were checked against the code. I decided what to fix; each fix is one commit with "(review #N)" in its subject.
+
+| # | Severity | Decision | What was done, or why not |
+|---|---|---|---|
+| 1 | Major | Fixed | A cluster click now always goes at least one zoom level up. New e2e tests at lat 80 and at lat 83 on a phone failed first (zoom stayed at 5, and went out to 4). Near the poles some of the cell's rooms can start off-screen. |
+| 2 | Major | Fixed, in part | A hidden tab now holds no stream and catches up when shown. With six hidden tabs a seventh loaded in about 0.1 s, where before it had not loaded after 15 s. Six *visible* windows still block a seventh; this is in Known limitations. HTTP/2 at a load balancer should remove it, which was not tested. Tabs were hidden by simulating the browser's visibility state, not by real tab switching. |
+| 3 | Minor | Docs only | The README now warns against exposing the image without a proxy. A proxy in Compose would add a moving part for a case that is not deployed. |
+| 4 | Minor | Won't fix | Removing the path changes the API and the tests and script that use it, this late, to stop something a direct API call can do within the rate limit. Stays in Known limitations. |
+| 5 | Minor | Fixed | A click or Enter past the edge of the map's world drops nothing. New e2e test, which also fails when the click check alone is removed. |
+| 6 | Minor | Doc corrected, decision deferred | `DESIGN.md` no longer claims 44 px for pins. Whether they need a larger hit area is decided on a real phone in T7.4. |
+| 7 | Minor | Won't fix | Rare, Medium confidence, and the fix is a new interaction. Added to Known limitations. |
+| 8 | Minor | Won't fix | Small case, and the fix touches `useFlyToRoom`, whose timing has been the most fragile part of the map. Added to Known limitations. |
+| 9 | Minor | Fixed, beyond the suggestion | The app now exits with code 1 at startup. Loading the limits in `instrumentation.ts` was not enough: run against the production server, Next logged the error and went on listening, so the hook exits explicitly. |
+| 10 | Minor | Fixed | Docs updated. |
+| 11 | Nit | Won't fix | No flakes seen; rewriting 43 waits this late is riskier than leaving them. |
+| 12 | Nit | Fixed | Unused types removed. |
+| 13 | Nit | Won't fix | Reachable only by calling the API directly, and the only harm is a misplaced room. |
+| 14 | Nit | Fixed | Comments corrected. |
+| 15 | Nit | Fixed | Docs now say stderr where errors are logged. |
+| 16 | Nit | Fixed | The bubble is now `#2577c0`, about 4.7:1 with white text (calculated). |
+
+**Open notes I kept as they are:**
+
+- A failed first message after Back and Forward says nothing to the user. It is rare, and Back already discards a draft's text. In Known limitations.
+- `flightDragged` in `useFlyToRoom` stays true after a drag. It was never reproduced, the reviewer only read it, and its effect targets the zoom a pinch would snap to anyway.
+- Any 400 on the message form shows the same text. The form cannot reach this today, because it checks with the API's own schema first.
+
+**Not exercised by this review:** a clean clone, `docker compose --profile app up`, other browsers, and real phones are left for T7.4; CI runs `scripts/check-docker-shutdown.sh`. A real ALB and several app instances were not exercised, since nothing is deployed.

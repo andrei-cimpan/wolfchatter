@@ -53,6 +53,33 @@ function connect(random = () => 1): () => void {
   });
 }
 
+class FakePage {
+  hidden = false;
+  listeners: (() => void)[] = [];
+  addEventListener(_type: "visibilitychange", listener: () => void): void {
+    this.listeners.push(listener);
+  }
+  removeEventListener(_type: "visibilitychange", listener: () => void): void {
+    this.listeners = this.listeners.filter((other) => other !== listener);
+  }
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+function connectOn(page: FakePage): () => void {
+  return connectRoomStream(ROOM, handlers, {
+    createEventSource: (url) => {
+      const source = new FakeEventSource(url);
+      sources.push(source);
+      return source;
+    },
+    random: () => 1,
+    page,
+  });
+}
+
 /** How long until the next EventSource opens, in steps of 100 ms. */
 function waitForNextSource(): number {
   const before = sources.length;
@@ -163,5 +190,57 @@ describe("connectRoomStream", () => {
     const disconnectAgain = connect();
     disconnectAgain();
     expect(sources[1]!.closed).toBe(true);
+  });
+
+  describe("while the tab is hidden", () => {
+    it("closes the stream, and opens a new one when the tab returns", () => {
+      const page = new FakePage();
+      connectOn(page);
+      page.setHidden(true);
+      expect(sources[0]!.closed).toBe(true);
+
+      page.setHidden(false);
+      expect(sources).toHaveLength(2);
+      sources[1]!.emit("ready", "{}");
+      expect(handlers.onReady).toHaveBeenCalledOnce();
+    });
+
+    it("opens no stream for a tab opened in the background until it is shown", () => {
+      const page = new FakePage();
+      page.hidden = true;
+      connectOn(page);
+      expect(sources).toHaveLength(0);
+
+      page.setHidden(false);
+      expect(sources).toHaveLength(1);
+    });
+
+    it("cancels a pending retry, and returns with the shortest wait", () => {
+      const page = new FakePage();
+      connectOn(page);
+      sources[0]!.fail();
+      vi.advanceTimersByTime(STREAM_RETRY_MIN_MS);
+      sources[1]!.fail();
+      page.setHidden(true);
+      vi.advanceTimersByTime(STREAM_RETRY_MAX_MS);
+      expect(sources).toHaveLength(2);
+
+      page.setHidden(false);
+      expect(sources).toHaveLength(3);
+      sources[2]!.fail();
+      expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS);
+    });
+
+    it("opens nothing after being disconnected", () => {
+      const page = new FakePage();
+      const disconnect = connectOn(page);
+      page.hidden = true;
+      disconnect();
+      expect(page.listeners).toHaveLength(0);
+
+      const disconnectWhileHidden = connectOn(page);
+      disconnectWhileHidden();
+      expect(sources).toHaveLength(1);
+    });
   });
 });
