@@ -20,6 +20,6 @@ COPY --from=build --chown=node:node /app/scripts/migrate.mts ./scripts/migrate.m
 COPY --from=build --chown=node:node /app/db/migrations ./db/migrations
 USER node
 EXPOSE 3000
-HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT}/health`).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+# No HEALTHCHECK: /health fails during a database outage, and a platform that restarts unhealthy
+# containers would then restart every instance for nothing. Compose sets its own, for `--wait`.
 CMD ["node", "server.js"]
