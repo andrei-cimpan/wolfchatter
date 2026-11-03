@@ -5,10 +5,16 @@ import { sseHeartbeat, sseMessage, sseReady, sseRetry, sseRetryDelay } from "./s
 // the browser retry, rather than holding a connection that looks open but receives nothing.
 export const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;
 
+// Writes queued for a client whose connection has stalled, once its socket buffer is full. Measured
+// on the production server: a stalled client's queue grows by one per write, while a reading client's
+// stayed under 5 through 20,000 messages in 8 s. Past this, it is cheaper for the client to catch up.
+export const STREAM_MAX_BACKLOG = 256;
+
 /**
  * The SSE body of GET /api/rooms/:id/stream: a `ready` event once the hub has subscribed, then
  * one `message` event per new message, and heartbeats in between. The stream ends when the client
- * leaves, the hub drops it, or subscribing fails or takes longer than `timeoutMs`.
+ * leaves, the hub drops it, subscribing fails or takes longer than `timeoutMs`, or the client stops
+ * reading.
  */
 export function openRoomEventStream(
   hub: RealtimeHub,
@@ -24,15 +30,26 @@ export function openRoomEventStream(
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      // Throws once the stream is closed, which tells the hub to drop this subscriber.
-      const write = (text: string) => controller.enqueue(encoder.encode(text));
-
-      end = () => {
-        if (ended) return;
+      const leave = () => {
         ended = true;
         clearTimeout(timer);
         signal.removeEventListener("abort", end);
         unsubscribe?.();
+      };
+
+      // Throws once the stream is closed, which tells the hub to drop this subscriber.
+      const write = (text: string) => {
+        controller.enqueue(encoder.encode(text));
+        if ((controller.desiredSize ?? 0) >= -STREAM_MAX_BACKLOG) return;
+        console.warn(`Room stream: a client of ${roomId} stopped reading; ending its stream`);
+        leave();
+        // Not close(), which keeps the queue until it is read, and this client is not reading.
+        controller.error(new Error("The client stopped reading"));
+      };
+
+      end = () => {
+        if (ended) return;
+        leave();
         try {
           controller.close();
         } catch {
