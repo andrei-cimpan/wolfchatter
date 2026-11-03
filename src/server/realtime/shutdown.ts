@@ -9,9 +9,9 @@ const EXIT_CODES = { SIGTERM: 143, SIGINT: 130 };
 /**
  * Next answers these signals by waiting for every request to finish before it exits, and a stream
  * never finishes, so one open tab would hold the process until it is killed. Closing the streams is
- * not enough with a browser connected: it reconnects during the wait, most likely over a keep-alive
- * connection Next's `server.close()` leaves open, and shutdown still hangs. So the deadline ends it
- * if Next has not by then, and the client catches up from another instance as after any drop.
+ * not enough with a browser connected: `server.close()` leaves its keep-alive connection open, and
+ * the browser reopens its stream over it. So the deadline ends it if Next has not by then, and the
+ * client catches up from another instance as after any drop.
  */
 export function closeStreamsOnShutdown(
   signals: Pick<NodeJS.EventEmitter, "on">,
