@@ -1,6 +1,6 @@
 # Wolfchatter v2: Design
 
-3 Nov 2026 · Status: awaiting approval
+3 Nov 2026 · Status: implementation plan written (`docs/superpowers/plans/2026-11-03-wolfchatter-v2.md`)
 
 Read with `docs/PRD.md` and `docs/DESIGN.md`, which describe v1. Everything not mentioned here behaves as v1 does.
 
@@ -59,7 +59,7 @@ The owner saw these and raised no objection. They can still be changed.
 
 ### Branch and docs
 
-Create a long-lived `v2` branch from `main`. One branch and PR per task, targeting `v2`. On this branch, `CLAUDE.md`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md` and the README are updated as each step lands, so they describe v2. `docs/TASKS.md` section 8 is replaced by the plan's tasks.
+Create a long-lived `v2` branch from `main`. One branch and PR per task, targeting `v2`. On this branch, `CLAUDE.md`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md` and the README are updated as each step lands, so they describe v2. `docs/TASKS.md` section 8 is replaced by the plan's tasks in its first task, and each task ticks its own line.
 
 `CLAUDE.md` gets one changed architecture rule: application code may import the browser Supabase client from one small module, only for auth and for subscribing to live messages. All data reads and writes still go through `ChatRepository`.
 
@@ -144,6 +144,8 @@ Each step ends with `lint`, `typecheck` and `test` passing and the app working l
 5. **Mapbox.**
 
 Steps 1 and 2 leave the app with v1's open posting until step 3, so nothing is deployed before step 4.
+
+The plan splits these steps into tasks: step 1 is Tasks 1 and 2, step 2 is Task 3, step 3 is Tasks 4 to 6, step 4 is Task 7, and step 5 is Tasks 8 and 9.
 
 ## Testing
 
