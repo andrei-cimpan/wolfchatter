@@ -82,10 +82,9 @@ Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task'
 - [x] **T8.1** Local Supabase and the v1 schema (plan Task 1).
 - [x] **T8.2** `SupabaseChatRepository` (Task 2).
 - [x] **T8.3** Live messages with Supabase Realtime (Task 3).
-- [ ] **T8.4** Author names and row-level security (Task 4; lands with Tasks 5 and 6).
-- [ ] **T8.5** Sessions and the signed-in API (Task 5).
-  *From the PR #31 review (#1):* `getChatRepository` cannot stop the Supabase client refreshing a nearly expired access token (within 90 s) before a request, and its no-op `setAll` drops the new tokens, which can sign the user out. Test that a route given a nearly expired cookie makes no `/auth/v1/token` call, and fix it here, for example with the `accessToken` client option. In the same case PostgREST answered "JWT cryptographic operation failed" for an invalid token, so a stale cookie can turn a public read into a 500.
-- [ ] **T8.6** Sign-in in the chat card (Task 6).
+- [x] **T8.4** Author names and row-level security (Task 4; lands with Tasks 5 and 6).
+- [x] **T8.5** Sessions and the signed-in API (Task 5).
+- [x] **T8.6** Sign-in in the chat card (Task 6).
 - [ ] **T8.7** Deploy to Vercel, owner-led (Task 7).
 - [ ] **T8.8** Mapbox map and pins (Task 8; lands with Task 9).
 - [ ] **T8.9** Mapbox clicks, keyboard and the e2e port (Task 9).
@@ -148,3 +147,7 @@ Resolved notes, kept for the record, by the task they were under.
 *From the check:* `npm install` warned that `fsevents` and `unrs-resolver` have install scripts. Nothing needs them, as all of the above ran with them skipped, so `package.json` now denies them. The deprecated ESLint and its moderate audit findings stay, since they are dev-only and an upgrade this late could change lint results; the README says so.
 *Moved from T6.1:* done on a real phone: double-tap the map, and send a first message with the keyboard open.
 *Moved from the final review (#6):* done on a real phone: pins of 25x41 px can be tapped, so they keep their size.
+
+**T8.5**
+
+*From the PR #31 review (#1):* done: routes use the session cookie's access token as it is (supabase-js's `accessToken` option) while it has more than 10 s left, and act signed out otherwise, so they never refresh a session and a stale cookie reads as signed out instead of a 500. `/api/me`'s tests check a nearly expired cookie makes no `/auth/v1/token` call.

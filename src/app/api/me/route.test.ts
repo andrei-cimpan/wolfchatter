@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+
+// It throws outside a request; the real one is exercised by the build and e2e.
+vi.mock("next/server", () => ({ connection: () => Promise.resolve() }));
 import { sessionCookieHeader } from "@/server/repositories/test/session-cookies";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { createTestUser } from "@/server/repositories/test/test-users";

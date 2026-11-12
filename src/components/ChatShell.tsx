@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef } from "react";
 import { useCreateRoom } from "@/hooks/useCreateRoom";
 import { useDraft } from "@/hooks/useDraft";
 import { currentSelectedRoomId, selectRoom } from "@/hooks/useSelectedRoom";
+import { takePendingDraft } from "@/lib/pending-draft";
 import { MapView } from "./MapView";
 import { RoomPanel, RoomPanelFallback } from "./RoomPanel";
 
@@ -48,6 +49,14 @@ export function ChatShell() {
     creation.pick(id);
   }
 
+  // Back from Google's sign-in page: a draft started before it is in sessionStorage, since it has
+  // no URL. Once, on mount; startDraft is this render's, and a later one would be no different.
+  useEffect(() => {
+    const pending = takePendingDraft(window.sessionStorage);
+    if (pending) startDraft(pending.lat, pending.lng);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Back or Forward ends a draft, whose form is gone by then. Left in place, it would come back on any
   // entry with no room open, and saving there would overwrite that entry. No dependency list on
   // purpose: re-registering after every render keeps the listener on this render's `creation`.
@@ -80,7 +89,7 @@ export function ChatShell() {
           creating={creation.isPending}
           creationError={creation.error}
           createdRoomId={creation.createdRoomId}
-          onSendDraft={(current, author, body, onSent) => creation.send(current, author, body, onSent)}
+          onSendDraft={(current, body, onSent) => creation.send(current, body, onSent)}
           onClearCreationError={creation.clearResult}
           onDiscardDraft={discardFromPanel}
           onDraftSaved={end}

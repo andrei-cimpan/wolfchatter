@@ -1,7 +1,7 @@
 // One source for limits that the database, the API schemas, and the UI all enforce.
-// Author and body lengths must match the check constraints in supabase/migrations/20261103000001_init.sql.
+// The body length must match the check constraint in supabase/migrations/20261103000001_init.sql;
+// the author is set by the database, which cuts it to 32 characters.
 
-export const AUTHOR_MAX = 32;
 export const BODY_MAX = 1000;
 
 export const MESSAGE_LIMIT_DEFAULT = 50;

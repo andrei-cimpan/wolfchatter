@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
 import type { Draft } from "@/lib/draft";
-import { createRoomErrorMessage } from "@/lib/message-input";
-import { readSavedUsername, saveUsername } from "@/lib/saved-username";
+import { createRoomErrorMessage, isSignedOutError } from "@/lib/message-input";
 import { MessageForm, RoomMessageForm } from "./MessageForm";
 import { MessageList } from "./MessageList";
+import { PostingAs } from "./PostingAs";
+import { SignInPrompt } from "./SignInPrompt";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 const DRAFT_NOTE = "Send the first message to create this chatroom. Until then, nobody else can see it.";
+const SIGNED_OUT_DRAFT_NOTE = "Sign in to create a chatroom here. Your pin stays where you dropped it.";
 
 // Narrow screens: a sheet rising from the bottom edge, clear of the phone's home indicator.
 const PANEL_SHEET =
@@ -108,30 +111,40 @@ function DiscardButton({
 }
 
 interface DraftContentProps {
-  author: string;
-  onAuthorChange: (author: string) => void;
-  send: (author: string, body: string, onSent: () => void) => void;
+  draft: Draft;
+  send: (body: string, onSent: () => void) => void;
   clearError: () => void;
   isPending: boolean;
   error: Error | null;
   onDiscard: () => void;
 }
 
-function DraftContent({ author, onAuthorChange, send, clearError, isPending, error, onDiscard }: DraftContentProps) {
+function DraftContent({ draft, send, clearError, isPending, error, onDiscard }: DraftContentProps) {
+  const user = useCurrentUser();
   return (
     <>
       <h2 className="text-center font-medium">New chatroom</h2>
-      <p role="status" className="mt-4 flex-auto text-center text-sm text-foreground/70">
-        {DRAFT_NOTE}
-      </p>
-      <MessageForm
-        author={author}
-        onAuthorChange={onAuthorChange}
-        send={send}
-        clearError={clearError}
-        isPending={isPending}
-        errorMessage={error ? createRoomErrorMessage(error) : null}
-      />
+      {/* Nothing until /api/me answers, so neither the form nor the prompt flashes. */}
+      {user.status !== "loading" && (
+        <p role="status" className="mt-4 flex-auto text-center text-sm text-foreground/70">
+          {user.status === "signedIn" ? DRAFT_NOTE : SIGNED_OUT_DRAFT_NOTE}
+        </p>
+      )}
+      {user.status === "signedOut" && (
+        <SignInPrompt label="Sign in with Google" draft={{ lat: draft.lat, lng: draft.lng }} />
+      )}
+      {user.status === "signedIn" && user.name !== null && (
+        <>
+          <PostingAs name={user.name} />
+          <MessageForm
+            send={send}
+            clearError={clearError}
+            isPending={isPending}
+            errorMessage={error ? createRoomErrorMessage(error) : null}
+            signedOut={error ? isSignedOutError(error) : false}
+          />
+        </>
+      )}
       {/* The sheet has this in its header instead, where it costs no height. */}
       <DiscardButton onClick={onDiscard} unavailable={isPending} className="mt-2 hidden self-start md:block" />
     </>
@@ -140,13 +153,12 @@ function DraftContent({ author, onAuthorChange, send, clearError, isPending, err
 
 interface RoomContentProps {
   roomId: string;
-  author: string;
-  onAuthorChange: (author: string) => void;
   autoFocusBody: boolean;
 }
 
-function RoomContent({ roomId, author, onAuthorChange, autoFocusBody }: RoomContentProps) {
+function RoomContent({ roomId, autoFocusBody }: RoomContentProps) {
   const { data: room, isPending, isError } = useRoom(roomId);
+  const user = useCurrentUser();
   const hydrated = useHydrated();
   const [sentCount, setSentCount] = useState(0);
   if (isPending || !hydrated) return <p role="status">Loading chatroom…</p>;
@@ -156,13 +168,18 @@ function RoomContent({ roomId, author, onAuthorChange, autoFocusBody }: RoomCont
     <>
       <h2 className="text-center font-medium">{room.title}</h2>
       <MessageList roomId={room.id} sentCount={sentCount} />
-      <RoomMessageForm
-        roomId={room.id}
-        author={author}
-        onAuthorChange={onAuthorChange}
-        onSent={() => setSentCount((count) => count + 1)}
-        autoFocusBody={autoFocusBody}
-      />
+      {/* Nothing until /api/me answers, so neither the form nor the prompt flashes. */}
+      {user.status === "signedOut" && <SignInPrompt label="Sign in with Google to post" />}
+      {user.status === "signedIn" && user.name !== null && (
+        <>
+          <PostingAs name={user.name} />
+          <RoomMessageForm
+            roomId={room.id}
+            onSent={() => setSentCount((count) => count + 1)}
+            autoFocusBody={autoFocusBody}
+          />
+        </>
+      )}
     </>
   );
 }
@@ -172,7 +189,7 @@ interface RoomPanelProps {
   creating: boolean;
   creationError: Error | null;
   createdRoomId: string | null;
-  onSendDraft: (draft: Draft, author: string, body: string, onSent: () => void) => void;
+  onSendDraft: (draft: Draft, body: string, onSent: () => void) => void;
   onClearCreationError: () => void;
   onDiscardDraft: () => void;
   onDraftSaved: () => void;
@@ -195,13 +212,6 @@ export function RoomPanel({
   useEffect(() => {
     if (savedAs !== null && savedAs === roomId) onDraftSaved();
   }, [savedAs, roomId, onDraftSaved]);
-  // The server starts empty and the browser with the saved name, which cannot cause a hydration
-  // mismatch: RoomContent renders the form only once hydrated.
-  const [author, setAuthor] = useState(readSavedUsername);
-  function changeAuthor(next: string) {
-    setAuthor(next);
-    saveUsername(next);
-  }
   function close() {
     selectRoom(null);
     onDiscardDraft();
@@ -224,20 +234,13 @@ export function RoomPanel({
       {roomId !== null ? (
         // Keyed so each room mounts its own message log, which then does not read out the history
         // it opens with, and its own form, so a half-written message stays with its room.
-        <RoomContent
-          key={roomId}
-          roomId={roomId}
-          author={author}
-          onAuthorChange={changeAuthor}
-          autoFocusBody={roomId === createdRoomId}
-        />
+        <RoomContent key={roomId} roomId={roomId} autoFocusBody={roomId === createdRoomId} />
       ) : openDraft ? (
         // Not keyed by the draft: moving the pin keeps what has been typed, since the place was
         // probably just misjudged.
         <DraftContent
-          author={author}
-          onAuthorChange={changeAuthor}
-          send={(sentAuthor, body, onSent) => onSendDraft(openDraft, sentAuthor, body, onSent)}
+          draft={openDraft}
+          send={(body, onSent) => onSendDraft(openDraft, body, onSent)}
           clearError={onClearCreationError}
           isPending={creating}
           error={creationError}

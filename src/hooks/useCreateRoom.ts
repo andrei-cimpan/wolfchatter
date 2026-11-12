@@ -13,7 +13,6 @@ import { currentSelectedRoomId, replaceSelectedRoom, selectRoom } from "./useSel
 type CreateRoomVariables = {
   lat: number;
   lng: number;
-  author: string;
   body: string;
   /** `?room` when the message was sent: decides whether the result may still change the selection. */
   selectedAtSend: string | null;
@@ -39,8 +38,7 @@ export function useCreateRoom(
   const abandonedRef = useRef(false);
 
   const mutation = useMutation({
-    mutationFn: ({ lat, lng, author, body }: CreateRoomVariables) =>
-      createRoom({ lat, lng, firstMessage: { author, body } }),
+    mutationFn: ({ lat, lng, body }: CreateRoomVariables) => createRoom({ lat, lng, firstMessage: { body } }),
     onSuccess: ({ firstMessage, ...room }, { lng, selectedAtSend, picksAtSend, replaceEntry }) => {
       queryClient.setQueryData(roomQueryKey(room.id), room);
       queryClient.setQueryData(messagesQueryKey(room.id), [firstMessage]);
@@ -61,7 +59,7 @@ export function useCreateRoom(
   });
 
   /** Sends the draft's first message unless one is already on its way. */
-  function send(draft: DraftToSend, author: string, body: string, onSent: () => void) {
+  function send(draft: DraftToSend, body: string, onSent: () => void) {
     if (sendingRef.current) return;
     sendingRef.current = true;
     abandonedRef.current = false;
@@ -69,7 +67,6 @@ export function useCreateRoom(
       {
         lat: draft.lat,
         lng: draft.lng,
-        author,
         body,
         selectedAtSend: currentSelectedRoomId(),
         picksAtSend: picksRef.current,

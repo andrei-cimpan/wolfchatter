@@ -18,7 +18,6 @@ export const panel = (page: Page) => page.getByRole("complementary", { name: "Ch
 export const roomTitle = (page: Page) => panel(page).getByRole("heading", { level: 2 });
 export const pin = (page: Page, title: string) => page.getByRole("button", { name: title, exact: true });
 export const messages = (page: Page) => panel(page).getByRole("log", { name: "Messages" });
-export const usernameField = (page: Page) => panel(page).getByRole("textbox", { name: "Username" });
 
 export const draftPin = (page: Page) => page.locator(".leaflet-marker-icon.draft-pin");
 export const messageField = (page: Page) => panel(page).getByRole("textbox", { name: "Message" });
@@ -33,7 +32,6 @@ export async function startDraftAt(page: Page, x: number, y: number) {
 }
 
 export async function fillDraft(page: Page, body = "First message") {
-  await usernameField(page).fill("ana");
   await messageField(page).fill(body);
 }
 

@@ -7,7 +7,7 @@ A real-time chat app built on a map. Click the map to drop a pin, and send the f
 - Click the map to drop a draft pin, and send the first message to create the chatroom. Until then nothing is saved, and the panel says so.
 - Double-click the map to zoom in.
 - Click an existing pin to open its room.
-- Post messages with a username and a message. Rooms and messages are stored in PostgreSQL and survive restarts.
+- Post messages with a username and a message. Rooms and messages are stored in PostgreSQL and survive restarts. On the `v2` branch you sign in with Google to post instead, and messages show your name as "First L."; reading needs no account.
 - Messages from other users appear in real time (Server-Sent Events).
 - Pins load by map viewport and cluster when zoomed out, so the map stays fast with many rooms.
 - Responsive layout: chat panel on the right on desktop, bottom sheet on small screens.
@@ -15,7 +15,7 @@ A real-time chat app built on a map. Click the map to drop a pin, and send the f
 **Improvements beyond the brief**
 
 - A stray click costs nothing: a room exists only once its first message is sent, and a draft can be moved or discarded. This differs from mockup 3 on purpose: a second click moves the draft, and a second pin appears once the first room has its message.
-- Username remembered between visits.
+- Username remembered between visits (v1; on v2 the name comes from your Google account).
 - Auto-scroll to the newest message, unless you have scrolled up to read; Submit disabled until both fields are filled.
 - The map flies to the selected room.
 - Selected room kept in the URL (`?room=<id>`), so a room can be shared and survives a refresh.
@@ -33,7 +33,7 @@ Next.js (App Router), TypeScript, Tailwind, react-leaflet (OpenStreetMap tiles),
 - Docker, which the Supabase CLI uses to run the local stack (PostgreSQL and the Supabase services).
 - Node.js 26 or newer and npm. `.nvmrc` pins the version used in CI, so `nvm use` picks it up.
 
-No accounts or API keys are required.
+No accounts or API keys are required to run the app and its tests. Signing in for real on `v2` needs a Google OAuth client; see [Google sign-in locally](#google-sign-in-locally).
 
 ## Run it locally
 
@@ -49,6 +49,14 @@ npm run dev                   # http://localhost:3000
 `npm install` reports a deprecated ESLint and moderate vulnerabilities. These come only from ESLint and its plugins, not from what the app ships (`npm audit --omit=dev` finds none). Do not run `npm audit fix --force`: it downgrades ESLint.
 
 To see real-time delivery, open the app in two browser windows, open the same room in both, and post a message in one.
+
+### Google sign-in locally
+
+Tests sign in without Google, but posting from the app needs a real sign-in:
+
+1. In Google Cloud, under Google Auth Platform: create an app with External audience and the `openid`, `email` and `profile` scopes, and publish it (In production).
+2. Create a client of type **Web application** with the redirect URI `http://127.0.0.1:54321/auth/v1/callback`.
+3. Put its ID and secret in `.env` as `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`, then restart the stack (`npx supabase stop`, then `npm run db:start`).
 
 ## Tests
 
@@ -86,6 +94,8 @@ All configuration is through environment variables. `.env.example` lists them al
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The Supabase project the app reads and writes through, and the browser subscribes to for live messages. Required: `next dev`, `next build` and `npm run typecheck` (through `next typegen`) stop without them |
 | `SUPABASE_DB_URL` | The local Supabase database, which `npm test` and `npm run e2e` use and empty. Must be on `127.0.0.1` or `localhost`. The app itself does not read it |
+| `SUPABASE_SERVICE_ROLE_KEY` | Tests only: creates signed-in test users. Never give it to the app or a deployment |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Google sign-in for local Supabase, read by `supabase/config.toml`. Optional; tests do not need them |
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Optional basemap (default: OpenStreetMap). Read at build time |
 
 ## Project structure
@@ -126,7 +136,7 @@ The project was built docs-first with Claude.
 The main ones are below. The full list is in [the design note](docs/DESIGN.md#known-limitations-documented-not-built).
 
 - Rooms created by other users appear only when the map next fetches that area: on moving to an area or zoom it has no fresh result for, or when the window regains focus. Real-time covers messages only.
-- No authentication: usernames are self-declared. Basic per-IP rate limiting is the only abuse protection, and it needs a proxy that appends to `X-Forwarded-For`. Do not expose the app directly: a client could set that header and escape the limit.
+- No authentication (v1): usernames are self-declared. Basic per-IP rate limiting is the only abuse protection, and it needs a proxy that appends to `X-Forwarded-For`. Do not expose the app directly: a client could set that header and escape the limit. On v2 posting needs a Google account and the rate limits are gone.
 - A room shows only its latest 50 messages; there is no "load older" yet.
 - Clustering is grid-based over a plain `(lat, lng)` index; PostGIS is the next step at larger scale.
 - OpenStreetMap public tiles are for development and light use only.

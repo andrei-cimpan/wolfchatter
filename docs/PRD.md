@@ -20,7 +20,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 - **FR1** The initial view is an empty map with the message "Click on the map to start a chat".
 - **FR2** Clicking the map drops a draft pin, and the right-hand panel opens a draft that says the room is created by its first message. Nothing is saved or visible to others until then. Sending the first message creates the chatroom, and the panel switches to it. Clicking elsewhere moves the draft, and it can be discarded. Double-clicking the map zooms in. With only a keyboard, Enter on the focused map drops the draft at the centre of the visible map.
 - **FR3** Clicking an existing pin switches the panel to that room (title and messages).
-- **FR4** In a room, the user enters a username and a message and submits. The message appears in the room with author and timestamp.
+- **FR4** In a room, the user enters a username and a message and submits. The message appears in the room with author and timestamp. On v2 the user signs in with Google instead of typing a username, and the author is their name as "First L.".
 - **FR5** Rooms and messages persist across sessions.
 - **FR6** Messages from other users appear in real time without a refresh.
 - **FR7** Pins load by map viewport. Zoomed out, nearby rooms collapse into clusters that show a count, and clicking a cluster zooms in.
@@ -58,7 +58,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 
 **State management.** Server state (rooms, messages) with TanStack Query. The selected room lives in the URL (`?room=<id>`), so it is shareable and survives refresh. The username is kept in localStorage. No global store is needed.
 
-**Security (v1, no auth).** Text is rendered as plain text, never as HTML. Inputs are validated and length-limited. Basic per-IP rate limiting on POST routes.
+**Security (v1, no auth).** Text is rendered as plain text, never as HTML. Inputs are validated and length-limited. Basic per-IP rate limiting on POST routes. On v2, posting needs a Google account, row-level security enforces who may write, the database sets the author, and the rate limits are removed.
 
 **Testing.** Vitest for unit and API tests, and Playwright end-to-end tests (create a pin, post a message, reload, see persistence; and a two-browser check that a message appears live).
 

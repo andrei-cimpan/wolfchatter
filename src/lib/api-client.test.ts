@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createRoom, getRoom, listMapItems, listMessages, postMessage } from "./api-client";
+import { ApiError, createRoom, getMe, getRoom, listMapItems, listMessages, postMessage } from "./api-client";
 import type { Message, Room } from "./types";
 
 const ROOM: Room = {
@@ -25,7 +25,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const FIRST_MESSAGE = { author: "ana", body: "hello" };
+const FIRST_MESSAGE = { body: "hello" };
 
 describe("createRoom", () => {
   it("posts JSON and returns the created room", async () => {
@@ -38,11 +38,11 @@ describe("createRoom", () => {
     });
   });
 
-  it("turns a 429 into an ApiError with the Retry-After seconds", async () => {
-    stubFetch(errorResponse(429, "rate_limited", "Too many requests", { "Retry-After": "42" }));
+  it("turns a 401 into an ApiError", async () => {
+    stubFetch(errorResponse(401, "unauthenticated", "Sign in to post"));
     const error = await createRoom({ lat: 0, lng: 0, firstMessage: FIRST_MESSAGE }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
-    expect(error).toMatchObject({ status: 429, code: "rate_limited", retryAfterSeconds: 42 });
+    expect(error).toMatchObject({ status: 401, code: "unauthenticated" });
   });
 
   it("keeps the API's message for a validation error", async () => {
@@ -51,7 +51,6 @@ describe("createRoom", () => {
       status: 400,
       code: "validation_error",
       message: "lat: Too big",
-      retryAfterSeconds: undefined,
     });
   });
 
@@ -62,11 +61,6 @@ describe("createRoom", () => {
       code: "http_error",
       message: "Request failed with status 502",
     });
-  });
-
-  it("ignores a Retry-After that is not a positive whole number of seconds", async () => {
-    stubFetch(errorResponse(429, "rate_limited", "Slow down", { "Retry-After": "soon" }));
-    await expect(createRoom({ lat: 0, lng: 0, firstMessage: FIRST_MESSAGE })).rejects.toMatchObject({ retryAfterSeconds: undefined });
   });
 });
 
@@ -139,19 +133,30 @@ describe("listMessages", () => {
 describe("postMessage", () => {
   it("posts JSON and returns the stored message", async () => {
     const fetchMock = stubFetch(Response.json(MESSAGE, { status: 201 }));
-    await expect(postMessage(ROOM.id, { author: "ana", body: "Hello" })).resolves.toEqual(MESSAGE);
+    await expect(postMessage(ROOM.id, { body: "Hello" })).resolves.toEqual(MESSAGE);
+    // Only the body: the author is the signed-in user's, set by the database.
     expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM.id}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ author: "ana", body: "Hello" }),
+      body: JSON.stringify({ body: "Hello" }),
     });
   });
 
-  it("turns a 429 into an ApiError with the Retry-After seconds", async () => {
-    stubFetch(errorResponse(429, "rate_limited", "Too many requests", { "Retry-After": "12" }));
-    await expect(postMessage(ROOM.id, { author: "ana", body: "Hi" })).rejects.toMatchObject({
-      status: 429,
-      retryAfterSeconds: 12,
-    });
+  it("turns a 401 into an ApiError", async () => {
+    stubFetch(errorResponse(401, "unauthenticated", "Sign in to post"));
+    await expect(postMessage(ROOM.id, { body: "Hi" })).rejects.toMatchObject({ status: 401, code: "unauthenticated" });
+  });
+});
+
+describe("getMe", () => {
+  it("returns the signed-in user's name, never from a cache", async () => {
+    const fetchMock = stubFetch(Response.json({ name: "Ana P." }));
+    await expect(getMe()).resolves.toEqual({ name: "Ana P." });
+    expect(fetchMock).toHaveBeenCalledWith("/api/me", { cache: "no-store" });
+  });
+
+  it("returns null when signed out", async () => {
+    stubFetch(Response.json({ name: null }));
+    await expect(getMe()).resolves.toEqual({ name: null });
   });
 });
