@@ -45,7 +45,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 
 **Viewport loading and clustering.** The map requests only the pins in view (`bbox` and `zoom`). The server groups rooms into grid cells of roughly 64 px at that zoom and returns one cluster (count and centre) per crowded cell, and individual rooms elsewhere. At zoom 16 and above rooms are never clustered.
 
-**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `createRoomWithMessage`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime`). v1 provides `PostgresChatRepository`. v2 replaces it with `SupabaseChatRepository`, which goes through the Supabase API, without changing UI code.
+**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `createRoomWithMessage`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime` in v1; on v2 the browser subscribes to Supabase Realtime). v1 provides `PostgresChatRepository`. v2 replaces it with `SupabaseChatRepository`, which goes through the Supabase API, without changing UI code.
 
 **API (REST, JSON).**
 
@@ -54,7 +54,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 - `GET /api/rooms/:id/messages?before=<cursor>&after=<cursor>` and `POST /api/rooms/:id/messages`
 - `GET /api/rooms/:id/stream` (Server-Sent Events, FR6)
 
-**Real-time delivery.** Server-Sent Events from the Next.js server, fed by Postgres `LISTEN/NOTIFY` so it works across multiple app instances. If the connection drops, the client reconnects automatically and refetches any missed messages. In v2 this is replaced by Supabase Realtime.
+**Real-time delivery.** Server-Sent Events from the Next.js server, fed by Postgres `LISTEN/NOTIFY` so it works across multiple app instances. If the connection drops, the client reconnects automatically and refetches any missed messages. In v2 the browser subscribes to Supabase Realtime instead, and the stream route is gone; the reconnect and refetch behaviour stays.
 
 **State management.** Server state (rooms, messages) with TanStack Query. The selected room lives in the URL (`?room=<id>`), so it is shareable and survives refresh. The username is kept in localStorage. No global store is needed.
 

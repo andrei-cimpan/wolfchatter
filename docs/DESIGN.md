@@ -6,12 +6,12 @@ How the system in `PRD.md` is built. One Next.js app, one Postgres database.
 
 ```
 Browser (MapView + RoomPanel)
-   |  REST (JSON)            ^  SSE (new messages)
+   |  REST (JSON)            ^  WebSocket (new messages)
    v                         |
-Next.js route handlers  ---- Realtime hub (one pg LISTEN per instance)
-   |                              ^
-   v                              |
-ChatRepository (Supabase API) --> Postgres --NOTIFY--> hub
+Next.js route handlers    Supabase Realtime
+   |                         ^
+   v                         |  publication
+ChatRepository (Supabase API) --> Postgres
 ```
 
 ## Project structure
@@ -19,20 +19,20 @@ ChatRepository (Supabase API) --> Postgres --NOTIFY--> hub
 ```
 src/
   app/                    # pages and route handlers
-    api/rooms/...         # REST + SSE endpoints
+    api/rooms/...         # REST endpoints
     health/               # GET /health
-  instrumentation.ts      # checks the rate limits, registers the shutdown handler
+  instrumentation.ts      # checks the rate limits at startup
   components/             # ChatShell (draft + creation), MapView/LeafletMap/MapMarkers (map),
                           # RoomPanel, MessageList, MessageForm, VisibleAlert, Providers
   hooks/                  # React hooks: data (useRoom, useMapItems, useMessages, usePostMessage,
                           # useCreateRoom), live messages (useRoomStream), the draft (useDraft),
                           # selection in the URL (useSelectedRoom), the map (useFlyToRoom), useHydrated
   lib/                    # no React and no server code: shared types, zod schemas, API client,
-                          # message cache and catch-up, draft reducer, map and viewport math
+                          # message cache and catch-up, draft reducer, map and viewport math,
+                          # Supabase config and the browser's Realtime subscription (supabase/)
   server/
-    http/                 # route helpers: errors, JSON bodies, query strings, rate limits, SSE, /health
-    repositories/         # ChatRepository + SupabaseChatRepository, PostgresMessageSource (pg LISTEN)
-    realtime/             # MessageSource interface, RealtimeHub (in-memory fan-out, heartbeat), shutdown
+    http/                 # route helpers: errors, JSON bodies, query strings, rate limits, /health
+    repositories/         # ChatRepository + SupabaseChatRepository
 supabase/                 # local stack config (config.toml) and SQL migrations
 e2e/                      # Playwright specs; shared locators in chat-page.ts, fixtures in support.ts
 ```
@@ -102,7 +102,7 @@ interface ChatRepository {
 
 **On `v2`** the implementation is `SupabaseChatRepository`, which goes through the Supabase API (PostgREST) and runs no SQL of its own. Reads with paging, the viewport and clustering, and creating a room with its first message are SQL functions in the migration (`list_messages`, `list_rooms_in_view`, `list_room_cells`, `create_room_with_message`), called with `.rpc`, so each runs in one transaction. `getChatRepository(request)` builds a client per request from that request's cookies, so row-level security sees the caller; it reads the `Request`, not `next/headers`, which keeps route tests free of mocks. It has no response to save cookies to, so a session it refreshed would be lost and could sign the user out. The client refreshes an access token within 90 s of expiry before every request whatever `autoRefreshToken` says (that only stops the background timer), so routes rely on the session proxy (Task 5) refreshing first; Task 5 must test that a route given a nearly expired cookie makes no refresh call. `ping()` is a head-only `select` on `rooms`. It and `getRoom`, which the room, messages and stream routes call first, turn off the client's retries for reads, so `/health` and those routes fail at once rather than after about 7 s of backoff when the API is down; `.rpc` calls are POSTs, which are never retried. `next.config.ts` checks `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` at startup.
 
-Live delivery is a separate concern (`server/realtime`), so v2 can replace it with Supabase Realtime without touching the repository contract. Until then, the hub's `LISTEN` connects to `SUPABASE_DB_URL`.
+Live delivery is a separate concern (see Real-time delivery), so moving it to Supabase Realtime left the repository contract untouched.
 
 ## Database
 
@@ -132,12 +132,12 @@ create index rooms_location_idx on rooms (lat, lng);
 create function on_message_insert() returns trigger as $$
 begin
   update rooms set message_count = message_count + 1 where id = new.room_id;
-  perform pg_notify('messages', row_to_json(new)::text);
+  perform pg_notify('messages', row_to_json(new)::text);  -- v1 only
   return new;
 end;
 $$ language plpgsql;
 
-create trigger messages_notify after insert on messages
+create trigger messages_notify after insert on messages  -- messages_count on v2
   for each row execute function on_message_insert();
 ```
 
@@ -150,7 +150,6 @@ create trigger messages_notify after insert on messages
 | `POST /api/rooms` | Create a room `{lat, lng}`, with an optional `firstMessage: {author, body}` saved in the same transaction | 201 `Room`, plus `firstMessage: Message` if one was sent, with `Location: /api/rooms/:id` |
 | `GET /api/rooms/:id/messages?before=&after=&limit=` | Page of messages, oldest first | 200 `Message[]` |
 | `POST /api/rooms/:id/messages` | Post `{author, body}` | 201 `Message` (no `Location`: there is no single-message endpoint) |
-| `GET /api/rooms/:id/stream` | SSE stream of new messages (see Real-time delivery) | 200 `text/event-stream` |
 | `GET /health` | Whether this instance can reach its database within 2 s (see Deployment) | 200 `{"status":"ok"}`, or 503 `{"status":"unavailable"}` |
 
 Errors use one shape: `{ "error": { "code": "...", "message": "..." } }`. The helpers live in `src/server/http/`.
@@ -202,38 +201,19 @@ The client keys the TanStack Query cache by bounds and zoom and keeps the previo
 
 ## Real-time delivery
 
-1. A Postgres trigger sends `NOTIFY messages` with the new row as JSON on every insert.
-2. Each app instance holds one `LISTEN messages` connection (`PostgresMessageSource`) on its own `pg.Client`, not a pool client, since a pool may close or reuse the session that holds the `LISTEN`. It checks each payload with Zod and turns it into the API's `Message` shape (`createdAt` cut to milliseconds by `toISOString()`, as the REST API does), so a live message equals a refetched one. A malformed payload is logged and dropped. A connection dropped without an error (a NAT or load balancer forgetting it) would leave `LISTEN` silent for good, so the source runs `select 1` every 30 seconds and treats a failure as a drop; connecting, that check, and closing each give up after 10 seconds, and TCP keepalive is on. It lives in `repositories/` because only that folder may import the DB client.
-3. The hub (`RealtimeHub`, `src/server/realtime/`) keeps an in-memory map of `roomId -> subscribers` and pushes each message to that room's subscribers. One hub per process (`getRealtimeHub()`, kept on `globalThis` like the pool). Because the hub survives Next dev's module reloads, edits to the hub or the source take effect only after restarting `npm run dev`. `stopRealtimeHub()` closes every stream and the `LISTEN` connection (see Deployment for when). It starts the source on the first `subscribe`, which resolves only while `LISTEN` is active (waiting out an outage if there is one), so a stream that opens before a post cannot miss it. If the first connection fails, `subscribe` rejects and the next one tries again. A subscriber whose `send` or `heartbeat` throws is dropped and closed without affecting the others.
-4. While anyone is subscribed, one shared timer calls each subscriber's `heartbeat` every 25 seconds; the SSE stream writes a comment to keep proxies from closing it.
-5. If the `LISTEN` connection drops, the source reconnects with backoff (1 s doubling to 30 s). The wait drops back to 1 s only after a connection has stayed up for 30 s, so a database that keeps dropping connections right after accepting them is not retried at the shortest wait, with every stream closed each time. Messages sent during the gap never reach the hub, so the moment the connection drops, the hub closes every subscriber rather than leaving streams open that look healthy (heartbeats keep coming) but cannot receive anything. Each client then reconnects; its `subscribe` waits until `LISTEN` is back, and it catches up as below, the same path as any other dropped stream.
-6. On reconnect, the client refetches with `after=<an id a few messages before the last one it saw>` and de-duplicates by message id. The overlap matters because `created_at` is the inserting transaction's start time, not its commit time: a message can commit after a newer one yet sort before it, so `after=<last seen id>` could skip it for good.
+On `v2` the browser receives new messages straight from Supabase Realtime; no stream runs on our server. (v1 on `main` streams them over SSE from a hub fed by Postgres `LISTEN/NOTIFY`.)
 
-**The stream route** (`GET /api/rooms/:id/stream`, body built by `openRoomEventStream` in `src/server/http/room-event-stream.ts`). A malformed or unknown room gets the usual JSON 404. `EventSource` treats it as final, so the hook retries it on its slow backoff (below) rather than every second or two; that is rare, since `MessageList` mounts only for a room that loaded. Otherwise the route answers 200 at once and the stream sends, in order:
-
-- `retry: <1000 to 1999>`, so the browser reconnects 1 to 2 s after the stream ends, picked at random per stream so that clients the hub dropped together (an outage) do not all return in the same instant;
-- `event: ready` (data `{}`) once the hub's `subscribe` has resolved, meaning nothing posted from then on can be missed;
-- `event: message` with the `Message` as JSON, one per new message in the room;
-- a `: ping` comment on each heartbeat.
-
-The headers are `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`, so compression and proxies pass events on as they are written. The stream ends when the hub closes the subscriber (an outage or shutdown), the client leaves (the request's abort signal, or the body being cancelled), `subscribe` rejects, the client stops reading, or `subscribe` has not resolved after 10 seconds (`STREAM_SUBSCRIBE_TIMEOUT_MS`). A client has stopped reading (a backgrounded phone, a NAT that forgot the connection) once 256 writes (`STREAM_MAX_BACKLOG`) are queued beyond what its socket buffer took. Without this limit the queue grows with every message until TCP gives up. Next reads the body with backpressure, so the queue measures this: under the production server a stalled client's queue grew by one per write, and a reading client's stayed under 5 through 20,000 messages in 8 s. This ends the stream with `controller.error`, since `close` keeps the queue until it is read; Next logs one "failed to pipe response" for it, and the client reconnects and catches up as after any drop. The subscribe timeout exists because `subscribe` waits out an outage with no limit; ending the stream makes the browser retry rather than hold a connection that looks open but cannot receive anything. If the client leaves or the timeout fires while `subscribe` is still waiting, the route calls the unsubscribe it returns as soon as it resolves, so the subscriber does not linger in the hub until a write fails.
-
-**The client hook** (`useRoomStream`, called by `MessageList`, so switching rooms closes the old stream). A hidden tab holds no stream, and opens one when shown, which catches up as below: browsers allow six HTTP/1.1 connections per host across all tabs, so without this six tabs on a room left a seventh unable to load anything. `connectRoomStream` (`src/lib/room-stream.ts`) opens an `EventSource` and checks each message event with `messageSchema`, ignoring anything else. After a stream ends, `EventSource` reconnects by itself, which the hook leaves alone for a stream that comes straight back. But `EventSource` gives up for good when a request gets an error status, and while the server is unreachable it keeps retrying at the short `retry` delay for as long as the outage lasts. So after a failed request, or a third reconnect error in a row with no `ready`, the hook closes it and opens a new one after a backoff: 1 s doubling to 30 s, each wait picked at random from its upper half, and back to 1 s once a stream is ready. The error count carries over to the new `EventSource`, so while the server stays unreachable each new one is handed back to the backoff on its first error. Each live message goes through `addMessage`. Every `ready`, the first included, runs `catchUp`:
+1. The `messages` table is in the `supabase_realtime` publication (the migration), so Realtime sees every insert, whichever client wrote it. Row-level security applies: a channel delivers only rows its role may select, and anyone may read messages.
+2. `subscribeToRoomMessages` (`src/lib/supabase/room-channel.ts`) joins a channel for one room's `INSERT`s (`postgres_changes`, filter `room_id=eq.<id>`) on the browser's one client (`getBrowserSupabase`, so one socket per tab). Each subscription gets its own channel topic, since the client would reuse an open one.
+3. It reports `ready` only when Realtime's `system` message says `postgres_changes` is running, not at the channel's `SUBSCRIBED`. On a cold start (the stack just started, or Realtime idle), `SUBSCRIBED` came about 2 s earlier, and a message posted in that gap was never delivered, so a catch-up run at `SUBSCRIBED` could miss it for good. A channel error, a timeout, a close it did not ask for, or a `system` error reports `failed`, once.
+4. **The client** (`useRoomStream`, called by `MessageList`, so switching rooms drops the old channel; `connectRoomStream` in `src/lib/room-stream.ts`). Each row is turned into a `Message` with `messageFromRow`, the same mapping the repository uses, so a live message equals a refetched one, and checked with `messageSchema`; anything else, or a row from another room, is ignored. A `failed` channel is dropped and a new one subscribed after a backoff: 1 s doubling to 30 s, each wait picked at random from its upper half so clients dropped together do not return together, and back to 1 s once one is ready. The Realtime client also reconnects its socket on its own schedule (up to 10 s apart); the new channel joins once it is back. A hidden tab holds no channel, since browsers throttle background tabs and can starve the socket's heartbeat, and subscribes again when shown. Each live message goes through `addMessage`. Every `ready`, the first included, runs `catchUp`:
 
 - If the list has not loaded, or a fetch is in flight (the first one usually is, and it may predate the subscribe), it waits for that fetch, or starts one, without cancelling it.
 - It then asks for `after=<the id 5 messages before the newest>&limit=100` (`CATCH_UP_OVERLAP`); with 5 messages or fewer, for the latest page.
 - `mergeCaughtUp` puts the page in place of what the list held after that id, so missed messages land before live ones that arrived while the page loaded, and the server's order wins for a message that committed late.
 - A full page of 100 may not reach the newest message; the list then reloads its latest page instead, since it only shows that page anyway. A failed catch-up request also reloads the list.
 
-Because the trigger fires for every insert, messages posted through any instance reach every connected client.
-
-### Swapping the real-time layer
-
-Two interfaces keep the hub independent of where messages come from and how they reach the browser:
-
-- **A new source** (Redis pub/sub, NATS) implements `MessageSource` (`start({ onMessage, onDisconnect, onReconnect })`, `stop()`) and is picked in `createMessageSource()`. The hub and routes do not change.
-- **A new transport** (WebSockets, Socket.IO) wraps each connection as a `Subscriber` (`send`, `close`, and `heartbeat` only if it has no keepalive of its own) and calls `getRealtimeHub().subscribe`. Routes depend on the `RealtimeHub` interface, not the class. Socket.IO brings its own rooms and multi-instance adapters, so with it the hub would shrink to forwarding the source to `io.to(roomId)`.
-- **Supabase Realtime (v2)** replaces both: the browser subscribes directly, and no hub runs on our server. The seam that matters there is the client hook `useRoomStream` (T4.2), whose catch-up (refetch with `after=`, de-duplicate by id) is the same for any transport.
+The client needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, which Next inlines into the browser bundle; the anon key is public by design, and row-level security decides what it may do. The browser client is used only to subscribe: reads and writes still go through the API routes and `ChatRepository`.
 
 ## Deployment
 
@@ -245,14 +225,14 @@ On the `v2` branch the Dockerfile, Compose and the migration runner are gone (v2
 
 **`/health`** runs `select 1` through `ChatRepository.ping()`, with a 2 s limit because the pool waits with no limit for a connection. The reason for a failure goes to the log only. Use it for readiness, to stop sending traffic to an instance that cannot reach the database, and not to restart instances: a database outage would restart every one of them, for nothing, since each recovers by itself (Real-time delivery). For that reason the image has no `HEALTHCHECK`, which platforms such as Swarm act on with restarts; Compose sets its own, for `--wait`, and does not restart on it. ECS replaces any task that fails its load balancer check, so readiness in this sense is not available there: on ECS the ALB checks `/favicon.ico`, and `/health` is for post-deploy checks and monitoring (see `INFRA.md`). The route calls `connection()` because it reads nothing from the request, and `next build` would otherwise run it and log a failed check.
 
-**Shutdown.** Next answers SIGTERM and SIGINT with `server.close()` and waits for every request to finish. A stream never finishes, so measured under the production image, one open stream held the process until Docker killed it (exit 137). `closeStreamsOnShutdown` (`src/server/realtime/shutdown.ts`, registered in `src/instrumentation.ts`) therefore calls `stopRealtimeHub()` on the signal. With only raw streams open, Next then exits by itself in about 0.15 s. A client on a keep-alive connection is different. `server.close()` leaves a connection open if it was busy at the signal, so once its stream ends, the connection alone still delays exit (measured with nothing reconnecting: the stream ended at once, and the stop took 2.2 s). A browser's `EventSource` goes further and reopens its stream over that connection, which gets `ready` from a new hub and `LISTEN` on the dying instance. So the process exits by itself 2 s after the signal (`SHUTDOWN_DEADLINE_MS`) if Next has not by then, which also leaves requests in flight time to finish. That exit is the normal path for an instance with a browser connected: measured, 2.2 s and exit 143. A browser therefore moves to another instance only after that one more connection to this one; it then catches up, with messages posted meanwhile arriving once and in order. The deadline is short because a plain `docker stop` was measured killing the process after about 3 s (Docker 29). CI's `docker` job checks `/health` and runs `scripts/check-docker-shutdown.sh`, which fails if either the stop or the deadline is removed: a stream that does not reconnect must end within 1.5 s, and one that reopens on its connection must end within 5 s, both with exit 143. On `v2` that job and script are gone with the Dockerfile, so until Task 3 removes the stream and its shutdown handling, only the unit tests in `src/server/realtime/shutdown.test.ts` check it.
+**Shutdown.** Next answers SIGTERM and SIGINT with `server.close()` and waits for every request to finish. A stream never finishes, so measured under the production image, one open stream held the process until Docker killed it (exit 137). `closeStreamsOnShutdown` (`src/server/realtime/shutdown.ts`, registered in `src/instrumentation.ts`) therefore calls `stopRealtimeHub()` on the signal. With only raw streams open, Next then exits by itself in about 0.15 s. A client on a keep-alive connection is different. `server.close()` leaves a connection open if it was busy at the signal, so once its stream ends, the connection alone still delays exit (measured with nothing reconnecting: the stream ended at once, and the stop took 2.2 s). A browser's `EventSource` goes further and reopens its stream over that connection, which gets `ready` from a new hub and `LISTEN` on the dying instance. So the process exits by itself 2 s after the signal (`SHUTDOWN_DEADLINE_MS`) if Next has not by then, which also leaves requests in flight time to finish. That exit is the normal path for an instance with a browser connected: measured, 2.2 s and exit 143. A browser therefore moves to another instance only after that one more connection to this one; it then catches up, with messages posted meanwhile arriving once and in order. The deadline is short because a plain `docker stop` was measured killing the process after about 3 s (Docker 29). CI's `docker` job checks `/health` and runs `scripts/check-docker-shutdown.sh`, which fails if either the stop or the deadline is removed: a stream that does not reconnect must end within 1.5 s, and one that reopens on its connection must end within 5 s, both with exit 143. On `v2` that job and script are gone with the Dockerfile, and since Task 3 there is no stream on `v2`, so none of this applies there.
 
 ## Testing approach
 
-- **Unit**: zod schemas, clustering grid math, repository and SQL functions against the local Supabase database (including bounds that cross the antimeridian).
+- **Unit**: zod schemas, clustering grid math, repository and SQL functions against the local Supabase database (including bounds that cross the antimeridian), and the Realtime subscription against the local stack (`room-channel.test.ts`: delivery to a signed-out subscriber, a message posted the moment it is ready, one room only).
 - **API**: route handlers against the local Supabase stack, through its API as on v2 in production.
 - **Which database:** unit, API and e2e tests all use the local stack's one database (`SUPABASE_DB_URL`) and empty it, so they wipe dev data and must not run at the same time. Each suite first refuses any URL whose host is not `127.0.0.1` or `localhost` (`assertLocalDatabase`), so a `.env` pointing at the hosted project cannot be emptied, then applies migrations written since the stack started.
-- **E2E (Playwright)**: drop a draft that saves nothing, create the room with its first message, reload and see persistence; move, discard and double-click a draft; a second browser sees a posted message live; after the stream fails for a while, messages sent meanwhile appear once and in order; and after the app's `LISTEN` connection is terminated in Postgres (`dropRealtimeListener`), an open stream reconnects and catches up once, in order. Playwright starts its own dev server on port 3100 (`E2E_PORT`), never `npm run dev` on 3000, and fails if that port is busy unless `E2E_REUSE_SERVER=1`, so it cannot silently test another checkout's server. The server and the tests read the Supabase settings from the environment or `.env`, and global setup empties the `SUPABASE_DB_URL` database once per run, so tests must not depend on each other's rooms. Because tests share that database and click the same spots, a fixture (`ownRoomsOnly`, on by default) answers each page's viewport requests with only the rooms that page created; viewport tests turn it off and never rely on an area being empty. Shared locators and actions live in `e2e/chat-page.ts`. `rooms.spec.ts` stays one file on purpose: its tests wait on click timers and map animations, which run late under CPU load, and as one file they run one at a time. Split into three files that ran in parallel, a few failed in most full runs.
+- **E2E (Playwright)**: drop a draft that saves nothing, create the room with its first message, reload and see persistence; move, discard and double-click a draft; a second browser, and a signed-out one, sees a posted message live; while Realtime refuses the page, and after its socket drops mid-conversation, messages sent meanwhile appear once and in order; a hidden tab gives up its channel and catches up when shown. `watchLiveConnection` (`e2e/support.ts`) routes the page's Realtime WebSocket through the test, so it can wait for a room's channel to be live, drop the socket, or refuse new ones. Playwright starts its own dev server on port 3100 (`E2E_PORT`), never `npm run dev` on 3000, and fails if that port is busy unless `E2E_REUSE_SERVER=1`, so it cannot silently test another checkout's server. The server and the tests read the Supabase settings from the environment or `.env`, and global setup empties the `SUPABASE_DB_URL` database once per run, so tests must not depend on each other's rooms. Because tests share that database and click the same spots, a fixture (`ownRoomsOnly`, on by default) answers each page's viewport requests with only the rooms that page created; viewport tests turn it off and never rely on an area being empty. Shared locators and actions live in `e2e/chat-page.ts`. `rooms.spec.ts` stays one file on purpose: its tests wait on click timers and map animations, which run late under CPU load, and as one file they run one at a time. Split into three files that ran in parallel, a few failed in most full runs.
 
 ## Known limitations (documented, not built)
 
@@ -271,8 +251,8 @@ On the `v2` branch the Dockerfile, Compose and the migration runner are gone (v2
 - A refetch replaces the list with the latest 50 messages, so with 50 loaded plus 5 live, a reader at the very top who refocuses the tab loses the five oldest and the view starts at the sixth. Readers further down keep their place in Chromium through scroll anchoring; Safari, which has none, was not tested. Merging the refetch would have to avoid a silent gap after a long time offline, so it was left out. Add a test when browsers other than Chromium are configured.
 - A first message that fails after the user went Back and Forward during the send ends the draft with no message saying the room was not created, and anything typed into the form shown meanwhile is lost. A short status line would explain it.
 - (v1) `/health` shares the app's connection pool, so it also answers 503 when the pool is saturated, for example by requests waiting on a long lock, though the database still answers others. All instances would go unready together. A ping that times out is not cancelled, and keeps its connection until the database answers; the pool recovers by itself. A dedicated short-lived connection would avoid both.
-- The stream's backlog limit assumes the queue can drain between writes. Notifications that arrive together are delivered with no chance to drain, so one transaction inserting 5000 rows dropped a client that was reading, after 43 messages, and the log says it "stopped reading". 200 rows arrived in full. The app inserts one row per transaction, so this takes bulk SQL; the client should reconnect and catch up as after any drop.
-- The 2 s shutdown deadline applies whatever time the platform would allow, so a request slower than that at shutdown, as during a database stall, is cut off with no response. Its message may or may not have been stored (both were seen), so a resend can duplicate it. Making the deadline configurable would help where the platform waits longer. On ECS behind the ALB (`INFRA.md`) this should matter less, because draining gives requests up to 30 s before the signal.
+- (v1) The stream's backlog limit assumes the queue can drain between writes. Notifications that arrive together are delivered with no chance to drain, so one transaction inserting 5000 rows dropped a client that was reading, after 43 messages, and the log says it "stopped reading". 200 rows arrived in full. The app inserts one row per transaction, so this takes bulk SQL; the client should reconnect and catch up as after any drop.
+- (v1) The 2 s shutdown deadline applies whatever time the platform would allow, so a request slower than that at shutdown, as during a database stall, is cut off with no response. Its message may or may not have been stored (both were seen), so a resend can duplicate it. Making the deadline configurable would help where the platform waits longer. On ECS behind the ALB (`INFRA.md`) this should matter less, because draining gives requests up to 30 s before the signal.
 - Hooks and components are tested here without React Testing Library or jsdom, so code that needs a live React tree or a Leaflet map has no unit test, only e2e: `useRoomStream` (the effect, and closing the stream on unmount or a room change), `useFlyToRoom`, `ChatShell`, `LeafletMap` (`ClickToDraft`, `EnterToDraft`), `MapMarkers` and `MessageForm`. The pure logic they use is unit tested (`draftReducer`, `viewport`, `map-grid`, `message-cache`, `message-input`). Add hook and component tests if those tools are ever added (ask first: new dependencies).
 - Basic per-IP rate limiting only. Counters are per instance, so N instances allow N times the limit, and a restart resets them; production adds a per-IP rule at the WAF (see `INFRA.md`), and a shared store such as Redis is the next step.
 - Two rooms at exactly the same point never separate: below zoom 16 they form a cluster, and from zoom 16 their pins overlap, so the lower one should be unreachable by pointer, though Tab reaches it (positions measured, the click not tested). Enter drops a draft at the centre of the map, so the same default view and window size give the same point. Listing the rooms at a point would solve it.

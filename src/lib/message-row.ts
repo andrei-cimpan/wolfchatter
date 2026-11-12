@@ -1,8 +1,8 @@
 import type { Message } from "./types";
 
 /**
- * A `messages` row as Postgres hands it over: `created_at` is a `Date` from a query, and a string
- * with microseconds and an offset in a `NOTIFY` payload (`row_to_json`).
+ * A `messages` row as it arrives: `created_at` is a `Date` from a `pg` query (test setup), and a
+ * string with microseconds and an offset from PostgREST, `row_to_json` and Realtime.
  */
 export type MessageRow = {
   id: string;

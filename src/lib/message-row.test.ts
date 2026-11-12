@@ -19,10 +19,10 @@ describe("messageFromRow", () => {
     });
   });
 
-  it("gives a NOTIFY timestamp the same shape as a queried one", () => {
-    const fromNotify = messageFromRow({ ...row, created_at: "2026-11-03T12:00:00.123456+02:00" });
+  it("gives a timestamp sent as text the same shape as a queried one", () => {
+    const fromText = messageFromRow({ ...row, created_at: "2026-11-03T12:00:00.123456+02:00" });
     const fromQuery = messageFromRow({ ...row, created_at: new Date("2026-11-03T10:00:00.123Z") });
-    expect(fromNotify).toEqual(fromQuery);
+    expect(fromText).toEqual(fromQuery);
   });
 
   it("reads the timestamp text PostgREST and Realtime send", () => {

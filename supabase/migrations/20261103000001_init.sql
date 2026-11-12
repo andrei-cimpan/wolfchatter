@@ -24,10 +24,10 @@ create table public.messages (
 create index messages_room_created_idx on public.messages (room_id, created_at);
 create index rooms_location_idx on public.rooms (lat, lng);
 
--- One trigger keeps message_count and real-time fan-out in step with every insert, whichever app
--- instance wrote the row. pg_notify feeds v1's SSE stream until Realtime replaces it. Security
--- definer because posters will have no right to update rooms; the empty search_path keeps such a
--- function from resolving names through a schema a caller controls.
+-- Keeps message_count in step with every insert. Live delivery is Realtime's, from the publication
+-- at the end of this file, so unlike v1 the trigger sends no pg_notify. Security definer because
+-- posters will have no right to update rooms; the empty search_path keeps such a function from
+-- resolving names through a schema a caller controls.
 create function public.on_message_insert() returns trigger
 language plpgsql
 security definer
@@ -35,12 +35,11 @@ set search_path = ''
 as $$
 begin
   update public.rooms set message_count = message_count + 1 where id = new.room_id;
-  perform pg_notify('messages', row_to_json(new)::text);
   return new;
 end;
 $$;
 
-create trigger messages_notify after insert on public.messages
+create trigger messages_count after insert on public.messages
   for each row execute function public.on_message_insert();
 
 -- The queries below are v1's, from PostgresChatRepository, moved here because the Supabase client

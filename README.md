@@ -84,8 +84,8 @@ All configuration is through environment variables. `.env.example` lists them al
 
 | Variable | Purpose |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The Supabase project the app reads and writes through. Required: `next dev`, `next build` and `npm run typecheck` (through `next typegen`) stop without them |
-| `SUPABASE_DB_URL` | The Supabase database: the live message stream listens on it until Supabase Realtime replaces it, and `npm test` and `npm run e2e` use and empty it. Tests require it on `127.0.0.1` or `localhost` |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The Supabase project the app reads and writes through, and the browser subscribes to for live messages. Required: `next dev`, `next build` and `npm run typecheck` (through `next typegen`) stop without them |
+| `SUPABASE_DB_URL` | The local Supabase database, which `npm test` and `npm run e2e` use and empty. Must be on `127.0.0.1` or `localhost`. The app itself does not read it |
 | `RATE_LIMIT_ROOMS_PER_MINUTE`, `RATE_LIMIT_MESSAGES_PER_MINUTE` | Optional per-IP limits on creating rooms and posting messages (defaults: 10 and 30) |
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Optional basemap (default: OpenStreetMap). Read at build time |
 
@@ -95,8 +95,8 @@ All configuration is through environment variables. `.env.example` lists them al
 src/app/             pages and API route handlers, including /health
 src/components/      ChatShell, MapView, LeafletMap, MapMarkers, RoomPanel, MessageList, MessageForm
 src/hooks/           data and real-time hooks
-src/lib/             shared types, validation schemas
-src/server/          repository (database access), real-time hub, HTTP helpers
+src/lib/             shared types, validation schemas, Supabase config and live subscription
+src/server/          repository (database access), HTTP helpers
 supabase/            local stack config and SQL migrations
 e2e/                 Playwright tests
 docs/                PRD, design, tasks, infrastructure, review
@@ -136,7 +136,7 @@ The main ones are below. The full list is in [the design note](docs/DESIGN.md#kn
 
 v2 is a personal idea outside the brief: a smaller version for a small userbase, easy to deploy.
 
-- Supabase for Postgres and Realtime, replacing the SSE hub behind the same `ChatRepository` interface.
+- Supabase for Postgres and Realtime, replacing the SSE hub; the `ChatRepository` interface stays.
 - Supabase Auth: anyone can read, signed-in users post, enforced with row-level security.
 - Mapbox via react-map-gl instead of OpenStreetMap tiles.
 - Deployment to a simple host, for example Vercel.
