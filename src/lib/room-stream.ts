@@ -1,28 +1,20 @@
+import { messageFromRow, type MessageRow } from "./message-row";
 import { messageSchema } from "./schemas";
+import { getBrowserSupabase } from "./supabase/browser-client";
+import { subscribeToRoomMessages, type RoomChannelHandlers } from "./supabase/room-channel";
 import type { Message } from "./types";
 
 export const STREAM_RETRY_MIN_MS = 1000;
 export const STREAM_RETRY_MAX_MS = 30_000;
 
-// EventSource.CLOSED, spelled out so this module also loads where EventSource does not exist.
-const CLOSED = 2;
-
-// Reconnect errors in a row, with no ready between them, after which EventSource's own retry
-// (every second or two, for as long as the server is unreachable) is replaced by the backoff.
-const MAX_RECONNECT_ERRORS = 3;
-
 export type RoomStreamHandlers = {
-  /** Live messages are flowing: catch up on anything sent before. Runs on every (re)connect. */
+  /** Live messages are flowing: catch up on anything sent before. Runs on every (re)subscribe. */
   onReady(): void;
   onMessage(message: Message): void;
 };
 
-/** The part of EventSource this module uses, so tests can pass a fake. */
-export type EventSourceLike = {
-  readonly readyState: number;
-  addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void;
-  close(): void;
-};
+/** Subscribes to a room's new messages until the returned function is called. */
+export type SubscribeToRoom = (roomId: string, handlers: RoomChannelHandlers) => () => void;
 
 /** The part of `document` this module uses, so tests can pass a fake. */
 export type PageVisibility = {
@@ -32,75 +24,69 @@ export type PageVisibility = {
 };
 
 export type RoomStreamOptions = {
-  createEventSource?: (url: string) => EventSourceLike;
+  subscribe?: SubscribeToRoom;
   /** For tests: picks where in its upper half each backoff wait falls. */
   random?: () => number;
   page?: PageVisibility;
 };
 
 /**
- * Opens the room's SSE stream and keeps it open until the returned function is called. After a
- * stream ends, EventSource reconnects by itself, which is left alone for a dropped stream that comes
- * straight back. It gives up for good when a request gets an error status, and while the server is
- * unreachable it keeps retrying at the server's short `retry` delay; both are handled here instead,
- * waiting 1 s, doubling to 30 s, with jitter, until a stream is ready again.
+ * Keeps the room's Realtime subscription open until the returned function is called. A channel
+ * that fails is dropped and a new one subscribed after 1 s, doubling to 30 s, with jitter, until one
+ * is ready again; each `ready` runs `onReady`, which catches up on what was sent in between.
  *
- * Browsers allow six HTTP/1.1 connections per host across all tabs, and each stream holds one for as
- * long as it is open, so six tabs would leave the next with no way to load anything. A hidden tab
- * therefore holds no stream; `ready` catches it up when it returns.
+ * A hidden tab holds no channel. Browsers throttle background tabs, which can starve the socket's
+ * heartbeat, and a tab nobody looks at has no reason to receive messages; `ready` catches it up
+ * when it returns.
  */
 export function connectRoomStream(
   roomId: string,
   handlers: RoomStreamHandlers,
   {
-    createEventSource = (url) => new EventSource(url),
+    subscribe = (id, channelHandlers) => subscribeToRoomMessages(getBrowserSupabase(), id, channelHandlers),
     random = Math.random,
     page = typeof document === "undefined" ? undefined : document,
   }: RoomStreamOptions = {},
 ): () => void {
-  const url = `/api/rooms/${encodeURIComponent(roomId)}/stream`;
-  let source: EventSourceLike | undefined;
+  let unsubscribe: (() => void) | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryMs = STREAM_RETRY_MIN_MS;
-  // Counted across EventSources, so once the backoff has taken over, each new one that cannot
-  // connect is handed back to it on its first error.
-  let errorsSinceReady = 0;
 
   function connect(): void {
-    const current = createEventSource(url);
-    source = current;
-    current.addEventListener("ready", () => {
-      retryMs = STREAM_RETRY_MIN_MS;
-      errorsSinceReady = 0;
-      handlers.onReady();
+    const current = subscribe(roomId, {
+      onInsert: (row) => {
+        const message = parseMessage(row);
+        if (message?.roomId === roomId) handlers.onMessage(message);
+      },
+      onStatus: (status) => {
+        if (unsubscribe !== current) return;
+        if (status === "ready") {
+          retryMs = STREAM_RETRY_MIN_MS;
+          handlers.onReady();
+          return;
+        }
+        current();
+        unsubscribe = undefined;
+        // Anywhere in the upper half of the wait, so clients dropped together do not return together.
+        retryTimer = setTimeout(connect, retryMs * (0.5 + random() / 2));
+        retryMs = Math.min(retryMs * 2, STREAM_RETRY_MAX_MS);
+      },
     });
-    current.addEventListener("message", (event) => {
-      const message = parseMessage(event.data);
-      if (message?.roomId === roomId) handlers.onMessage(message);
-    });
-    current.addEventListener("error", () => {
-      errorsSinceReady++;
-      // While CONNECTING, EventSource is already retrying; a stream that ended usually comes back.
-      if (current.readyState !== CLOSED && errorsSinceReady < MAX_RECONNECT_ERRORS) return;
-      current.close();
-      // Anywhere in the upper half of the wait, so clients dropped together do not return together.
-      retryTimer = setTimeout(connect, retryMs * (0.5 + random() / 2));
-      retryMs = Math.min(retryMs * 2, STREAM_RETRY_MAX_MS);
-    });
+    unsubscribe = current;
   }
 
   function disconnect(): void {
     clearTimeout(retryTimer);
-    source?.close();
-    source = undefined;
+    retryTimer = undefined;
+    unsubscribe?.();
+    unsubscribe = undefined;
   }
 
   function onVisibilityChange(): void {
     if (page?.hidden) {
       disconnect();
-    } else if (!source) {
+    } else if (!unsubscribe && retryTimer === undefined) {
       retryMs = STREAM_RETRY_MIN_MS;
-      errorsSinceReady = 0;
       connect();
     }
   }
@@ -113,9 +99,10 @@ export function connectRoomStream(
   };
 }
 
-function parseMessage(data: string): Message | null {
+// Rows come straight from Postgres through Realtime; one that does not make a valid message is dropped.
+function parseMessage(row: MessageRow): Message | null {
   try {
-    const result = messageSchema.safeParse(JSON.parse(data));
+    const result = messageSchema.safeParse(messageFromRow(row));
     return result.success ? result.data : null;
   } catch {
     return null;

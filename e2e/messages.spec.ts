@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { messageField, messages, panel, submit, usernameField } from "./chat-page";
-import { box, dropRealtimeListener, expect, serveBlankTiles, test } from "./support";
+import { box, expect, serveBlankTiles, test, watchLiveConnection } from "./support";
 
 test.beforeEach(async ({ page }) => {
   await serveBlankTiles(page);
@@ -252,9 +252,9 @@ test.describe("live messages", () => {
     const other = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const reader = await other.newPage();
     await serveBlankTiles(reader);
-    const streamReady = reader.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    const live = await watchLiveConnection(reader);
     await openRoom(reader, id);
-    await streamReady;
+    await live.ready(id);
     await openRoom(page, id);
 
     await post(page, "ana", "Live from the other tab");
@@ -266,31 +266,44 @@ test.describe("live messages", () => {
     await other.close();
   });
 
-  test("after the stream reconnects, messages sent meanwhile appear once and in order", async ({ page }) => {
+  test("a signed-out reader sees a message live", async ({ page, browser }) => {
+    const id = await newRoom(page.request);
+    // A fresh context has no session cookie, so its channel joins as the anon role.
+    const other = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const reader = await other.newPage();
+    await serveBlankTiles(reader);
+    const live = await watchLiveConnection(reader);
+    await openRoom(reader, id);
+    await live.ready(id);
+
+    await page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body: "For anyone" } });
+    await expect(newest(reader)).toContainText("For anyone");
+    await other.close();
+  });
+
+  test("after the live connection comes back, messages sent meanwhile appear once and in order", async ({ page }) => {
     const id = await newRoom(page.request);
     const send = (body: string) => page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
     await send("before");
-    // The stream request fails until the route is removed, as it would while the database is down.
-    const isStream = (url: URL) => url.pathname === `/api/rooms/${id}/stream`;
-    let refused = 0;
-    await page.route(isStream, (route) => {
-      refused++;
-      return route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } });
-    });
+    // Realtime refuses the page until it is back up, as it would while Realtime is down.
+    const live = await watchLiveConnection(page);
+    live.setDown(true);
     await openRoom(page, id);
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/]);
-    await expect.poll(() => refused).toBeGreaterThan(0);
+    await expect.poll(() => live.refused()).toBeGreaterThan(0);
 
     await send("during one");
     await send("during two");
-    await page.unroute(isStream);
+    live.setDown(false);
+    // The client waits up to 10 s between its own reconnects.
+    await live.ready(id);
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/]);
 
     await send("after");
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/, /after/]);
   });
 
-  test("a hidden tab gives up its stream and catches up when it returns", async ({ page }) => {
+  test("a hidden tab gives up its channel and catches up when it returns", async ({ page }) => {
     const id = await newRoom(page.request);
     const send = (body: string) => page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
     const setHidden = (hidden: boolean) =>
@@ -298,18 +311,15 @@ test.describe("live messages", () => {
         Object.defineProperty(document, "hidden", { configurable: true, get: () => value });
         document.dispatchEvent(new Event("visibilitychange"));
       }, hidden);
-    const stream = page.waitForRequest((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    const live = await watchLiveConnection(page);
     await openRoom(page, id);
-    const first = await stream;
+    await live.ready(id);
 
-    const ended = page.waitForEvent("requestfailed", (r) => r === first);
     await setHidden(true);
-    await ended;
     await send("sent while hidden");
 
-    const reopened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
     await setHidden(false);
-    await reopened;
+    await live.ready(id, 2);
     await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/]);
     await send("sent after returning");
     await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/, /sent after returning/]);
@@ -339,9 +349,9 @@ test.describe("following the conversation", () => {
     const sendLive = (body: string) =>
       page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
     for (let i = 1; i <= 25; i++) await sendLive(text(i));
-    const streamOpened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    const live = await watchLiveConnection(page);
     await openRoom(page, id);
-    await streamOpened;
+    await live.ready(id);
     await expect(messages(page).getByRole("listitem")).toHaveCount(25);
     await expect(newest(page)).toBeInViewport({ ratio: 0.9 });
     return sendLive;
@@ -484,29 +494,24 @@ test.describe("following the conversation", () => {
 test.describe("live messages after a drop", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
-  test("a stream that drops after live messages catches up once, in order (review #3)", async ({ page, request }) => {
+  test("a connection that drops after live messages catches up once, in order (review #3)", async ({ page, request }) => {
     const id = await newRoom(request);
     // The test's own request context, which going offline in the page does not affect.
     const send = (body: string) => request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body } });
     const items = messages(page).getByRole("listitem");
     await send("first");
-    let streams = 0;
-    page.on("request", (r) => {
-      if (r.url().endsWith(`/api/rooms/${id}/stream`)) streams++;
-    });
-    const streamOpened = page.waitForResponse((r) => r.url().endsWith(`/api/rooms/${id}/stream`));
+    const live = await watchLiveConnection(page);
     await openRoom(page, id);
-    await streamOpened;
+    await live.ready(id);
     await send("live");
     await expect(items).toHaveText([/first/, /live/]);
 
-    const opened = streams;
-    await dropRealtimeListener();
+    await live.drop();
     await send("gap one");
     await send("gap two");
-    await expect(items).toHaveText([/first/, /live/, /gap one/, /gap two/], { timeout: 10_000 });
-    // The gap messages came through a new stream's catch-up; the old stream had been closed.
-    expect(streams).toBeGreaterThan(opened);
+    // The gap messages come through a new channel's catch-up; the old one went with the socket.
+    await live.ready(id, 2);
+    await expect(items).toHaveText([/first/, /live/, /gap one/, /gap two/]);
 
     await send("after");
     await expect(items).toHaveText([/first/, /live/, /gap one/, /gap two/, /after/]);

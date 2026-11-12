@@ -1,5 +1,4 @@
-import { test as base, expect, type Page } from "@playwright/test";
-import pg from "pg";
+import { test as base, expect, type Page, type WebSocketRoute } from "@playwright/test";
 
 // The browser logs every non-2xx response, and some tests trigger a 404, 429 or 500 on purpose.
 const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded with a status of (404|429|500)/];
@@ -104,21 +103,58 @@ export async function box(page: Page, selector: string) {
   return b;
 }
 
+type LiveConnection = {
+  /** How many times a channel for this room has reported that it is watching for new messages. */
+  readyCount(roomId: string): number;
+  /** Waits until that count reaches `count`. */
+  ready(roomId: string, count?: number): Promise<void>;
+  /** Closes the open Realtime sockets, as a dropped network would; the client then reconnects. */
+  drop(): Promise<void>;
+  /** While down, the page's Realtime sockets are closed as soon as they open. */
+  setDown(down: boolean): void;
+  /** Sockets refused while down. */
+  refused(): number;
+};
+
 /**
- * Ends the app server's LISTEN connection, as a database restart or a dropped network would. The
- * hub then closes every stream, and the source reconnects after its 1 s backoff, so messages
- * posted right after this never reach a stream and arrive only through catch-up.
+ * Routes the page's Realtime WebSocket through the test, which then sees when a room's channel is
+ * live and can drop the connection. Call it before the page opens a room.
  */
-export async function dropRealtimeListener(): Promise<void> {
-  const client = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL });
-  await client.connect();
-  try {
-    const { rowCount } = await client.query(
-      `select pg_terminate_backend(pid) from pg_stat_activity
-       where datname = current_database() and application_name = 'wolfchatter-realtime'`,
-    );
-    expect(rowCount, "the app's LISTEN connection").toBe(1);
-  } finally {
-    await client.end();
-  }
+export async function watchLiveConnection(page: Page): Promise<LiveConnection> {
+  const readyTopics: string[] = [];
+  let open: WebSocketRoute[] = [];
+  let down = false;
+  let refused = 0;
+  await page.routeWebSocket(/\/realtime\/v1\/websocket/, (ws) => {
+    if (down) {
+      refused++;
+      return ws.close();
+    }
+    const server = ws.connectToServer();
+    open.push(ws);
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      // Realtime's word that a channel's postgres_changes are running, which subscribeToRoomMessages
+      // waits for before reporting ready. Matched as text, whichever serializer the client uses.
+      if (typeof message === "string" && /"postgres_changes"/.test(message) && /"status":"ok"/.test(message)) {
+        readyTopics.push(message);
+      }
+      ws.send(message);
+    });
+  });
+  const readyCount = (roomId: string) => readyTopics.filter((topic) => topic.includes(roomId)).length;
+  return {
+    readyCount,
+    ready: (roomId, count = 1) =>
+      expect.poll(() => readyCount(roomId), { message: `room ${roomId} live`, timeout: 15_000 }).toBeGreaterThanOrEqual(count),
+    drop: async () => {
+      const closing = open;
+      open = [];
+      await Promise.all(closing.map((ws) => ws.close()));
+    },
+    setDown: (value) => {
+      down = value;
+    },
+    refused: () => refused,
+  };
 }

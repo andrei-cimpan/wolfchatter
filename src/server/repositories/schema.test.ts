@@ -1,4 +1,3 @@
-import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { setupTestDatabase } from "./test/test-db";
 
@@ -52,27 +51,5 @@ describe("initial schema", () => {
     await expect(
       db().query("insert into messages (room_id, author, body) values ($1, $2, $3)", [room.id, author, body]),
     ).rejects.toThrow(/check constraint/);
-  });
-
-  it("counts messages on the room and notifies listeners on insert", async () => {
-    const room = await createRoom();
-    const listener = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL });
-    await listener.connect();
-    try {
-      await listener.query("listen messages");
-      const notified = new Promise<pg.Notification>((resolve) => listener.once("notification", resolve));
-
-      await db().query("insert into messages (room_id, author, body) values ($1, 'ana', 'hello')", [room.id]);
-
-      const payload: unknown = JSON.parse((await notified).payload ?? "null");
-      expect(payload).toMatchObject({ room_id: room.id, author: "ana", body: "hello" });
-      const { rows } = await db().query<{ message_count: number }>(
-        "select message_count from rooms where id = $1",
-        [room.id],
-      );
-      expect(rows[0]?.message_count).toBe(1);
-    } finally {
-      await listener.end();
-    }
   });
 });

@@ -54,7 +54,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 - `GET /api/rooms/:id/messages?before=<cursor>&after=<cursor>` and `POST /api/rooms/:id/messages`
 - `GET /api/rooms/:id/stream` (Server-Sent Events, FR6)
 
-**Real-time delivery.** Server-Sent Events from the Next.js server, fed by Postgres `LISTEN/NOTIFY` so it works across multiple app instances. If the connection drops, the client reconnects automatically and refetches any missed messages. In v2 this is replaced by Supabase Realtime.
+**Real-time delivery.** Server-Sent Events from the Next.js server, fed by Postgres `LISTEN/NOTIFY` so it works across multiple app instances. If the connection drops, the client reconnects automatically and refetches any missed messages. In v2 the browser subscribes to Supabase Realtime instead, and the stream route is gone; the reconnect and refetch behaviour stays.
 
 **State management.** Server state (rooms, messages) with TanStack Query. The selected room lives in the URL (`?room=<id>`), so it is shareable and survives refresh. The username is kept in localStorage. No global store is needed.
 

@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { register } from "./instrumentation";
 
-const closeStreamsOnShutdown = vi.hoisted(() => vi.fn());
-vi.mock("@/server/realtime/shutdown", () => ({ closeStreamsOnShutdown }));
-
 describe("register", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -20,7 +17,6 @@ describe("register", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
-    closeStreamsOnShutdown.mockClear();
   });
 
   it.each(["RATE_LIMIT_ROOMS_PER_MINUTE", "RATE_LIMIT_MESSAGES_PER_MINUTE"])(
@@ -32,7 +28,6 @@ describe("register", () => {
         "Invalid configuration",
         expect.objectContaining({ message: expect.stringContaining(name) as string }),
       );
-      expect(closeStreamsOnShutdown).not.toHaveBeenCalled();
     },
   );
 
@@ -40,6 +35,5 @@ describe("register", () => {
     vi.stubEnv("RATE_LIMIT_ROOMS_PER_MINUTE", "20");
     await register();
     expect(process.exit).not.toHaveBeenCalled();
-    expect(closeStreamsOnShutdown).toHaveBeenCalledWith(process);
   });
 });

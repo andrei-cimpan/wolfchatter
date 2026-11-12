@@ -1,56 +1,60 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectRoomStream, type EventSourceLike, STREAM_RETRY_MAX_MS, STREAM_RETRY_MIN_MS } from "./room-stream";
+import type { MessageRow } from "./message-row";
+import { connectRoomStream, STREAM_RETRY_MAX_MS, STREAM_RETRY_MIN_MS } from "./room-stream";
+import type { RoomChannelHandlers } from "./supabase/room-channel";
 import type { Message } from "./types";
 
 const ROOM = "0b9f8c4e-2f7a-4d55-9a53-1f3e2d4c5b6a";
-const message: Message = { id: "m1", roomId: ROOM, author: "ana", body: "hi", createdAt: "2026-10-31T10:00:00.000Z" };
+const message: Message = {
+  id: "5d7c1a2b-3e4f-4a5b-8c6d-7e8f9a0b1c2d",
+  roomId: ROOM,
+  author: "ana",
+  body: "hi",
+  createdAt: "2026-10-31T10:00:00.000Z",
+};
+// As Realtime sends it: column names, and the timestamp as Postgres text.
+const row: MessageRow = {
+  id: message.id,
+  room_id: ROOM,
+  author: "ana",
+  body: "hi",
+  created_at: "2026-10-31T10:00:00.000123+00:00",
+};
 
-class FakeEventSource implements EventSourceLike {
-  readyState = 0;
+class FakeSubscription {
   closed = false;
-  private readonly listeners = new Map<string, ((event: MessageEvent<string>) => void)[]>();
+  readonly roomId: string;
+  private readonly handlers: RoomChannelHandlers;
 
-  readonly url: string;
-
-  constructor(url: string) {
-    this.url = url;
+  constructor(roomId: string, handlers: RoomChannelHandlers) {
+    this.roomId = roomId;
+    this.handlers = handlers;
   }
-
-  addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void {
-    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  ready(): void {
+    this.handlers.onStatus("ready");
   }
-  close(): void {
-    this.closed = true;
-    this.readyState = 2;
-  }
-  emit(type: string, data = ""): void {
-    for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent(type, { data }));
-  }
-  /** A stream that ended: EventSource is reconnecting by itself. */
-  drop(): void {
-    this.readyState = 0;
-    this.emit("error");
-  }
-  /** A request that failed: EventSource has given up. */
   fail(): void {
-    this.readyState = 2;
-    this.emit("error");
+    this.handlers.onStatus("failed");
+  }
+  insert(value: MessageRow): void {
+    this.handlers.onInsert(value);
   }
 }
 
-let sources: FakeEventSource[];
+let subscriptions: FakeSubscription[];
 const handlers = { onReady: vi.fn(), onMessage: vi.fn() };
+
+function subscribe(roomId: string, channelHandlers: RoomChannelHandlers): () => void {
+  const subscription = new FakeSubscription(roomId, channelHandlers);
+  subscriptions.push(subscription);
+  return () => {
+    subscription.closed = true;
+  };
+}
 
 // random() = 1 waits the full backoff, which keeps most waits exact.
 function connect(random = () => 1): () => void {
-  return connectRoomStream(ROOM, handlers, {
-    createEventSource: (url) => {
-      const source = new FakeEventSource(url);
-      sources.push(source);
-      return source;
-    },
-    random,
-  });
+  return connectRoomStream(ROOM, handlers, { subscribe, random });
 }
 
 class FakePage {
@@ -69,22 +73,14 @@ class FakePage {
 }
 
 function connectOn(page: FakePage): () => void {
-  return connectRoomStream(ROOM, handlers, {
-    createEventSource: (url) => {
-      const source = new FakeEventSource(url);
-      sources.push(source);
-      return source;
-    },
-    random: () => 1,
-    page,
-  });
+  return connectRoomStream(ROOM, handlers, { subscribe, random: () => 1, page });
 }
 
-/** How long until the next EventSource opens, in steps of 100 ms. */
-function waitForNextSource(): number {
-  const before = sources.length;
+/** How long until the next subscription, in steps of 100 ms. */
+function waitForNextSubscription(): number {
+  const before = subscriptions.length;
   let waited = 0;
-  while (sources.length === before && waited < STREAM_RETRY_MAX_MS * 2) {
+  while (subscriptions.length === before && waited < STREAM_RETRY_MAX_MS * 2) {
     vi.advanceTimersByTime(100);
     waited += 100;
   }
@@ -92,7 +88,7 @@ function waitForNextSource(): number {
 }
 
 beforeEach(() => {
-  sources = [];
+  subscriptions = [];
   vi.useFakeTimers();
 });
 
@@ -102,136 +98,126 @@ afterEach(() => {
 });
 
 describe("connectRoomStream", () => {
-  it("opens the room's stream and passes on ready and its messages", () => {
+  it("subscribes to the room and passes on ready and its messages", () => {
     connect();
-    expect(sources.map((s) => s.url)).toEqual([`/api/rooms/${ROOM}/stream`]);
-    sources[0]!.emit("ready", "{}");
-    sources[0]!.emit("message", JSON.stringify(message));
+    expect(subscriptions.map((s) => s.roomId)).toEqual([ROOM]);
+    subscriptions[0]!.ready();
+    subscriptions[0]!.insert(row);
     expect(handlers.onReady).toHaveBeenCalledOnce();
     expect(handlers.onMessage).toHaveBeenCalledWith(message);
   });
 
-  it("ignores events that are not a message of this room", () => {
+  it("ignores rows that are not a valid message of this room", () => {
     connect();
-    sources[0]!.emit("message", "not json");
-    sources[0]!.emit("message", JSON.stringify({ id: "m1" }));
-    sources[0]!.emit("message", JSON.stringify({ ...message, roomId: "other" }));
+    subscriptions[0]!.insert({ ...row, room_id: "other" });
+    subscriptions[0]!.insert({ ...row, author: 42 } as unknown as MessageRow);
+    subscriptions[0]!.insert({ ...row, created_at: "not a date" });
+    subscriptions[0]!.insert({ id: "m1" } as MessageRow);
     expect(handlers.onMessage).not.toHaveBeenCalled();
   });
 
-  it("leaves a dropped stream to EventSource's own reconnect", () => {
-    connect();
-    sources[0]!.drop();
-    vi.advanceTimersByTime(STREAM_RETRY_MAX_MS);
-    expect(sources).toHaveLength(1);
-    expect(sources[0]!.closed).toBe(false);
-  });
-
-  it("retries a failed request, waiting longer each time up to the maximum", () => {
+  it("drops a failed channel and resubscribes, waiting longer each time up to the maximum", () => {
     connect();
     const waits: number[] = [];
     for (let attempt = 0; attempt < 7; attempt++) {
-      sources.at(-1)!.fail();
-      waits.push(waitForNextSource());
+      subscriptions.at(-1)!.fail();
+      waits.push(waitForNextSubscription());
     }
     expect(waits).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
-    expect(sources.slice(0, -1).every((s) => s.closed)).toBe(true);
+    expect(subscriptions.slice(0, -1).every((s) => s.closed)).toBe(true);
   });
 
   it("spreads each wait over its upper half, so clients dropped together do not return together", () => {
     connect(() => 0);
-    sources[0]!.fail();
-    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS / 2);
-    sources[1]!.fail();
-    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS);
+    subscriptions[0]!.fail();
+    expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS / 2);
+    subscriptions[1]!.fail();
+    expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
   });
 
-  it("takes over with its own backoff when EventSource keeps failing to reconnect (review #2)", () => {
-    // An unreachable server: EventSource retries every second by itself, staying CONNECTING.
+  it("goes back to the shortest wait once a channel is ready", () => {
     connect();
-    sources[0]!.emit("ready", "{}");
-    sources[0]!.drop();
-    sources[0]!.drop();
-    expect(sources[0]!.closed).toBe(false);
-    sources[0]!.drop();
-    expect(sources[0]!.closed).toBe(true);
-    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS);
-
-    // Still unreachable: the new EventSource is closed on its first error, and the wait doubles.
-    sources[1]!.drop();
-    expect(sources[1]!.closed).toBe(true);
-    expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS * 2);
-
-    // Back: a ready resets the count, so a single drop is again left to EventSource.
-    sources[2]!.emit("ready", "{}");
-    sources[2]!.drop();
-    expect(sources[2]!.closed).toBe(false);
-  });
-
-  it("goes back to the shortest wait once a stream is ready", () => {
-    connect();
-    sources[0]!.fail();
+    subscriptions[0]!.fail();
     vi.advanceTimersByTime(STREAM_RETRY_MIN_MS);
-    sources[1]!.fail();
+    subscriptions[1]!.fail();
     vi.advanceTimersByTime(STREAM_RETRY_MIN_MS * 2);
-    sources[2]!.emit("ready", "{}");
-    sources[2]!.fail();
+    subscriptions[2]!.ready();
+    subscriptions[2]!.fail();
     vi.advanceTimersByTime(STREAM_RETRY_MIN_MS);
-    expect(sources).toHaveLength(4);
+    expect(subscriptions).toHaveLength(4);
   });
 
-  it("closes the stream and cancels a pending retry when disconnected", () => {
+  it("ignores a channel it has already dropped", () => {
+    connect();
+    subscriptions[0]!.fail();
+    subscriptions[0]!.fail();
+    subscriptions[0]!.ready();
+    expect(handlers.onReady).not.toHaveBeenCalled();
+    expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
+    expect(subscriptions).toHaveLength(2);
+  });
+
+  it("unsubscribes and cancels a pending retry when disconnected", () => {
     const disconnect = connect();
-    sources[0]!.fail();
+    subscriptions[0]!.fail();
     disconnect();
     vi.advanceTimersByTime(STREAM_RETRY_MAX_MS);
-    expect(sources).toHaveLength(1);
+    expect(subscriptions).toHaveLength(1);
 
     const disconnectAgain = connect();
     disconnectAgain();
-    expect(sources[1]!.closed).toBe(true);
+    expect(subscriptions[1]!.closed).toBe(true);
   });
 
   describe("while the tab is hidden", () => {
-    it("closes the stream, and opens a new one when the tab returns", () => {
+    it("drops the channel, and subscribes again when the tab returns", () => {
       const page = new FakePage();
       connectOn(page);
       page.setHidden(true);
-      expect(sources[0]!.closed).toBe(true);
+      expect(subscriptions[0]!.closed).toBe(true);
 
       page.setHidden(false);
-      expect(sources).toHaveLength(2);
-      sources[1]!.emit("ready", "{}");
+      expect(subscriptions).toHaveLength(2);
+      subscriptions[1]!.ready();
       expect(handlers.onReady).toHaveBeenCalledOnce();
     });
 
-    it("opens no stream for a tab opened in the background until it is shown", () => {
+    it("subscribes nothing for a tab opened in the background until it is shown", () => {
       const page = new FakePage();
       page.hidden = true;
       connectOn(page);
-      expect(sources).toHaveLength(0);
+      expect(subscriptions).toHaveLength(0);
 
       page.setHidden(false);
-      expect(sources).toHaveLength(1);
+      expect(subscriptions).toHaveLength(1);
     });
 
     it("cancels a pending retry, and returns with the shortest wait", () => {
       const page = new FakePage();
       connectOn(page);
-      sources[0]!.fail();
+      subscriptions[0]!.fail();
       vi.advanceTimersByTime(STREAM_RETRY_MIN_MS);
-      sources[1]!.fail();
+      subscriptions[1]!.fail();
       page.setHidden(true);
       vi.advanceTimersByTime(STREAM_RETRY_MAX_MS);
-      expect(sources).toHaveLength(2);
+      expect(subscriptions).toHaveLength(2);
 
       page.setHidden(false);
-      expect(sources).toHaveLength(3);
-      sources[2]!.fail();
-      expect(waitForNextSource()).toBe(STREAM_RETRY_MIN_MS);
+      expect(subscriptions).toHaveLength(3);
+      subscriptions[2]!.fail();
+      expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
     });
 
-    it("opens nothing after being disconnected", () => {
+    it("leaves a pending retry alone when shown without having been hidden", () => {
+      const page = new FakePage();
+      connectOn(page);
+      subscriptions[0]!.fail();
+      page.setHidden(false);
+      expect(subscriptions).toHaveLength(1);
+      expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
+    });
+
+    it("subscribes nothing after being disconnected", () => {
       const page = new FakePage();
       const disconnect = connectOn(page);
       page.hidden = true;
@@ -240,7 +226,7 @@ describe("connectRoomStream", () => {
 
       const disconnectWhileHidden = connectOn(page);
       disconnectWhileHidden();
-      expect(sources).toHaveLength(1);
+      expect(subscriptions).toHaveLength(1);
     });
   });
 });
