@@ -1,7 +1,6 @@
 import { listMessagesQuerySchema, postMessageSchema, roomIdSchema } from "@/lib/schemas";
 import { roomNotFound, validationError, withErrorHandling } from "@/server/http/api-errors";
 import { queryInput } from "@/server/http/query-input";
-import { enforceRateLimit, messagePostLimiter } from "@/server/http/rate-limit";
 import { readJson } from "@/server/http/read-json";
 import { getChatRepository, RoomNotFoundError } from "@/server/repositories";
 
@@ -23,12 +22,8 @@ export const GET = withErrorHandling(async (request: Request, ctx: Context) => {
   return Response.json(await repository.listMessages(id, query.data));
 });
 
-/** Posts `{ author, body }` to the room. */
+/** Posts `{ body }` to the room as the signed-in user. Signed out, a valid request gets 401. */
 export const POST = withErrorHandling(async (request: Request, ctx: Context) => {
-  // Counted before anything else, so invalid requests and unknown rooms spend the budget too.
-  const limited = enforceRateLimit(messagePostLimiter, request);
-  if (limited) return limited;
-
   const { id } = await ctx.params;
   if (!roomIdSchema.safeParse(id).success) return roomNotFound();
 

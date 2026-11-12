@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { setupTestDatabase } from "./test/test-db";
+import { SEED_USER_ID, setupTestDatabase } from "./test/test-db";
+import { createTestUser } from "./test/test-users";
 
 // The SQL functions v2's repository calls over RPC. They hold v1's queries, so these port the
 // expectations of postgres-chat-repository.test.ts to the functions themselves.
@@ -11,7 +12,11 @@ const UNKNOWN_ID = "00000000-0000-4000-8000-000000000000";
 const WORLD = [-90, 90, -180, 180, -180, 180];
 
 async function room(lat = 44.43, lng = 26.1): Promise<string> {
-  const { rows } = await db().query<{ id: string }>("insert into rooms (lat, lng) values ($1, $2) returning id", [lat, lng]);
+  const { rows } = await db().query<{ id: string }>("insert into rooms (lat, lng, created_by) values ($1, $2, $3) returning id", [
+    lat,
+    lng,
+    SEED_USER_ID,
+  ]);
   return rows[0]!.id;
 }
 
@@ -20,8 +25,8 @@ async function post(roomId: string, ...bodies: string[]): Promise<string[]> {
   const ids: string[] = [];
   for (const body of bodies) {
     const { rows } = await db().query<{ id: string }>(
-      "insert into messages (room_id, author, body) values ($1, 'ana', $2) returning id",
-      [roomId, body],
+      "insert into messages (room_id, author, body, user_id) values ($1, 'ana', $2, $3) returning id",
+      [roomId, body, SEED_USER_ID],
     );
     ids.push(rows[0]!.id);
   }
@@ -61,8 +66,8 @@ describe("list_messages", () => {
     const id = await room();
     // One statement, one transaction: every row gets the same created_at, so only id orders them.
     await db().query(
-      "insert into messages (room_id, author, body) select $1, 'ana', 'm' || n from generate_series(1, 5) n",
-      [id],
+      "insert into messages (room_id, author, body, user_id) select $1, 'ana', 'm' || n, $2 from generate_series(1, 5) n",
+      [id, SEED_USER_ID],
     );
     const { rows } = await db().query<{ id: string; body: string }>("select id, body from list_messages($1, null, null, 50)", [id]);
     const firstTwo = rows.slice(0, 2);
@@ -192,21 +197,21 @@ describe("list_room_cells", () => {
   });
 });
 
+// Called as a signed-in user, since the room and message take their owner from the session.
 describe("create_room_with_message", () => {
   it("returns the room and its first message", async () => {
-    const { rows } = await db().query<{ result: { room: Record<string, unknown>; message: Record<string, unknown> } }>(
-      "select create_room_with_message($1, $2, $3, $4) as result",
-      [44.43, 26.1, "ana", "hello"],
-    );
-    const { room: created, message } = rows[0]!.result;
-    expect(created).toMatchObject({ lat: 44.43, lng: 26.1, message_count: 1 });
-    expect(message).toMatchObject({ room_id: created.id, author: "ana", body: "hello" });
+    const { client, userId } = await createTestUser({ full_name: "Ana Popescu" });
+    const { data, error } = await client.rpc("create_room_with_message", { p_lat: 44.43, p_lng: 26.1, p_body: "hello" });
+    expect(error).toBeNull();
+    const { room: created, message } = data as { room: Record<string, unknown>; message: Record<string, unknown> };
+    expect(created).toMatchObject({ lat: 44.43, lng: 26.1, message_count: 1, created_by: userId });
+    expect(message).toMatchObject({ room_id: created.id, author: "Ana P.", body: "hello", user_id: userId });
   });
 
   it("leaves no room behind when the message is refused", async () => {
-    await expect(
-      db().query("select create_room_with_message($1, $2, $3, $4)", [44.43, 26.1, "ana", "b".repeat(1001)]),
-    ).rejects.toThrow(/check constraint/);
+    const { client } = await createTestUser();
+    const { error } = await client.rpc("create_room_with_message", { p_lat: 44.43, p_lng: 26.1, p_body: "b".repeat(1001) });
+    expect(error?.message).toMatch(/check constraint/);
     const { rows } = await db().query<{ n: number }>("select count(*)::int as n from rooms");
     expect(rows[0]?.n).toBe(0);
   });

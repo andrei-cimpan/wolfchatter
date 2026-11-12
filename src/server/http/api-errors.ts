@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { NotSignedInError } from "@/server/repositories/chat-repository";
 
 export type ApiErrorCode =
   | "validation_error"
@@ -6,7 +7,7 @@ export type ApiErrorCode =
   | "payload_too_large"
   | "unsupported_media_type"
   | "room_not_found"
-  | "rate_limited"
+  | "unauthenticated"
   | "internal_error";
 
 /** Every API error uses this one shape, so the client has a single parser. */
@@ -26,12 +27,6 @@ export function roomNotFound(): Response {
   return apiError(404, "room_not_found", "Room not found");
 }
 
-export function rateLimited(retryAfterSeconds: number): Response {
-  const response = apiError(429, "rate_limited", "Too many requests, try again shortly");
-  response.headers.set("Retry-After", String(retryAfterSeconds));
-  return response;
-}
-
 // Unexpected failures (database down, bugs) still answer in the error shape, and the details go to
 // the server log rather than to the caller.
 export function withErrorHandling<Args extends unknown[]>(
@@ -41,6 +36,9 @@ export function withErrorHandling<Args extends unknown[]>(
     try {
       return await handler(...args);
     } catch (error) {
+      // Thrown only by a write, after the input was validated, so a broken signed-out request still
+      // learns what is wrong with it first.
+      if (error instanceof NotSignedInError) return apiError(401, "unauthenticated", "Sign in to post");
       console.error("Unhandled API error", error);
       return apiError(500, "internal_error", "Something went wrong");
     }

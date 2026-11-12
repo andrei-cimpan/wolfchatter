@@ -60,12 +60,11 @@ describe("signed out", () => {
         onInsert: (row) => rows.push(row),
         onStatus: (status) => {
           if (status === "failed") return reject(new Error("channel failed"));
-          void client
-            .from("messages")
-            .insert({ room_id: roomId, body: "live" })
-            .then(() => expect.poll(() => rows.map((row) => row.body), { timeout: 5000 }).toEqual(["live"]))
-            .then(resolve, reject)
-            .finally(unsubscribe);
+          const posted = async () => {
+            await client.from("messages").insert({ room_id: roomId, body: "live" });
+            await expect.poll(() => rows.map((row) => row.body), { timeout: 5000 }).toEqual(["live"]);
+          };
+          posted().then(resolve, reject).finally(unsubscribe);
         },
       });
     });
@@ -138,13 +137,13 @@ describe("signed in", () => {
     expect(rows).toEqual([{ name: "Ana Popescu" }]);
   });
 
-  it.each([
-    ["rooms", { lat: 1, lng: 1, title: "Mine" }],
-    ["rooms", { lat: 1, lng: 1, message_count: 99 }],
-    ["rooms", { lat: 1, lng: 1, created_at: "2000-01-01T00:00:00Z" }],
-  ])("cannot set server-owned columns on %s (%j)", async (table, row) => {
+  it.each<Record<string, unknown>>([
+    { lat: 1, lng: 1, title: "Mine" },
+    { lat: 1, lng: 1, message_count: 99 },
+    { lat: 1, lng: 1, created_at: "2000-01-01T00:00:00Z" },
+  ])("cannot set server-owned columns on a room (%j)", async (row) => {
     const { client } = await createTestUser();
-    const { error } = await client.from(table).insert(row);
+    const { error } = await client.from("rooms").insert(row);
     expect(error?.code).toBe(INSUFFICIENT_PRIVILEGE);
   });
 

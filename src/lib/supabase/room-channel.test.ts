@@ -5,6 +5,7 @@ import type { Message } from "@/lib/types";
 import { SupabaseChatRepository } from "@/server/repositories/supabase-chat-repository";
 import { anonClient } from "@/server/repositories/test/supabase-client";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
+import { createTestUser } from "@/server/repositories/test/test-users";
 import { subscribeToRoomMessages } from "./room-channel";
 
 setupTestDatabase();
@@ -21,7 +22,12 @@ afterEach(async () => {
   await client.removeAllChannels();
 });
 
-const repo = () => new SupabaseChatRepository(anonClient());
+// Posts come from a signed-in user; the channel itself listens signed out.
+let poster: SupabaseClient;
+beforeEach(async () => {
+  poster = (await createTestUser({ full_name: "Ana Popescu" })).client;
+});
+const repo = () => new SupabaseChatRepository(poster);
 
 /** Subscribes, and resolves once the channel reports ready; `onReady` runs inside that callback. */
 function subscribe(roomId: string, onReady: () => void = () => {}) {
@@ -59,7 +65,7 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
     const { rows, ready } = subscribe(room.id);
     await ready;
 
-    const posted = await repo().postMessage(room.id, { author: "ana", body: "hello" });
+    const posted = await repo().postMessage(room.id, { body: "hello" });
 
     await deliveredOnce(rows, posted);
   });
@@ -69,7 +75,7 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
       const room = await repo().createRoom({ lat: i, lng: i });
       let posting: Promise<Message> | undefined;
       const { rows, ready } = subscribe(room.id, () => {
-        posting = repo().postMessage(room.id, { author: "ana", body: `right away ${i}` });
+        posting = repo().postMessage(room.id, { body: `right away ${i}` });
       });
       await ready;
       await deliveredOnce(rows, await posting!);
@@ -82,8 +88,8 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
     const { rows, ready } = subscribe(watched.id);
     await ready;
 
-    await repo().postMessage(other.id, { author: "ana", body: "elsewhere" });
-    const here = await repo().postMessage(watched.id, { author: "ana", body: "here" });
+    await repo().postMessage(other.id, { body: "elsewhere" });
+    const here = await repo().postMessage(watched.id, { body: "here" });
 
     // The other room's insert happened first, so by the time this one arrives it would have too.
     await deliveredOnce(rows, here);

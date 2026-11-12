@@ -28,11 +28,5 @@ export default defineConfig({
     url: `http://localhost:${PORT}`,
     reuseExistingServer: REUSE_SERVER,
     timeout: 120_000,
-    env: {
-      // Every test browser posts from the same address, so the per-IP limits would turn busy tests
-      // (such as creating enough rooms to cluster) into 429s. A server reused with E2E_REUSE_SERVER=1 keeps its own env.
-      RATE_LIMIT_ROOMS_PER_MINUTE: "10000",
-      RATE_LIMIT_MESSAGES_PER_MINUTE: "10000",
-    },
   },
 });

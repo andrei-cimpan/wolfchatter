@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { apiError, rateLimited, roomNotFound, validationError, withErrorHandling } from "./api-errors";
+import { NotSignedInError } from "@/server/repositories/chat-repository";
+import { apiError, roomNotFound, validationError, withErrorHandling } from "./api-errors";
 
 describe("apiError", () => {
   it("uses the shared error shape and status", async () => {
@@ -16,12 +17,6 @@ describe("apiError", () => {
     expect(await response.json()).toMatchObject({ error: { code: "room_not_found" } });
   });
 
-  it("answers a spent budget with 429 rate_limited and Retry-After", async () => {
-    const response = rateLimited(42);
-    expect(response.status).toBe(429);
-    expect(response.headers.get("retry-after")).toBe("42");
-    expect(await response.json()).toMatchObject({ error: { code: "rate_limited" } });
-  });
 });
 
 describe("validationError", () => {
@@ -44,6 +39,18 @@ describe("withErrorHandling", () => {
   it("passes successful responses through", async () => {
     const handler = withErrorHandling(async (n: number) => Response.json({ n }));
     expect(await (await handler(2)).json()).toEqual({ n: 2 });
+  });
+
+  it("turns NotSignedInError into 401 unauthenticated, without logging it", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = withErrorHandling(async () => {
+      throw new NotSignedInError();
+    });
+    const response = await handler();
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: { code: "unauthenticated", message: "Sign in to post" } });
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it("turns a throw into a generic 500 and logs the cause", async () => {

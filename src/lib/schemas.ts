@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { normalizeBbox, wrapLongitude } from "./bbox";
-import { AUTHOR_MAX, BODY_MAX, MAX_ZOOM, MESSAGE_LIMIT_MAX } from "./limits";
+import { BODY_MAX, MAX_ZOOM, MESSAGE_LIMIT_MAX } from "./limits";
 
 // Postgres char_length counts code points; String.length counts UTF-16 units, so an emoji
 // would count twice and the API would reject text the database accepts.
@@ -45,8 +45,9 @@ function queryNumber<T extends z.ZodType<number, number>>(schema: T) {
 
 export const roomIdSchema = z.uuid();
 
+// The author is not an input: the database sets it from the signed-in user. Unknown keys, such as
+// an author an old client still sends, are dropped.
 export const postMessageSchema = z.object({
-  author: requiredText("Author", AUTHOR_MAX),
   body: requiredText("Message", BODY_MAX),
 });
 

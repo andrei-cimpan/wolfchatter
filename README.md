@@ -86,7 +86,6 @@ All configuration is through environment variables. `.env.example` lists them al
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The Supabase project the app reads and writes through, and the browser subscribes to for live messages. Required: `next dev`, `next build` and `npm run typecheck` (through `next typegen`) stop without them |
 | `SUPABASE_DB_URL` | The local Supabase database, which `npm test` and `npm run e2e` use and empty. Must be on `127.0.0.1` or `localhost`. The app itself does not read it |
-| `RATE_LIMIT_ROOMS_PER_MINUTE`, `RATE_LIMIT_MESSAGES_PER_MINUTE` | Optional per-IP limits on creating rooms and posting messages (defaults: 10 and 30) |
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Optional basemap (default: OpenStreetMap). Read at build time |
 
 ## Project structure

@@ -1,22 +1,30 @@
-import { describe, expect, it } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { Bbox, MapItem } from "@/lib/types";
 import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
-import { RoomNotFoundError } from "./chat-repository";
+import { NotSignedInError, RoomNotFoundError } from "./chat-repository";
 import { SupabaseChatRepository } from "./supabase-chat-repository";
 import { anonClient } from "./test/supabase-client";
-import { setupTestDatabase } from "./test/test-db";
+import { SEED_USER_ID, setupTestDatabase } from "./test/test-db";
+import { createTestUser } from "./test/test-users";
 
-// db() seeds and inspects tables directly; the repository goes through the API as a signed-out visitor.
+// db() seeds and inspects tables directly; the repository goes through the API as a signed-in user,
+// Ana Popescu, unless a test uses signedOut().
 const db = setupTestDatabase();
 
-const repo = () => new SupabaseChatRepository(anonClient());
+let signedIn: SupabaseClient;
+beforeEach(async () => {
+  signedIn = (await createTestUser({ full_name: "Ana Popescu" })).client;
+});
+const repo = () => new SupabaseChatRepository(signedIn);
+const signedOut = () => new SupabaseChatRepository(anonClient());
 
 const UNKNOWN_ID = "00000000-0000-4000-8000-000000000000";
 const WORLD: Bbox = { west: -180, south: -90, east: 180, north: 90 };
 
 async function postMany(roomId: string, count: number): Promise<string[]> {
   const ids: string[] = [];
-  for (let i = 1; i <= count; i++) ids.push((await repo().postMessage(roomId, { author: "ana", body: `m${i}` })).id);
+  for (let i = 1; i <= count; i++) ids.push((await repo().postMessage(roomId, { body: `m${i}` })).id);
   return ids;
 }
 
@@ -61,7 +69,7 @@ describe("when the API cannot be reached", () => {
 
 describe("errors from the database", () => {
   it("are thrown as Errors that keep the database's code", async () => {
-    const tooLong = { author: "x".repeat(33), body: "hello" };
+    const tooLong = { body: "x".repeat(1001) };
     const error: unknown = await repo().createRoomWithMessage({ lat: 0, lng: 0 }, tooLong).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     expect(error).toMatchObject({ code: "23514" });
@@ -86,33 +94,63 @@ describe("createRoomWithMessage", () => {
   it("saves the room and its first message together", async () => {
     const { room, message } = await repo().createRoomWithMessage(
       { lat: 44.43, lng: 26.1 },
-      { author: "ana", body: "hello" },
+      { body: "hello" },
     );
     expect(room).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 1 });
-    expect(message).toMatchObject({ roomId: room.id, author: "ana", body: "hello" });
+    expect(message).toMatchObject({ roomId: room.id, author: "Ana P.", body: "hello" });
     expect(await repo().getRoom(room.id)).toEqual(room);
     expect(bodies(await repo().listMessages(room.id))).toEqual(["hello"]);
   });
 
   it("saves no room when the message cannot be saved", async () => {
     // Over the column's limit, which the API's schema would catch first.
-    const tooLong = { author: "x".repeat(33), body: "hello" };
+    const tooLong = { body: "x".repeat(1001) };
     await expect(repo().createRoomWithMessage({ lat: 12.5, lng: 34.5 }, tooLong)).rejects.toThrow();
 
     expect(await repo().listMapItems({ bbox: WORLD, zoom: 16 })).toEqual([]);
   });
 });
 
+describe("signed out", () => {
+  it("cannot create rooms", async () => {
+    await expect(signedOut().createRoom({ lat: 0, lng: 0 })).rejects.toBeInstanceOf(NotSignedInError);
+    await expect(signedOut().createRoomWithMessage({ lat: 0, lng: 0 }, { body: "hi" })).rejects.toBeInstanceOf(
+      NotSignedInError,
+    );
+  });
+
+  it("can read", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    await repo().postMessage(room.id, { body: "hello" });
+    expect(await signedOut().getRoom(room.id)).toEqual(await repo().getRoom(room.id));
+    expect(bodies(await signedOut().listMessages(room.id))).toEqual(["hello"]);
+    expect(await signedOut().listMapItems({ bbox: WORLD, zoom: 16 })).toHaveLength(1);
+  });
+});
+
+describe("currentAuthorName", () => {
+  it("is the signed-in user's name, and null when signed out", async () => {
+    expect(await repo().currentAuthorName()).toBe("Ana P.");
+    expect(await signedOut().currentAuthorName()).toBeNull();
+  });
+});
+
 describe("postMessage", () => {
   it("stores the message and bumps the room's message count", async () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });
-    const message = await repo().postMessage(room.id, { author: "ana", body: "hello" });
-    expect(message).toMatchObject({ roomId: room.id, author: "ana", body: "hello" });
+    const message = await repo().postMessage(room.id, { body: "hello" });
+    expect(message).toMatchObject({ roomId: room.id, author: "Ana P.", body: "hello" });
     expect((await repo().getRoom(room.id))?.messageCount).toBe(1);
   });
 
+  it("throws NotSignedInError when signed out, and stores nothing", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    await expect(signedOut().postMessage(room.id, { body: "hi" })).rejects.toBeInstanceOf(NotSignedInError);
+    expect((await repo().getRoom(room.id))?.messageCount).toBe(0);
+  });
+
   it.each([UNKNOWN_ID, "not-a-uuid"])("throws RoomNotFoundError for room %s", async (roomId) => {
-    await expect(repo().postMessage(roomId, { author: "ana", body: "hi" })).rejects.toBeInstanceOf(
+    await expect(repo().postMessage(roomId, { body: "hi" })).rejects.toBeInstanceOf(
       RoomNotFoundError,
     );
   });
@@ -148,9 +186,9 @@ describe("listMessages", () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });
     // now() is fixed for a transaction, so these four rows get identical timestamps.
     await db().query(
-      `insert into messages (room_id, author, body)
-       select $1, 'ana', 'tie' || i from generate_series(1, 4) i`,
-      [room.id],
+      `insert into messages (room_id, author, body, user_id)
+       select $1, 'ana', 'tie' || i, $2 from generate_series(1, 4) i`,
+      [room.id, SEED_USER_ID],
     );
     const all = await repo().listMessages(room.id);
     expect(new Set(all.map((m) => m.createdAt)).size).toBe(1);
@@ -166,8 +204,8 @@ describe("listMessages", () => {
   it("only returns messages from the requested room", async () => {
     const a = await repo().createRoom({ lat: 0, lng: 0 });
     const b = await repo().createRoom({ lat: 1, lng: 1 });
-    await repo().postMessage(a.id, { author: "ana", body: "in a" });
-    const inB = await repo().postMessage(b.id, { author: "ana", body: "in b" });
+    await repo().postMessage(a.id, { body: "in a" });
+    const inB = await repo().postMessage(b.id, { body: "in b" });
     expect(bodies(await repo().listMessages(a.id))).toEqual(["in a"]);
     // A cursor from another room matches nothing rather than leaking that room's position.
     expect(await repo().listMessages(a.id, { before: inB.id })).toEqual([]);
@@ -176,8 +214,8 @@ describe("listMessages", () => {
   it("caps the limit", async () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });
     await db().query(
-      `insert into messages (room_id, author, body) select $1, 'ana', 'x' from generate_series(1, $2::int)`,
-      [room.id, MESSAGE_LIMIT_MAX + 10],
+      `insert into messages (room_id, author, body, user_id) select $1, 'ana', 'x', $3 from generate_series(1, $2::int)`,
+      [room.id, MESSAGE_LIMIT_MAX + 10, SEED_USER_ID],
     );
     // Literal, not MESSAGE_LIMIT_MAX, so changing the constant is a visible test change.
     expect(await repo().listMessages(room.id, { limit: 10_000 })).toHaveLength(100);
@@ -187,8 +225,8 @@ describe("listMessages", () => {
   it("returns 50 messages by default, and when the limit is not a number", async () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });
     await db().query(
-      `insert into messages (room_id, author, body) select $1, 'ana', 'x' from generate_series(1, 60)`,
-      [room.id],
+      `insert into messages (room_id, author, body, user_id) select $1, 'ana', 'x', $2 from generate_series(1, 60)`,
+      [room.id, SEED_USER_ID],
     );
     expect(await repo().listMessages(room.id)).toHaveLength(50);
     expect(await repo().listMessages(room.id, { limit: Number.NaN })).toHaveLength(50);
@@ -296,8 +334,8 @@ describe("listMapItems", () => {
     [10, 0.1],
   ])("returns at most 500 items at zoom %d", async (zoom, spacing) => {
     await db().query(
-      "insert into rooms (lat, lng) select 10 + i * $1::float8, 20 from generate_series(1, 600) i",
-      [spacing],
+      "insert into rooms (lat, lng, created_by) select 10 + i * $1::float8, 20, $2 from generate_series(1, 600) i",
+      [spacing, SEED_USER_ID],
     );
     const items = await repo().listMapItems({ bbox: { west: 19, south: 9, east: 21, north: 80 }, zoom });
     expect(items).toHaveLength(500);
@@ -306,8 +344,9 @@ describe("listMapItems", () => {
   it("keeps the newest rooms when capping at zoom 16", async () => {
     // r1 is the newest and r501 the oldest.
     await db().query(
-      `insert into rooms (title, lat, lng, created_at)
-       select 'r' || i, 10 + i * 0.00001, 20, now() - i * interval '1 second' from generate_series(1, 501) i`,
+      `insert into rooms (title, lat, lng, created_at, created_by)
+       select 'r' || i, 10 + i * 0.00001, 20, now() - i * interval '1 second', $1 from generate_series(1, 501) i`,
+      [SEED_USER_ID],
     );
     const titles = (await repo().listMapItems({ bbox: { west: 19, south: 9, east: 21, north: 11 }, zoom: 16 })).map(
       (i) => (i.type === "room" ? i.title : "cluster"),
@@ -320,9 +359,12 @@ describe("listMapItems", () => {
   it("keeps the busiest cells when capping clustered results", async () => {
     // 500 single-room cells plus one cell holding three rooms: 501 cells for 500 slots.
     await db().query(
-      "insert into rooms (lat, lng) select 10 + i * 0.1, 20 from generate_series(1, 500) i",
+      "insert into rooms (lat, lng, created_by) select 10 + i * 0.1, 20, $1 from generate_series(1, 500) i",
+      [SEED_USER_ID],
     );
-    await db().query("insert into rooms (lat, lng) select 5, 25 from generate_series(1, 3)");
+    await db().query("insert into rooms (lat, lng, created_by) select 5, 25, $1 from generate_series(1, 3)", [
+      SEED_USER_ID,
+    ]);
     const items = await repo().listMapItems({ bbox: { west: 19, south: 4, east: 26, north: 80 }, zoom: 10 });
     expect(items).toHaveLength(500);
     expect(items[0]).toEqual({ type: "cluster", lat: 5, lng: 25, count: 3 });
@@ -331,7 +373,8 @@ describe("listMapItems", () => {
   it("among equally busy cells, keeps those nearest the viewport's centre", async () => {
     // 501 single-room cells from 10.1°N to 60.1°N; the centre is at 50°N, so 10.1°N is the farthest.
     await db().query(
-      "insert into rooms (lat, lng) select 10 + i * 0.1, 20 from generate_series(1, 501) i",
+      "insert into rooms (lat, lng, created_by) select 10 + i * 0.1, 20, $1 from generate_series(1, 501) i",
+      [SEED_USER_ID],
     );
     const items = await repo().listMapItems({ bbox: { west: 19, south: 10, east: 21, north: 90 }, zoom: 10 });
     const lats = items.map((i) => Math.round(i.lat * 10) / 10);

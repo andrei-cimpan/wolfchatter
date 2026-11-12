@@ -3,10 +3,14 @@ import { MESSAGE_LIMIT_DEFAULT, MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import { CLUSTER_MAX_ZOOM, clusterCellSize } from "@/lib/map-grid";
 import { messageFromRow, type MessageRow } from "@/lib/message-row";
 import type { Bbox, MapItem, Message, Room } from "@/lib/types";
-import { RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
+import { NotSignedInError, RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
 import { MAP_ITEMS_LIMIT, longitudeRanges, viewportCenter } from "./viewport-ranges";
 
 const FOREIGN_KEY_VIOLATION = "23503";
+// Postgres's code for a write the role may not make: signed out, since signed-in users may post.
+const INSUFFICIENT_PRIVILEGE = "42501";
+// PostgREST's codes for a token it will not accept (expired, or not one it can verify).
+const REJECTED_TOKEN = new Set(["PGRST301", "PGRST303"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Postgres rejects malformed uuid text with an error; to callers it is just an id that matches nothing.
@@ -73,6 +77,7 @@ function viewportParams(bbox: Bbox) {
 // The client returns errors as plain objects, typed as PostgrestError but not built as one; thrown
 // as they are, they carry no stack and fail `instanceof Error`.
 function asError(error: PostgrestError): Error {
+  if (error.code === INSUFFICIENT_PRIVILEGE || REJECTED_TOKEN.has(error.code)) return new NotSignedInError();
   return error instanceof Error ? error : new PostgrestError(error);
 }
 
@@ -117,11 +122,11 @@ export class SupabaseChatRepository implements ChatRepository {
 
   async createRoomWithMessage(
     { lat, lng }: { lat: number; lng: number },
-    { author, body }: { author: string; body: string },
+    { body }: { body: string },
   ): Promise<{ room: Room; message: Message }> {
     // One function call is one transaction, so a refused message leaves no room behind.
     const result = rowsOf<{ room: RoomRow; message: MessageRow }>(
-      await this.client.rpc("create_room_with_message", { p_lat: lat, p_lng: lng, p_author: author, p_body: body }),
+      await this.client.rpc("create_room_with_message", { p_lat: lat, p_lng: lng, p_body: body }),
     );
     return { room: toRoom(result.room), message: messageFromRow(result.message) };
   }
@@ -168,11 +173,15 @@ export class SupabaseChatRepository implements ChatRepository {
     return rows.map(messageFromRow);
   }
 
-  async postMessage(roomId: string, { author, body }: { author: string; body: string }): Promise<Message> {
+  async currentAuthorName(): Promise<string | null> {
+    return rowsOf<string | null>(await this.client.rpc("current_author_name"));
+  }
+
+  async postMessage(roomId: string, { body }: { body: string }): Promise<Message> {
     if (!isUuid(roomId)) throw new RoomNotFoundError(roomId);
     const { data, error } = await this.client
       .from("messages")
-      .insert({ room_id: roomId, author, body })
+      .insert({ room_id: roomId, body })
       .select(MESSAGE_COLUMNS)
       .single();
     if (error?.code === FOREIGN_KEY_VIOLATION) throw new RoomNotFoundError(roomId);
