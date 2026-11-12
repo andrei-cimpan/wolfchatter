@@ -1,6 +1,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach } from "vitest";
 import { assertLocalSupabaseDatabase } from "./local-database";
+import { TEST_EMAIL_DOMAIN } from "./test-users";
 
 // Registers hooks that give each test empty tables in the local Supabase database (SUPABASE_DB_URL).
 // vitest.config.mts runs files one at a time, so one file cannot truncate another's rows.
@@ -15,6 +16,8 @@ export function setupTestDatabase(): () => pg.Pool {
   beforeEach(async () => {
     await pool!.query("truncate messages, rooms restart identity cascade");
     await pool!.query("alter sequence room_number_seq restart");
+    // After the rooms, which reference their creators. Only users the tests made.
+    await pool!.query("delete from auth.users where email like $1", [`%@${TEST_EMAIL_DOMAIN}`]);
   });
   afterAll(async () => {
     await pool?.end();
