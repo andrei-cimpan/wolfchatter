@@ -2,10 +2,10 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import { ApiError, createRoom, retryAfterPhrase } from "@/lib/api-client";
+import { createRoom } from "@/lib/api-client";
+import { messagesQueryKey } from "@/lib/message-cache";
 import type { Room } from "@/lib/types";
 import { MAP_ITEMS_KEY } from "./useMapItems";
-import { messagesQueryKey } from "./useMessages";
 import { roomQueryKey } from "./useRoom";
 import { currentSelectedRoomId, replaceSelectedRoom, selectRoom } from "./useSelectedRoom";
 
@@ -117,11 +117,4 @@ export function useCreateRoom(
     /** The room this hook just created, whose form takes the focus so the writer can carry on. */
     createdRoomId: mutation.data?.id ?? null,
   };
-}
-
-export function createRoomErrorMessage(error: Error): string {
-  if (error instanceof ApiError && error.status === 429) {
-    return `You're creating chatrooms too quickly. Try again ${retryAfterPhrase(error)}.`;
-  }
-  return "Couldn't create the chatroom. Please try again.";
 }

@@ -1,64 +1,8 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/lib/api-client";
-import type { Message } from "@/lib/types";
-import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
-import { addMessage, CATCH_UP_OVERLAP, catchUp, messageInputError, messagesQueryKey, postMessageErrorMessage } from "./useMessages";
-
-describe("messageInputError", () => {
-  it("accepts a username and a message with visible text", () => {
-    expect(messageInputError("ana", "Hello")).toBeNull();
-  });
-
-  it("asks for a username when it is blank or invisible", () => {
-    expect(messageInputError("", "Hello")).toBe("Enter a username.");
-    expect(messageInputError(" ​ ", "Hello")).toBe("Enter a username.");
-  });
-
-  it("asks for a message when it is blank or invisible", () => {
-    expect(messageInputError("ana", "   ")).toBe("Enter a message.");
-    expect(messageInputError("ana", "ㅤ")).toBe("Enter a message.");
-  });
-
-  it("says what is wrong when a field has text the API would refuse", () => {
-    expect(messageInputError("ana", "hello\u0000there")).toBe("Message contains invalid characters");
-    expect(messageInputError("an\u0000a", "Hello")).toBe("Username contains invalid characters");
-  });
-
-  it("still asks for the text when a field holds only a NUL", () => {
-    expect(messageInputError("ana", "\u0000")).toBe("Enter a message.");
-  });
-});
-
-describe("postMessageErrorMessage", () => {
-  it("says how long to wait after a 429", () => {
-    expect(postMessageErrorMessage(new ApiError(429, "rate_limited", "x", 12))).toBe(
-      "You're sending messages too quickly. Try again in 12 seconds.",
-    );
-    expect(postMessageErrorMessage(new ApiError(429, "rate_limited", "x"))).toBe(
-      "You're sending messages too quickly. Try again in a minute.",
-    );
-  });
-
-  it("explains a room that no longer exists", () => {
-    expect(postMessageErrorMessage(new ApiError(404, "room_not_found", "x"))).toBe("This chatroom no longer exists.");
-  });
-
-  it("asks for both fields when the API rejects the input", () => {
-    expect(postMessageErrorMessage(new ApiError(400, "validation_error", "author: x"))).toBe(
-      "Enter a username and a message.",
-    );
-  });
-
-  it("falls back to a generic message for server and network errors", () => {
-    expect(postMessageErrorMessage(new ApiError(500, "internal_error", "x"))).toBe(
-      "Couldn't send your message. Please try again.",
-    );
-    expect(postMessageErrorMessage(new TypeError("Failed to fetch"))).toBe(
-      "Couldn't send your message. Please try again.",
-    );
-  });
-});
+import { MESSAGE_LIMIT_MAX } from "./limits";
+import { addMessage, CATCH_UP_OVERLAP, catchUp, messagesQueryKey } from "./message-cache";
+import type { Message } from "./types";
 
 describe("addMessage", () => {
   const ROOM = "0b9f8c4e-2f7a-4d55-9a53-1f3e2d4c5b6a";

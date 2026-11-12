@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { createRoomErrorMessage } from "@/hooks/useCreateRoom";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import { createRoomErrorMessage } from "@/lib/message-input";
 import { readSavedUsername, saveUsername } from "@/lib/saved-username";
 import { MessageForm, RoomMessageForm } from "./MessageForm";
 import { MessageList } from "./MessageList";

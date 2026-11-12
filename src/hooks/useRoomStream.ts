@@ -2,8 +2,8 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { addMessage, catchUp } from "@/lib/message-cache";
 import { connectRoomStream } from "@/lib/room-stream";
-import { addMessage, catchUp } from "./useMessages";
 
 /**
  * Keeps the room's cached message list live while mounted: each new message is added as it
