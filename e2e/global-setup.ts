@@ -9,7 +9,7 @@ export default async function globalSetup(): Promise<void> {
   const url = process.env.SUPABASE_DB_URL ?? "";
   await assertLocalSupabaseDatabase(url);
   // Applies migrations written since the stack started, as v1's setup migrated its database.
-  execFileSync("npx", ["supabase", "migration", "up", "--local"], { stdio: "inherit" });
+  execFileSync("npx", ["supabase", "migration", "up"], { stdio: "inherit" });
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
