@@ -43,6 +43,16 @@ describe("ping", () => {
   });
 });
 
+describe("when the API cannot be reached", () => {
+  // Port 1 is never the API. The client retries reads for about 7 s, past the 5 s test timeout,
+  // so these also fail if a route's first read waits out the backoff before answering 500.
+  const unreachable = () => new SupabaseChatRepository(anonClient("http://127.0.0.1:1"));
+
+  it("getRoom fails at once", async () => {
+    await expect(unreachable().getRoom(UNKNOWN_ID)).rejects.toThrow();
+  });
+});
+
 describe("rooms", () => {
   it("creates a room and reads it back", async () => {
     const created = await repo().createRoom({ lat: 44.43, lng: 26.1 });

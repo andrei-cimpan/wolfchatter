@@ -96,8 +96,11 @@ export class SupabaseChatRepository implements ChatRepository {
 
   async getRoom(id: string): Promise<Room | null> {
     if (!isUuid(id)) return null;
+    // No retries: the room, messages and stream routes all read the room first, and the client's
+    // backoff would hold each for about 7 s before its 500 when the API is down. RPC calls are
+    // POSTs, which the client never retries, so this is the only other read that needs it.
     const row = rowsOf<RoomRow | null>(
-      await this.client.from("rooms").select(ROOM_COLUMNS).eq("id", id).maybeSingle(),
+      await this.client.from("rooms").select(ROOM_COLUMNS).eq("id", id).retry(false).maybeSingle(),
     );
     return row ? toRoom(row) : null;
   }
