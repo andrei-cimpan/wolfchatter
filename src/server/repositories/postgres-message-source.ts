@@ -4,7 +4,7 @@ import { messageFromRow } from "@/lib/message-row";
 import type { Message } from "@/lib/types";
 import type { MessageSource, MessageSourceHandlers } from "@/server/realtime/message-source";
 
-// Must match the pg_notify channel in the messages trigger (db/migrations/0001_init.sql).
+// Must match the pg_notify channel in the messages trigger (supabase/migrations/20261103000001_init.sql).
 const CHANNEL = "messages";
 
 const notificationSchema = z.object({

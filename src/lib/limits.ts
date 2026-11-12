@@ -1,5 +1,5 @@
 // One source for limits that the database, the API schemas, and the UI all enforce.
-// Author and body lengths must match the check constraints in db/migrations/0001_init.sql.
+// Author and body lengths must match the check constraints in supabase/migrations/20261103000001_init.sql.
 
 export const AUTHOR_MAX = 32;
 export const BODY_MAX = 1000;

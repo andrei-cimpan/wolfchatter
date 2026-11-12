@@ -7,20 +7,20 @@ Read these before changing code:
 - `docs/DESIGN.md`: how it is built
 - `docs/TASKS.md`: what to do next
 
-## Stack (v1)
+## Stack (v2 branch, in progress)
 
-Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · PostgreSQL (Docker Compose) · Zod · TanStack Query · Vitest · Playwright
+Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · PostgreSQL (local Supabase stack, Supabase CLI) · Zod · TanStack Query · Vitest · Playwright
 
 ## Commands
 
-- `docker compose up -d db`: start local Postgres
-- `npm run db:migrate`: apply SQL migrations
+- `npm run db:start`: start the local Supabase stack (Docker), applying `supabase/migrations/`
+- `npm run db:migrate`: apply migrations written since the stack started (`npx supabase db reset` rebuilds it)
 - `npm run dev`: start the app at http://localhost:3000
 - `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e`
 
 ## Architecture rules
 
-- UI and route handlers use the `ChatRepository` interface only. Application code never imports the DB client outside `src/server/repositories/`; tooling in `scripts/` (such as the migration runner) is the only exception.
+- UI and route handlers use the `ChatRepository` interface only. Application code never imports the DB client outside `src/server/repositories/`; test setup (`src/server/repositories/test/`, `e2e/`) is the only exception.
 - Validate every API input with Zod at the route boundary.
 - Render user text as plain text. Never use `dangerouslySetInnerHTML`.
 - Server state lives in TanStack Query. The selected room lives in the URL (`?room=<id>`). No global store.
@@ -41,6 +41,6 @@ Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · Post
 5. If a decision changes, update the relevant doc in the same commit.
 6. Ask before adding a dependency or deviating from the PRD.
 
-## Out of scope for v1
+## Out of scope for v1 (`main`)
 
 Auth, Supabase, and Mapbox. These belong to the v2 branch.

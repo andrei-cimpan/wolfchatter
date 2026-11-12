@@ -110,7 +110,7 @@ export async function box(page: Page, selector: string) {
  * posted right after this never reach a stream and arrive only through catch-up.
  */
 export async function dropRealtimeListener(): Promise<void> {
-  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  const client = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL });
   await client.connect();
   try {
     const { rowCount } = await client.query(

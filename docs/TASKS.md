@@ -75,11 +75,19 @@ Notes under a task are still open. Notes that were resolved are kept, by task, u
 - [ ] **T7.5** Restructure `docs/DESIGN.md` for reading: one subsection per component with short rule lists, and measurements and rationale in a separate section.
   *From the baseline review of 12 Nov 2026 (#15), whose fixes are the commits marked "(baseline review #N)":* deferred, because v2 rewrites the real-time, rate-limiting, Docker and map sections; do it as v2 lands.
 
-## 8. v2 (separate branch, only after v1 is complete)
+## 8. v2 (the `v2` branch, never merged into `main`)
 
-- [ ] **T8.1** `SupabaseChatRepository` and Supabase Realtime replacing the SSE hub.
-- [ ] **T8.2** Auth: public read, signed-in posting, row-level security.
-- [ ] **T8.3** Mapbox via react-map-gl.
+Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task's steps, files and checks are in the plan, `docs/superpowers/plans/2026-11-03-wolfchatter-v2.md`. One branch and PR per task, targeting `v2`.
+
+- [x] **T8.1** Local Supabase and the v1 schema (plan Task 1).
+- [ ] **T8.2** `SupabaseChatRepository` (Task 2).
+- [ ] **T8.3** Live messages with Supabase Realtime (Task 3).
+- [ ] **T8.4** Author names and row-level security (Task 4; lands with Tasks 5 and 6).
+- [ ] **T8.5** Sessions and the signed-in API (Task 5).
+- [ ] **T8.6** Sign-in in the chat card (Task 6).
+- [ ] **T8.7** Deploy to Vercel, owner-led (Task 7).
+- [ ] **T8.8** Mapbox map and pins (Task 8; lands with Task 9).
+- [ ] **T8.9** Mapbox clicks, keyboard and the e2e port (Task 9).
 
 ## Closed notes
 

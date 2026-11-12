@@ -32,7 +32,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 
 **Stack.** Next.js (App Router) with TypeScript and Tailwind. react-leaflet with the default OpenStreetMap tiles, kept behind a config so the basemap is swappable. Zod for input validation.
 
-**Cloud-portable by design.** Dockerfile for the app, `docker compose up` for local Postgres, all config via environment variables, a stateless app, logs to stdout and stderr, and a `/health` endpoint. The deployment target is described in `INFRA.md`.
+**Cloud-portable by design.** v1 ships a Dockerfile and `docker compose up` for local Postgres (on `v2`, the Supabase CLI's local stack replaces both), all config via environment variables, a stateless app, logs to stdout and stderr, and a `/health` endpoint. The deployment target is described in `INFRA.md`.
 
 **Data model (Postgres).**
 
