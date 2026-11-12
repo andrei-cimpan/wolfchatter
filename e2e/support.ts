@@ -104,10 +104,12 @@ export async function box(page: Page, selector: string) {
 }
 
 type LiveConnection = {
-  /** How many times a channel for this room has reported that it is watching for new messages. */
+  /** How many of this room's channels Realtime has reported as live (postgres_changes running). */
   readyCount(roomId: string): number;
-  /** Waits until that count reaches `count`. */
-  ready(roomId: string, count?: number): Promise<void>;
+  /** This room's channels that are live now: reported live, and not left or cut off since. */
+  liveChannels(roomId: string): number;
+  /** Waits until the room has one live channel, reported after the first `after` of them. */
+  ready(roomId: string, options?: { after?: number }): Promise<void>;
   /** Closes the open Realtime sockets, as a dropped network would; the client then reconnects. */
   drop(): Promise<void>;
   /** While down, the page's Realtime sockets are closed as soon as they open. */
@@ -116,13 +118,42 @@ type LiveConnection = {
   refused(): number;
 };
 
+type Frame = { topic: string; event: string; payload: unknown };
+
+// Realtime frames are JSON arrays [join_ref, ref, topic, event, payload] (protocol 2.0.0) or objects
+// with those fields (1.0.0); anything else, such as binary broadcast, is not a channel event here.
+function parseFrame(message: string | Buffer): Frame | null {
+  if (typeof message !== "string") return null;
+  try {
+    const value: unknown = JSON.parse(message);
+    if (Array.isArray(value)) return { topic: String(value[2]), event: String(value[3]), payload: value[4] };
+    if (value && typeof value === "object" && "topic" in value && "event" in value) {
+      const { topic, event, payload } = value as { topic: unknown; event: unknown; payload?: unknown };
+      return { topic: String(topic), event: String(event), payload };
+    }
+  } catch {
+    // Not JSON: not a channel event.
+  }
+  return null;
+}
+
+function isPostgresChangesOk(frame: Frame): boolean {
+  if (frame.event !== "system" || !frame.payload || typeof frame.payload !== "object") return false;
+  const { extension, status } = frame.payload as { extension?: unknown; status?: unknown };
+  return extension === "postgres_changes" && status === "ok";
+}
+
 /**
  * Routes the page's Realtime WebSocket through the test, which then sees when a room's channel is
- * live and can drop the connection. Call it before the page opens a room.
+ * live and can drop the connection. Call it before the page opens a room. A channel counts as live
+ * from Realtime's `system` message, the one subscribeToRoomMessages waits for, not from the join
+ * reply, which comes first. Dev mode's StrictMode subscribes, leaves and subscribes again on mount,
+ * so tests count live channels rather than messages.
  */
 export async function watchLiveConnection(page: Page): Promise<LiveConnection> {
-  const readyTopics: string[] = [];
-  let open: WebSocketRoute[] = [];
+  const readyTopics = new Set<string>();
+  const endedTopics = new Set<string>();
+  let open: { ws: WebSocketRoute; topics: Set<string> }[] = [];
   let down = false;
   let refused = 0;
   await page.routeWebSocket(/\/realtime\/v1\/websocket/, (ws) => {
@@ -131,26 +162,49 @@ export async function watchLiveConnection(page: Page): Promise<LiveConnection> {
       return ws.close();
     }
     const server = ws.connectToServer();
-    open.push(ws);
-    ws.onMessage((message) => server.send(message));
+    const socket = { ws, topics: new Set<string>() };
+    open.push(socket);
+    ws.onMessage((message) => {
+      const frame = parseFrame(message);
+      if (frame?.event === "phx_leave") endedTopics.add(frame.topic);
+      server.send(message);
+    });
     server.onMessage((message) => {
-      // Realtime's word that a channel's postgres_changes are running, which subscribeToRoomMessages
-      // waits for before reporting ready. Matched as text, whichever serializer the client uses.
-      if (typeof message === "string" && /"postgres_changes"/.test(message) && /"status":"ok"/.test(message)) {
-        readyTopics.push(message);
+      const frame = parseFrame(message);
+      if (frame && isPostgresChangesOk(frame)) {
+        readyTopics.add(frame.topic);
+        socket.topics.add(frame.topic);
       }
       ws.send(message);
     });
+    // A closed socket ends its channels, whichever side closed it.
+    const endAll = () => socket.topics.forEach((topic) => endedTopics.add(topic));
+    ws.onClose(() => {
+      endAll();
+      void server.close();
+    });
+    server.onClose(() => {
+      endAll();
+      void ws.close();
+    });
   });
-  const readyCount = (roomId: string) => readyTopics.filter((topic) => topic.includes(roomId)).length;
+  const ofRoom = (topics: Iterable<string>, roomId: string) => [...topics].filter((topic) => topic.includes(roomId));
+  const readyCount = (roomId: string) => ofRoom(readyTopics, roomId).length;
+  const liveChannels = (roomId: string) => ofRoom(readyTopics, roomId).filter((t) => !endedTopics.has(t)).length;
   return {
     readyCount,
-    ready: (roomId, count = 1) =>
-      expect.poll(() => readyCount(roomId), { message: `room ${roomId} live`, timeout: 15_000 }).toBeGreaterThanOrEqual(count),
+    liveChannels,
+    ready: (roomId, { after = 0 } = {}) =>
+      expect
+        .poll(() => readyCount(roomId) > after && liveChannels(roomId) === 1, {
+          message: `room ${roomId} live (after ${after})`,
+          timeout: 15_000,
+        })
+        .toBe(true),
     drop: async () => {
       const closing = open;
       open = [];
-      await Promise.all(closing.map((ws) => ws.close()));
+      await Promise.all(closing.map(({ ws }) => ws.close()));
     },
     setDown: (value) => {
       down = value;

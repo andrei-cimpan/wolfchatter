@@ -278,6 +278,8 @@ test.describe("live messages", () => {
 
     await page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body: "For anyone" } });
     await expect(newest(reader)).toContainText("For anyone");
+    // Exactly one channel is live: nothing leaked, and the join reply did not count as live.
+    expect(live.liveChannels(id)).toBe(1);
     await other.close();
   });
 
@@ -314,12 +316,14 @@ test.describe("live messages", () => {
     const live = await watchLiveConnection(page);
     await openRoom(page, id);
     await live.ready(id);
+    const readyBefore = live.readyCount(id);
 
     await setHidden(true);
+    await expect.poll(() => live.liveChannels(id), { message: "the hidden tab left its channel" }).toBe(0);
     await send("sent while hidden");
 
     await setHidden(false);
-    await live.ready(id, 2);
+    await live.ready(id, { after: readyBefore });
     await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/]);
     await send("sent after returning");
     await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/, /sent after returning/]);
@@ -505,12 +509,13 @@ test.describe("live messages after a drop", () => {
     await live.ready(id);
     await send("live");
     await expect(items).toHaveText([/first/, /live/]);
+    const readyBefore = live.readyCount(id);
 
     await live.drop();
     await send("gap one");
     await send("gap two");
     // The gap messages come through a new channel's catch-up; the old one went with the socket.
-    await live.ready(id, 2);
+    await live.ready(id, { after: readyBefore });
     await expect(items).toHaveText([/first/, /live/, /gap one/, /gap two/]);
 
     await send("after");
