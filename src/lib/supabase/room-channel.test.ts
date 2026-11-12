@@ -31,7 +31,7 @@ function subscribe(roomId: string, onReady: () => void = () => {}) {
       subscribeToRoomMessages(client, roomId, {
         onInsert: (row) => rows.push(row),
         onStatus: (status) => {
-          if (status === "failed") reject(new Error("channel failed"));
+          if (status === "failed") return reject(new Error("channel failed"));
           onReady();
           resolve();
         },
@@ -41,8 +41,14 @@ function subscribe(roomId: string, onReady: () => void = () => {}) {
   return { rows, ready };
 }
 
-function delivered(rows: MessageRow[], message: Message): Promise<void> {
-  return expect.poll(() => rows.map(messageFromRow), { timeout: 5000 }).toContainEqual(message);
+// A duplicate would follow within milliseconds on the same socket; this waits well past that.
+const SETTLE_MS = 300;
+
+/** Waits for the message, then checks it came exactly once. */
+async function deliveredOnce(rows: MessageRow[], message: Message): Promise<void> {
+  await expect.poll(() => rows.map(messageFromRow), { timeout: 5000 }).toContainEqual(message);
+  await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+  expect(rows.filter((row) => row.id === message.id)).toHaveLength(1);
 }
 
 // The first subscription after the stack starts or idles took over 5 s once (Realtime sets up its
@@ -55,7 +61,7 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
 
     const posted = await repo().postMessage(room.id, { author: "ana", body: "hello" });
 
-    await delivered(rows, posted);
+    await deliveredOnce(rows, posted);
   });
 
   it("does not miss a message posted right after ready", async () => {
@@ -66,7 +72,7 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
         posting = repo().postMessage(room.id, { author: "ana", body: `right away ${i}` });
       });
       await ready;
-      await delivered(rows, await posting!);
+      await deliveredOnce(rows, await posting!);
     }
   }, 40_000);
 
@@ -80,7 +86,7 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
     const here = await repo().postMessage(watched.id, { author: "ana", body: "here" });
 
     // The other room's insert happened first, so by the time this one arrives it would have too.
-    await delivered(rows, here);
+    await deliveredOnce(rows, here);
     expect(rows.map((row) => row.body)).toEqual(["here"]);
   });
 });

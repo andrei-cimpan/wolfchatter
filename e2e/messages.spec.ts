@@ -277,7 +277,8 @@ test.describe("live messages", () => {
     await live.ready(id);
 
     await page.request.post(`/api/rooms/${id}/messages`, { data: { author: "bo", body: "For anyone" } });
-    await expect(newest(reader)).toContainText("For anyone");
+    // The whole list, so a duplicate would fail.
+    await expect(messages(reader).getByRole("listitem")).toHaveText([/For anyone/]);
     // Exactly one channel is live: nothing leaked, and the join reply did not count as live.
     expect(live.liveChannels(id)).toBe(1);
     await other.close();
