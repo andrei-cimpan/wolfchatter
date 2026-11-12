@@ -1,4 +1,4 @@
-// The pool waits with no limit for a connection, and a load balancer's probe should not.
+// A request to the database API has no timeout of its own, and a load balancer's probe should not wait.
 const HEALTH_TIMEOUT_MS = 2_000;
 
 const HEADERS = { "Cache-Control": "no-store" };
