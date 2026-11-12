@@ -23,6 +23,12 @@ export type DraftPin = {
   savedAs?: string;
 };
 
+// Narrow screens: a sheet rising from the bottom edge, clear of the phone's home indicator.
+const PANEL_SHEET =
+  "rounded-t-2xl border-t border-foreground/15 bg-background px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgb(0_0_0/0.1)]";
+// From md up: a card over the map's top-right corner, clear of a notch, never taller than the window.
+const PANEL_CARD =
+  "md:absolute md:top-4 md:right-[max(1rem,env(safe-area-inset-right))] md:h-auto md:max-h-[calc(100dvh-2rem)] md:w-[380px] md:rounded-md md:border md:border-foreground/30 md:pb-4 md:shadow-md";
 // The form and headers take about 237 px, so 20rem leaves the list at least one whole message. The
 // cap leaves the map's zoom buttons (102 px) and attribution on a very short screen; the panel scrolls.
 const RAISED_SHEET = "h-[min(max(50dvh,20rem),calc(100dvh-7rem))]";
@@ -43,7 +49,7 @@ function PanelFrame({ raised, busy = false, children }: { raised: boolean; busy?
       aria-label="Chat"
       aria-busy={busy || undefined}
       data-raised={raised || undefined}
-      className={`relative flex flex-col overflow-y-auto rounded-t-2xl border-t border-foreground/15 bg-background px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgb(0_0_0/0.1)] md:absolute md:top-4 md:right-[max(1rem,env(safe-area-inset-right))] md:h-auto md:max-h-[calc(100dvh-2rem)] md:w-[380px] md:rounded-md md:border md:border-foreground/30 md:pb-4 md:shadow-md ${raised ? `${RAISED_SHEET} ${RAISED_BESIDE_MAP}` : ""}`}
+      className={`relative flex flex-col overflow-y-auto ${PANEL_SHEET} ${PANEL_CARD} ${raised ? `${RAISED_SHEET} ${RAISED_BESIDE_MAP}` : ""}`}
     >
       {children}
     </aside>
