@@ -298,7 +298,6 @@ test.describe("live messages", () => {
     await send("during one");
     await send("during two");
     live.setDown(false);
-    // The client waits up to 10 s between its own reconnects.
     await live.ready(id);
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/]);
 

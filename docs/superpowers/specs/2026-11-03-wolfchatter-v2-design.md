@@ -106,7 +106,7 @@ Changes from v1:
 ### Live messages
 
 - The browser subscribes to `postgres_changes` inserts on `messages`, filtered by `room_id`, with the anon key, so signed-out readers get live messages too. Supabase recommends Broadcast at larger scale, but Postgres Changes needs less setup and suits this group size. Confirm in the first step that an anonymous subscriber receives events under the policies above.
-- `connectRoomStream` is rewritten on Supabase's client: the channel reaching `SUBSCRIBED` plays the role of v1's `ready` event, and channel errors feed the same backoff. Each payload is converted to the API's `Message` shape and checked with `messageSchema`.
+- `connectRoomStream` is rewritten on Supabase's client: Realtime's `system` message saying `postgres_changes` is running plays the role of v1's `ready` event (the channel's `SUBSCRIBED` came about 2 s earlier on a cold start, and a message posted in between was lost; Task 3), and channel errors feed the same backoff. Each payload is converted to the API's `Message` shape and checked with `messageSchema`.
 - `useRoomStream`'s catch-up, de-duplication and hidden-tab behaviour stay. Each resubscribe still refetches with `after=`.
 - Removed: `src/server/realtime/`, `postgres-message-source.ts`, `src/server/http/sse.ts`, `room-event-stream.ts`, `/api/rooms/:id/stream`, and the shutdown handling in `src/instrumentation.ts`.
 
