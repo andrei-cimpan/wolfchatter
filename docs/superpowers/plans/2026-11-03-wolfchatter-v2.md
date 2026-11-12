@@ -423,7 +423,7 @@ From `react-map-gl/mapbox`. Set `projection="mercator"` and `renderWorldCopies`,
 
 **Files:**
 - Create: `src/components/MapInteractions.tsx` if `MapboxMap.tsx` grows too large
-- Modify: `src/components/MapboxMap.tsx`, `src/components/MapMarkers.tsx`, `src/components/ChatShell.tsx`, `e2e/rooms.spec.ts`, `e2e/map-input.spec.ts`, `e2e/map-flights.spec.ts`, `e2e/chat-page.ts`, `e2e/layout.spec.ts`, `e2e/viewport.spec.ts`, `e2e/persistence.spec.ts`, `e2e/support.ts`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md`, `CLAUDE.md`, `README.md`
+- Modify: `src/components/MapboxMap.tsx`, `src/components/MapMarkers.tsx`, `src/components/ChatShell.tsx`, `e2e/rooms.spec.ts`, `e2e/chat-page.ts`, `e2e/layout.spec.ts`, `e2e/viewport.spec.ts`, `e2e/persistence.spec.ts`, `e2e/support.ts`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md`, `CLAUDE.md`, `README.md`
 
 **Interfaces:**
 - Consumes: `MapboxMap`, `stubMapbox`.
