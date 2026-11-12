@@ -2,6 +2,8 @@
 
 Work top to bottom, one task at a time. A task is done when its acceptance check passes and `lint`, `typecheck`, and `test` are green. Tick the box in the same commit.
 
+Notes under a task are still open. Notes that were resolved are kept, by task, under [Closed notes](#closed-notes) at the end.
+
 ## 0. Foundation
 
 - [x] **T0.1** Create the repo, scaffold Next.js (TypeScript, Tailwind, ESLint), commit `CLAUDE.md` and `docs/`.
@@ -23,15 +25,8 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 ## 2. API
 
 - [x] **T2.1** `GET /api/rooms?bbox=&zoom=` (viewport loading with grid clustering, capped at 500 items), `POST /api/rooms`, and `GET /api/rooms/:id`, with error shape and validation.
-  *Carried over from the PR #4 review:*
-  - One shared mapper from Zod issues to `{ "error": { "code", "message" } }` with readable messages, plus one helper that turns `URLSearchParams` into schema input. Decide and test how empty values (`?before=&limit=`) and repeated keys are handled.
-  - Reject author or body text that is only invisible characters (for example U+200B, U+0085), which JavaScript `trim()` keeps and which would render as a blank message.
 - [x] **T2.2** `GET/POST /api/rooms/:id/messages` with paging and 404 handling.
-  *Carried over from the PR #6 review:*
-  - A few rare characters that draw nothing still pass the "visible text" rule on their own (U+FFF9 to U+FFFB, U+13430 to U+1343F, U+16FE4). Add them explicitly; don't add all of `\p{Cf}`, which would also reject visible Arabic signs (U+0600 to U+0605).
 - [x] **T2.3** Basic per-IP rate limiting on POST routes.
-  *Carried over from the PR #6 review:*
-  - Require `Content-Type: application/json` on POST routes (415 `unsupported_media_type`). Without it, a cross-site `<form enctype="text/plain">` can post from visitors' browsers with no CORS preflight, spreading requests across their IPs and around the per-IP limit.
   *Check (all):* API tests cover success, 400, 404, and 429.
 
 ## 3. Core UI
@@ -48,10 +43,6 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T4.1** Realtime hub: one `LISTEN`, in-memory fan-out, heartbeat.
 - [x] **T4.2** `GET /api/rooms/:id/stream` and the `useRoomStream` hook with reconnect catch-up.
   *Check:* a message posted in one browser appears in another within about a second, with no duplicates after a reconnect.
-  *Carried over from the PR #14 review:*
-  - Done: if the request aborts while `subscribe` is still waiting, the route calls the returned unsubscribe once it resolves.
-  - Done: the route ends the stream if `subscribe` has not resolved after 10 seconds, and the browser retries.
-  - Moved to T6.2: wiring `stopRealtimeHub()` to shutdown.
 
 ## 5. Usability improvements
 
@@ -60,26 +51,14 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
   *Still open from the PR #12 review:* any 400 becomes "Enter a username and a message.". The form checks with the API's own schema first, so this cannot be reached today; use the API's message if the client and API rules ever differ.
 - [x] **T5.3** Fly the map to the selected room.
 - [x] **T5.4** Keep the chat usable in a short sheet.
-  *Carried over from the PR #17 review:* the raised sheet is half the screen and its form has a fixed height, so at 667x375 (a phone on its side) the message list is 0 px tall and Submit runs past the bottom of the screen, and at 320x568 the list is only 47 px. Done: the sheet is at least 320 px tall, and a phone on its side shows the chat beside the map.
 - [x] **T5.5** Draft pins: a click drops a draft that saves nothing, and the first message creates the room. Double-clicking the map zooms in.
   *Check:* a stray click leaves nothing on the server, the draft says the room is created by its first message, and a double-click zooms and leaves no pin.
 
 ## 6. Quality
 
 - [x] **T6.1** Playwright tests: create pin and post, reload persistence, two-browser live message, clusters appear when zoomed out and expand on click, and the bottom-sheet layout at a 375 px wide viewport.
-  *Flaky e2e tests seen on PR #19:*
-  - Done: `a flight started during a zoom animation still ends on a whole zoom when dragged` was a real bug. A button's zoom starts a frame after its click, so its `zoomstart` could clear the zoom of a flight begun in between, and a drag then left the map between levels. A test now forces that order.
-  - Done: `a second click makes a second room; pins and Back switch between them`, `Back flies to the previous room`, and `two rooms created in quick succession keep the zoom` fit one cause, not reproduced: the old `createRoomAt` could read the previous room's title. T5.5's helper waits for the draft first. With the zoom fix, these three and the test above passed 800 of 800 runs (200 each, 12 workers).
-  *Carried over from the PR #20 review:*
-  - Done: a first message that fails after Back and Forward ends the draft, with no error above an empty form. A failure after Back alone never showed one, since Forward ends the draft.
-  - Done: Enter on the focused map drops a draft, so keyboard-only users can start a room. There is no visible hint for sighted keyboard users yet.
-  - Moved to T7.4: trying double-tap, and a first message with the keyboard open, on a real phone.
-  *Carried over from the PR #19 review:* done: tests at the layout's boundaries and for the desktop card in a quiet room, and the card now clears the notch.
-  *Carried over from the PR #18 review:* done: no viewport request for a zoom a flight is only passing, tested on a narrow screen.
   *Not built, see Known limitations in `DESIGN.md`:* merging a refetch into the cached list (PR #17 review) and a unit test for `useRoomStream` (PR #15 review).
 - [x] **T6.2** Dockerfile for the app and a `/health` endpoint.
-  *Carried over from T4.2:* done: `stopRealtimeHub()` runs on SIGTERM and SIGINT. Next does not exit straight away, as this note used to say: it waits for every request, so one open stream held the process until Docker killed it. See Deployment in `DESIGN.md`.
-  *Carried over from the PR #15 review:* done: a stream ends past 256 queued writes. Next does read the body with backpressure, measured under the production server.
   *Not fixed from the PR #22 review, see Known limitations in `DESIGN.md`:* `/health` shares the app's pool; a bulk insert can trip the backlog limit; the shutdown deadline cuts off slow requests.
 
 ## 7. Documents and review
@@ -88,18 +67,75 @@ Work top to bottom, one task at a time. A task is done when its acceptance check
 - [x] **T7.2** `docs/INFRA.md`: component, service, why, monthly cost for staging and production, with assumptions.
   *Not built, since deployment is out of scope for v1; see Deployment settings in `INFRA.md`:* the RDS CA bundle in the image, and `assetPrefix` for CloudFront.
 - [x] **T7.3** Review skill in `.claude/`, run on the final code, commit `docs/REVIEW.md` (report) and the fixed/not-fixed note.
-  *Carried over from T7.1:* done: the README's wording now matches what was done (a fresh agent, not a fresh session).
   *Carried over from the PR #21 review, kept as they are; see the Resolution note in `REVIEW.md`:*
   - A failed first message after Back and Forward says nothing to the user; see Known limitations in `DESIGN.md`. Kept for now, since Back already discards a draft's text.
   - `flightDragged` in `useFlyToRoom` stays true after a drag until the next flight, so a sheet resizing the map during a pinch could call `setZoom` mid-gesture. From reading only, not reproduced; it targets the zoom the pinch would snap to anyway. Clearing the flag once its `moveend` is handled would remove the case.
 - [x] **T7.4** Final check from a clean clone, then email the repo link before the deadline.
-  *Clean clone of `6dc9146`:* done, with an empty database and empty npm and Playwright caches: the README's local route, the Docker route with no `.env` and an uncached build, tests on port 3100 (563 unit and API, 153 e2e), and two windows on port 3000.
-  *From the check:* `npm install` warned that `fsevents` and `unrs-resolver` have install scripts. Nothing needs them, as all of the above ran with them skipped, so `package.json` now denies them. The deprecated ESLint and its moderate audit findings stay, since they are dev-only and an upgrade this late could change lint results; the README says so.
-  *Moved from T6.1:* done on a real phone: double-tap the map, and send a first message with the keyboard open.
-  *Moved from the final review (#6):* done on a real phone: pins of 25x41 px can be tapped, so they keep their size.
+
+- [ ] **T7.5** Restructure `docs/DESIGN.md` for reading: one subsection per component with short rule lists, and measurements and rationale in a separate section.
+  *From the baseline review of 12 Nov 2026 (#15), whose fixes are the commits marked "(baseline review #N)":* deferred, because v2 rewrites the real-time, rate-limiting, Docker and map sections; do it as v2 lands.
 
 ## 8. v2 (separate branch, only after v1 is complete)
 
 - [ ] **T8.1** `SupabaseChatRepository` and Supabase Realtime replacing the SSE hub.
 - [ ] **T8.2** Auth: public read, signed-in posting, row-level security.
 - [ ] **T8.3** Mapbox via react-map-gl.
+
+## Closed notes
+
+Resolved notes, kept for the record, by the task they were under.
+
+**T2.1**
+
+*Carried over from the PR #4 review:*
+- One shared mapper from Zod issues to `{ "error": { "code", "message" } }` with readable messages, plus one helper that turns `URLSearchParams` into schema input. Decide and test how empty values (`?before=&limit=`) and repeated keys are handled.
+- Reject author or body text that is only invisible characters (for example U+200B, U+0085), which JavaScript `trim()` keeps and which would render as a blank message.
+
+**T2.2**
+
+*Carried over from the PR #6 review:*
+- A few rare characters that draw nothing still pass the "visible text" rule on their own (U+FFF9 to U+FFFB, U+13430 to U+1343F, U+16FE4). Add them explicitly; don't add all of `\p{Cf}`, which would also reject visible Arabic signs (U+0600 to U+0605).
+
+**T2.3**
+
+*Carried over from the PR #6 review:*
+- Require `Content-Type: application/json` on POST routes (415 `unsupported_media_type`). Without it, a cross-site `<form enctype="text/plain">` can post from visitors' browsers with no CORS preflight, spreading requests across their IPs and around the per-IP limit.
+
+**T4.2**
+
+*Carried over from the PR #14 review:*
+- Done: if the request aborts while `subscribe` is still waiting, the route calls the returned unsubscribe once it resolves.
+- Done: the route ends the stream if `subscribe` has not resolved after 10 seconds, and the browser retries.
+- Moved to T6.2: wiring `stopRealtimeHub()` to shutdown.
+
+**T5.4**
+
+*Carried over from the PR #17 review:* the raised sheet is half the screen and its form has a fixed height, so at 667x375 (a phone on its side) the message list is 0 px tall and Submit runs past the bottom of the screen, and at 320x568 the list is only 47 px. Done: the sheet is at least 320 px tall, and a phone on its side shows the chat beside the map.
+
+**T6.1**
+
+*Flaky e2e tests seen on PR #19:*
+- Done: `a flight started during a zoom animation still ends on a whole zoom when dragged` was a real bug. A button's zoom starts a frame after its click, so its `zoomstart` could clear the zoom of a flight begun in between, and a drag then left the map between levels. A test now forces that order.
+- Done: `a second click makes a second room; pins and Back switch between them`, `Back flies to the previous room`, and `two rooms created in quick succession keep the zoom` fit one cause, not reproduced: the old `createRoomAt` could read the previous room's title. T5.5's helper waits for the draft first. With the zoom fix, these three and the test above passed 800 of 800 runs (200 each, 12 workers).
+*Carried over from the PR #20 review:*
+- Done: a first message that fails after Back and Forward ends the draft, with no error above an empty form. A failure after Back alone never showed one, since Forward ends the draft.
+- Done: Enter on the focused map drops a draft, so keyboard-only users can start a room. There is no visible hint for sighted keyboard users yet.
+- Moved to T7.4: trying double-tap, and a first message with the keyboard open, on a real phone.
+*Carried over from the PR #19 review:* done: tests at the layout's boundaries and for the desktop card in a quiet room, and the card now clears the notch.
+*Carried over from the PR #18 review:* done: no viewport request for a zoom a flight is only passing, tested on a narrow screen.
+
+**T6.2**
+
+*Carried over from T4.2:* done: `stopRealtimeHub()` runs on SIGTERM and SIGINT. Next does not exit straight away, as this note used to say: it waits for every request, so one open stream held the process until Docker killed it. See Deployment in `DESIGN.md`.
+*Carried over from the PR #15 review:* done: a stream ends past 256 queued writes. Next does read the body with backpressure, measured under the production server.
+
+**T7.3**
+
+*Carried over from T7.1:* done: the README's wording now matches what was done (a fresh agent, not a fresh session).
+
+**T7.4**
+
+*Clean clone of `6dc9146`:* done, with an empty database and empty npm and Playwright caches: the README's local route, the Docker route with no `.env` and an uncached build, tests on port 3100 (563 unit and API, 153 e2e), and two windows on port 3000.
+*From the check:* `npm install` warned that `fsevents` and `unrs-resolver` have install scripts. Nothing needs them, as all of the above ran with them skipped, so `package.json` now denies them. The deprecated ESLint and its moderate audit findings stay, since they are dev-only and an upgrade this late could change lint results; the README says so.
+*Moved from T6.1:* done on a real phone: double-tap the map, and send a first message with the keyboard open.
+*Moved from the final review (#6):* done on a real phone: pins of 25x41 px can be tapped, so they keep their size.
