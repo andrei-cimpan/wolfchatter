@@ -18,11 +18,11 @@ export function getChatRepository(request: Request): ChatRepository {
     cookies: {
       getAll: () =>
         parseCookieHeader(request.headers.get("cookie") ?? "").map(({ name, value }) => ({ name, value: value ?? "" })),
-      // The session proxy owns refreshes and saves the cookies; a route has no response to write them to.
+      // A route has no response to write cookies to. The client still refreshes an access token
+      // within 90 s of expiry before each request, and a token refreshed here is lost, which can
+      // sign the user out; only the session proxy (Task 5) refreshing first prevents that.
       setAll: () => {},
     },
-    // A refresh here would rotate the refresh token without saving it, signing the user out.
-    auth: { autoRefreshToken: false },
   });
   return new SupabaseChatRepository(client);
 }
