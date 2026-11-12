@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { MESSAGE_LIMIT_DEFAULT, MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import { CLUSTER_MAX_ZOOM, clusterCellSize } from "@/lib/map-grid";
+import { messageFromRow, type MessageRow } from "@/lib/message-row";
 import type { Bbox, MapItem, Message, Room } from "@/lib/types";
 import { RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
 import { MAP_ITEMS_LIMIT, longitudeRanges, viewportCenter } from "./viewport-ranges";
@@ -19,14 +20,6 @@ type RoomRow = {
   lat: number;
   lng: number;
   message_count: number;
-  created_at: Date;
-};
-
-type MessageRow = {
-  id: string;
-  room_id: string;
-  author: string;
-  body: string;
   created_at: Date;
 };
 
@@ -49,16 +42,6 @@ function toRoom(row: RoomRow): Room {
     lat: row.lat,
     lng: row.lng,
     messageCount: row.message_count,
-    createdAt: row.created_at.toISOString(),
-  };
-}
-
-function toMessage(row: MessageRow): Message {
-  return {
-    id: row.id,
-    roomId: row.room_id,
-    author: row.author,
-    body: row.body,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -136,7 +119,7 @@ export class PostgresChatRepository implements ChatRepository {
       // Read after the insert, whose trigger is what counts the message.
       const room = await client.query<RoomRow>(`select ${ROOM_COLUMNS} from rooms where id = $1`, [roomId]);
       await client.query("commit");
-      return { room: toRoom(room.rows[0]!), message: toMessage(message.rows[0]!) };
+      return { room: toRoom(room.rows[0]!), message: messageFromRow(message.rows[0]!) };
     } catch (error) {
       // A failed rollback must not hide the real error, and the transaction may still be open on
       // that connection, so the pool should not hand it out again.
@@ -201,7 +184,7 @@ export class PostgresChatRepository implements ChatRepository {
          order by created_at, id limit $2`,
         [roomId, limit, after],
       );
-      return rows.map(toMessage);
+      return rows.map(messageFromRow);
     }
 
     const olderThanCursor = before !== undefined ? `and (created_at, id) < ${cursorRow}` : "";
@@ -213,7 +196,7 @@ export class PostgresChatRepository implements ChatRepository {
        ) page order by created_at, id`,
       before !== undefined ? [roomId, limit, before] : [roomId, limit],
     );
-    return rows.map(toMessage);
+    return rows.map(messageFromRow);
   }
 
   async postMessage(roomId: string, { author, body }: { author: string; body: string }): Promise<Message> {
@@ -223,7 +206,7 @@ export class PostgresChatRepository implements ChatRepository {
         `insert into messages (room_id, author, body) values ($1, $2, $3) returning ${MESSAGE_COLUMNS}`,
         [roomId, author, body],
       );
-      return toMessage(rows[0]!);
+      return messageFromRow(rows[0]!);
     } catch (error) {
       const code = error instanceof Error && "code" in error ? error.code : undefined;
       if (code === FOREIGN_KEY_VIOLATION) throw new RoomNotFoundError(roomId);

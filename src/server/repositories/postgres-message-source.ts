@@ -1,5 +1,6 @@
 import pg from "pg";
 import { z } from "zod";
+import { messageFromRow } from "@/lib/message-row";
 import type { Message } from "@/lib/types";
 import type { MessageSource, MessageSourceHandlers } from "@/server/realtime/message-source";
 
@@ -24,15 +25,7 @@ export function parseMessageNotification(payload: string): Message | null {
     return null;
   }
   const parsed = notificationSchema.safeParse(json);
-  if (!parsed.success) return null;
-  const row = parsed.data;
-  return {
-    id: row.id,
-    roomId: row.room_id,
-    author: row.author,
-    body: row.body,
-    createdAt: new Date(row.created_at).toISOString(),
-  };
+  return parsed.success ? messageFromRow(parsed.data) : null;
 }
 
 export type MessageSourceOptions = {
