@@ -3,8 +3,8 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { listMapItems } from "@/lib/api-client";
+import { shouldRetryQuery } from "@/lib/query-retry";
 import type { ViewportQuery } from "@/lib/viewport";
-import { shouldRetryRoomQuery } from "./useRoom";
 
 /** Prefix of every viewport's key, for invalidating them all when a room is created. */
 export const MAP_ITEMS_KEY = ["mapItems"] as const;
@@ -24,7 +24,7 @@ export function useMapItems(query: ViewportQuery | null) {
     queryFn: async () => ({ zoom: query!.zoom, items: await listMapItems(query!) }),
     enabled: query !== null,
     placeholderData: keepPreviousData,
-    retry: shouldRetryRoomQuery,
+    retry: shouldRetryQuery,
     // Other users' new rooms show up when the user comes back to an area after this long.
     staleTime: 30_000,
   });

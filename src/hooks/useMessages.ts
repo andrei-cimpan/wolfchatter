@@ -4,10 +4,10 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tansta
 import { useRef } from "react";
 import { ApiError, listMessages, postMessage, retryAfterPhrase } from "@/lib/api-client";
 import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
+import { shouldRetryQuery } from "@/lib/query-retry";
 import { mergeCaughtUp, mergeMessages } from "@/lib/messages";
 import { hasVisibleText, postMessageSchema } from "@/lib/schemas";
 import type { Message } from "@/lib/types";
-import { shouldRetryRoomQuery } from "./useRoom";
 
 export function messagesQueryKey(roomId: string) {
   return ["messages", roomId] as const;
@@ -22,7 +22,7 @@ export function useMessages(roomId: string) {
   return useQuery({
     queryKey: messagesQueryKey(roomId),
     queryFn: () => listMessages(roomId),
-    retry: shouldRetryRoomQuery,
+    retry: shouldRetryQuery,
   });
 }
 
