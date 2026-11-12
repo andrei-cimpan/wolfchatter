@@ -29,8 +29,6 @@ export default defineConfig({
     reuseExistingServer: REUSE_SERVER,
     timeout: 120_000,
     env: {
-      // Process env wins over .env in Next.js, so the app writes to the database global setup checked.
-      DATABASE_URL: process.env.SUPABASE_DB_URL ?? "",
       // Every test browser posts from the same address, so the per-IP limits would turn busy tests
       // (such as creating enough rooms to cluster) into 429s. A server reused with E2E_REUSE_SERVER=1 keeps its own env.
       RATE_LIMIT_ROOMS_PER_MINUTE: "10000",

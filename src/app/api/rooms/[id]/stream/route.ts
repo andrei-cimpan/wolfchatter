@@ -13,7 +13,7 @@ export const GET = withErrorHandling(async (request: Request, ctx: Context) => {
   if (!roomIdSchema.safeParse(id).success) return roomNotFound();
   // A plain 404 rather than a stream that would end at once and reconnect every second or two.
   // The client still retries it on its slow backoff; it only opens streams for rooms that loaded.
-  if (!(await getChatRepository().getRoom(id))) return roomNotFound();
+  if (!(await getChatRepository(request).getRoom(id))) return roomNotFound();
 
   return new Response(openRoomEventStream(getRealtimeHub(), id, request.signal), { headers: SSE_HEADERS });
 });

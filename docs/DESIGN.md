@@ -11,7 +11,7 @@ Browser (MapView + RoomPanel)
 Next.js route handlers  ---- Realtime hub (one pg LISTEN per instance)
    |                              ^
    v                              |
-ChatRepository (Postgres)  --> Postgres --NOTIFY--> hub
+ChatRepository (Supabase API) --> Postgres --NOTIFY--> hub
 ```
 
 ## Project structure
@@ -31,7 +31,7 @@ src/
                           # message cache and catch-up, draft reducer, map and viewport math
   server/
     http/                 # route helpers: errors, JSON bodies, query strings, rate limits, SSE, /health
-    repositories/         # ChatRepository + PostgresChatRepository, PostgresMessageSource (pg LISTEN)
+    repositories/         # ChatRepository + SupabaseChatRepository, PostgresMessageSource (pg LISTEN)
     realtime/             # MessageSource interface, RealtimeHub (in-memory fan-out, heartbeat), shutdown
 supabase/                 # local stack config (config.toml) and SQL migrations
 e2e/                      # Playwright specs; shared locators in chat-page.ts, fixtures in support.ts
@@ -100,7 +100,9 @@ interface ChatRepository {
 - **Malformed or unknown ids match nothing.** `getRoom` returns `null`, `listMessages` returns `[]`, and `postMessage` throws `RoomNotFoundError`. The repository stays lenient so it never throws on bad input; the routes decide the status code (see Input validation).
 - **Map items:** at zoom 16 and above, the newest 500 rooms in view. Below that, the 500 busiest grid cells.
 
-Live delivery is a separate concern (`server/realtime`), so v2 can replace it with Supabase Realtime without touching the repository contract.
+**On `v2`** the implementation is `SupabaseChatRepository`, which goes through the Supabase API (PostgREST) and runs no SQL of its own. Reads with paging, the viewport and clustering, and creating a room with its first message are SQL functions in the migration (`list_messages`, `list_rooms_in_view`, `list_room_cells`, `create_room_with_message`), called with `.rpc`, so each runs in one transaction. `getChatRepository(request)` builds a client per request from that request's cookies, so row-level security sees the caller; it reads the `Request`, not `next/headers`, which keeps route tests free of mocks. It never refreshes a session itself, since it has no response to save the new cookies to and a refresh would rotate the token away. `ping()` is a head-only `select` on `rooms` with retries turned off, so `/health` fails at once rather than after the client's backoff. `next.config.ts` checks `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` at startup.
+
+Live delivery is a separate concern (`server/realtime`), so v2 can replace it with Supabase Realtime without touching the repository contract. Until then, the hub's `LISTEN` connects to `SUPABASE_DB_URL`.
 
 ## Database
 
@@ -248,7 +250,7 @@ On the `v2` branch the Dockerfile, Compose and the migration runner are gone (v2
 ## Testing approach
 
 - **Unit**: zod schemas, clustering grid math, repository and SQL functions against the local Supabase database (including bounds that cross the antimeridian).
-- **API**: route handlers with a real Postgres, the local Supabase stack's.
+- **API**: route handlers against the local Supabase stack, through its API as on v2 in production.
 - **Which database:** unit, API and e2e tests all use the local stack's one database (`SUPABASE_DB_URL`) and empty it, so they wipe dev data and must not run at the same time. Each suite first refuses any URL whose host is not `127.0.0.1` or `localhost` (`assertLocalDatabase`), so a `.env` pointing at the hosted project cannot be emptied, then applies migrations written since the stack started.
 - **E2E (Playwright)**: drop a draft that saves nothing, create the room with its first message, reload and see persistence; move, discard and double-click a draft; a second browser sees a posted message live; after the stream fails for a while, messages sent meanwhile appear once and in order; and after the app's `LISTEN` connection is terminated in Postgres (`dropRealtimeListener`), an open stream reconnects and catches up once, in order. Playwright starts its own dev server on port 3100 (`E2E_PORT`), never `npm run dev` on 3000, and fails if that port is busy unless `E2E_REUSE_SERVER=1`, so it cannot silently test another checkout's server, with `DATABASE_URL` set to `SUPABASE_DB_URL`. Its global setup empties that database once per run, so tests must not depend on each other's rooms. Because tests share that database and click the same spots, a fixture (`ownRoomsOnly`, on by default) answers each page's viewport requests with only the rooms that page created; viewport tests turn it off and never rely on an area being empty. Shared locators and actions live in `e2e/chat-page.ts`. `rooms.spec.ts` stays one file on purpose: its tests wait on click timers and map animations, which run late under CPU load, and as one file they run one at a time. Split into three files that ran in parallel, a few failed in most full runs.
 
@@ -268,7 +270,7 @@ On the `v2` branch the Dockerfile, Compose and the migration runner are gone (v2
 - A room shows only its latest 50 messages; there is no "load older" yet, though the API's `before` cursor supports it.
 - A refetch replaces the list with the latest 50 messages, so with 50 loaded plus 5 live, a reader at the very top who refocuses the tab loses the five oldest and the view starts at the sixth. Readers further down keep their place in Chromium through scroll anchoring; Safari, which has none, was not tested. Merging the refetch would have to avoid a silent gap after a long time offline, so it was left out. Add a test when browsers other than Chromium are configured.
 - A first message that fails after the user went Back and Forward during the send ends the draft with no message saying the room was not created, and anything typed into the form shown meanwhile is lost. A short status line would explain it.
-- `/health` shares the app's connection pool, so it also answers 503 when the pool is saturated, for example by requests waiting on a long lock, though the database still answers others. All instances would go unready together. A ping that times out is not cancelled, and keeps its connection until the database answers; the pool recovers by itself. A dedicated short-lived connection would avoid both.
+- (v1) `/health` shares the app's connection pool, so it also answers 503 when the pool is saturated, for example by requests waiting on a long lock, though the database still answers others. All instances would go unready together. A ping that times out is not cancelled, and keeps its connection until the database answers; the pool recovers by itself. A dedicated short-lived connection would avoid both.
 - The stream's backlog limit assumes the queue can drain between writes. Notifications that arrive together are delivered with no chance to drain, so one transaction inserting 5000 rows dropped a client that was reading, after 43 messages, and the log says it "stopped reading". 200 rows arrived in full. The app inserts one row per transaction, so this takes bulk SQL; the client should reconnect and catch up as after any drop.
 - The 2 s shutdown deadline applies whatever time the platform would allow, so a request slower than that at shutdown, as during a database stall, is cut off with no response. Its message may or may not have been stored (both were seen), so a resend can duplicate it. Making the deadline configurable would help where the platform waits longer. On ECS behind the ALB (`INFRA.md`) this should matter less, because draining gives requests up to 30 s before the signal.
 - Hooks and components are tested here without React Testing Library or jsdom, so code that needs a live React tree or a Leaflet map has no unit test, only e2e: `useRoomStream` (the effect, and closing the stream on unmount or a room change), `useFlyToRoom`, `ChatShell`, `LeafletMap` (`ClickToDraft`, `EnterToDraft`), `MapMarkers` and `MessageForm`. The pure logic they use is unit tested (`draftReducer`, `viewport`, `map-grid`, `message-cache`, `message-input`). Add hook and component tests if those tools are ever added (ask first: new dependencies).

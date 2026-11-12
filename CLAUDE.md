@@ -9,7 +9,7 @@ Read these before changing code:
 
 ## Stack (v2 branch, in progress)
 
-Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · PostgreSQL (local Supabase stack, Supabase CLI) · Zod · TanStack Query · Vitest · Playwright
+Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · Supabase (PostgreSQL; local stack via the Supabase CLI; `@supabase/supabase-js` and `@supabase/ssr`) · Zod · TanStack Query · Vitest · Playwright
 
 ## Commands
 

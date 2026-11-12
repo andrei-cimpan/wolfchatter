@@ -80,7 +80,7 @@ Notes under a task are still open. Notes that were resolved are kept, by task, u
 Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task's steps, files and checks are in the plan, `docs/superpowers/plans/2026-11-03-wolfchatter-v2.md`. One branch and PR per task, targeting `v2`.
 
 - [x] **T8.1** Local Supabase and the v1 schema (plan Task 1).
-- [ ] **T8.2** `SupabaseChatRepository` (Task 2).
+- [x] **T8.2** `SupabaseChatRepository` (Task 2).
 - [ ] **T8.3** Live messages with Supabase Realtime (Task 3).
 - [ ] **T8.4** Author names and row-level security (Task 4; lands with Tasks 5 and 6).
 - [ ] **T8.5** Sessions and the signed-in API (Task 5).

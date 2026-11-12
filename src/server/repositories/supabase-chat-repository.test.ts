@@ -1,13 +1,15 @@
-import type pg from "pg";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Bbox, MapItem } from "@/lib/types";
 import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import { RoomNotFoundError } from "./chat-repository";
-import { PostgresChatRepository } from "./postgres-chat-repository";
+import { SupabaseChatRepository } from "./supabase-chat-repository";
+import { anonClient } from "./test/supabase-client";
 import { setupTestDatabase } from "./test/test-db";
 
+// db() seeds and inspects tables directly; the repository goes through the API as a signed-out visitor.
 const db = setupTestDatabase();
-const repo = () => new PostgresChatRepository(db());
+
+const repo = () => new SupabaseChatRepository(anonClient());
 
 const UNKNOWN_ID = "00000000-0000-4000-8000-000000000000";
 const WORLD: Bbox = { west: -180, south: -90, east: 180, north: 90 };
@@ -30,14 +32,14 @@ function byType(items: MapItem[]) {
 }
 
 describe("ping", () => {
-  it("resolves while the database answers", async () => {
+  it("resolves while the API answers", async () => {
     await expect(repo().ping()).resolves.toBeUndefined();
   });
 
-  it("rejects when the database fails", async () => {
-    const failure = new Error("connection refused");
-    const failing = new PostgresChatRepository({ query: () => Promise.reject(failure) } as unknown as pg.Pool);
-    await expect(failing.ping()).rejects.toBe(failure);
+  it("rejects when the API cannot be reached", async () => {
+    // Port 1 is never the API, so the request fails to connect.
+    const unreachable = new SupabaseChatRepository(anonClient("http://127.0.0.1:1"));
+    await expect(unreachable.ping()).rejects.toThrow();
   });
 });
 
@@ -73,46 +75,6 @@ describe("createRoomWithMessage", () => {
     await expect(repo().createRoomWithMessage({ lat: 12.5, lng: 34.5 }, tooLong)).rejects.toThrow();
 
     expect(await repo().listMapItems({ bbox: WORLD, zoom: 16 })).toEqual([]);
-  });
-});
-
-describe("createRoomWithMessage on a failing connection", () => {
-  function repoWithFailingClient(failRollback: boolean) {
-    const insertFailed = new Error("insert failed");
-    const client = {
-      query: vi.fn(async (sql: string) => {
-        if (sql === "begin") return { rows: [] };
-        if (sql === "rollback" && !failRollback) return { rows: [] };
-        throw sql === "rollback" ? new Error("rollback failed") : insertFailed;
-      }),
-      on: vi.fn(),
-      off: vi.fn(),
-      release: vi.fn(),
-    };
-    const pool = { connect: async () => client } as unknown as pg.Pool;
-    const create = () =>
-      new PostgresChatRepository(pool).createRoomWithMessage({ lat: 0, lng: 0 }, { author: "ana", body: "hi" });
-    return { client, insertFailed, create };
-  }
-
-  it("reports the real error when the rollback fails too, and does not reuse the connection", async () => {
-    const { client, insertFailed, create } = repoWithFailingClient(true);
-    await expect(create()).rejects.toBe(insertFailed);
-    expect(client.release).toHaveBeenCalledExactlyOnceWith(true);
-  });
-
-  it("returns a connection whose rollback worked to the pool", async () => {
-    const { client, insertFailed, create } = repoWithFailingClient(false);
-    await expect(create()).rejects.toBe(insertFailed);
-    expect(client.release).toHaveBeenCalledExactlyOnceWith(false);
-  });
-
-  it("listens for the connection dying, which would otherwise be an uncaught exception", async () => {
-    const { client, create } = repoWithFailingClient(false);
-    await create().catch(() => undefined);
-    const [event, listener] = client.on.mock.calls[0] ?? [];
-    expect(event).toBe("error");
-    expect(client.off).toHaveBeenCalledExactlyOnceWith("error", listener);
   });
 });
 

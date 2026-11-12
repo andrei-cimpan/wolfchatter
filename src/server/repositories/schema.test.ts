@@ -56,7 +56,7 @@ describe("initial schema", () => {
 
   it("counts messages on the room and notifies listeners on insert", async () => {
     const room = await createRoom();
-    const listener = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    const listener = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL });
     await listener.connect();
     try {
       await listener.query("listen messages");
