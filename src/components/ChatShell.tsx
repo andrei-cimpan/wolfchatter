@@ -59,7 +59,8 @@ export function ChatShell() {
   }
 
   // Back or Forward ends a draft, whose form is gone by then. Left in place, it would come back on any
-  // entry with no room open, and saving there would overwrite that entry.
+  // entry with no room open, and saving there would overwrite that entry. No dependency list on
+  // purpose: re-registering after every render keeps the listener on this render's `creation`.
   useEffect(() => {
     function endDraft() {
       if (creation.isSending()) creation.abandonSend();
