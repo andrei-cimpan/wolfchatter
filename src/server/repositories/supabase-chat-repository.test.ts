@@ -51,6 +51,21 @@ describe("when the API cannot be reached", () => {
   it("getRoom fails at once", async () => {
     await expect(unreachable().getRoom(UNKNOWN_ID)).rejects.toThrow();
   });
+
+  // The client returns errors as plain objects; thrown as they are, a 500's log has no stack.
+  it("rejects with an Error", async () => {
+    await expect(unreachable().ping()).rejects.toBeInstanceOf(Error);
+    await expect(unreachable().listMessages(UNKNOWN_ID)).rejects.toBeInstanceOf(Error);
+  });
+});
+
+describe("errors from the database", () => {
+  it("are thrown as Errors that keep the database's code", async () => {
+    const tooLong = { author: "x".repeat(33), body: "hello" };
+    const error: unknown = await repo().createRoomWithMessage({ lat: 0, lng: 0 }, tooLong).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({ code: "23514" });
+  });
 });
 
 describe("rooms", () => {

@@ -1,4 +1,4 @@
-import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
 import { MESSAGE_LIMIT_DEFAULT, MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import { CLUSTER_MAX_ZOOM, clusterCellSize } from "@/lib/map-grid";
 import { messageFromRow, type MessageRow } from "@/lib/message-row";
@@ -70,10 +70,16 @@ function viewportParams(bbox: Bbox) {
   return { p_south: bbox.south, p_north: bbox.north, p_from1: a.from, p_to1: a.to, p_from2: b.from, p_to2: b.to };
 }
 
+// The client returns errors as plain objects, typed as PostgrestError but not built as one; thrown
+// as they are, they carry no stack and fail `instanceof Error`.
+function asError(error: PostgrestError): Error {
+  return error instanceof Error ? error : new PostgrestError(error);
+}
+
 // Without generated database types the client types every result as `any`; this names the row
 // type each call expects, and turns PostgREST's `{ error }` into a thrown error.
 function rowsOf<T>({ data, error }: { data: unknown; error: PostgrestError | null }): T {
-  if (error) throw error;
+  if (error) throw asError(error);
   return data as T;
 }
 
@@ -91,7 +97,7 @@ export class SupabaseChatRepository implements ChatRepository {
       .select("id", { head: true, count: "estimated" })
       .limit(1)
       .retry(false);
-    if (error) throw error;
+    if (error) throw asError(error);
   }
 
   async getRoom(id: string): Promise<Room | null> {
