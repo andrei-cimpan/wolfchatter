@@ -7,7 +7,7 @@ Read these before changing code:
 - `docs/DESIGN.md`: how it is built
 - `docs/TASKS.md`: what to do next
 
-## Stack (v1)
+## Stack (v2 branch, in progress)
 
 Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · PostgreSQL (local Supabase stack, Supabase CLI) · Zod · TanStack Query · Vitest · Playwright
 
@@ -41,6 +41,6 @@ Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · Post
 5. If a decision changes, update the relevant doc in the same commit.
 6. Ask before adding a dependency or deviating from the PRD.
 
-## Out of scope for v1
+## Out of scope for v1 (`main`)
 
 Auth, Supabase, and Mapbox. These belong to the v2 branch.
