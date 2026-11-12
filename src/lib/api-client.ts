@@ -50,6 +50,9 @@ async function toApiError(response: Response): Promise<ApiError> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) throw await toApiError(response);
+  // Not validated: this app's own routes build these bodies from the same types, so a schema per
+  // response would only restate them. Live events are checked (messageSchema) because they arrive
+  // through a separate path, the database's NOTIFY payload.
   return (await response.json()) as T;
 }
 
