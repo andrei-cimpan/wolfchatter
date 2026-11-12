@@ -21,16 +21,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm run typecheck
       - name: Start the local Supabase stack
         run: npx supabase start -x "$SUPABASE_EXCLUDE"
       # `status -o env` quotes its values, which $GITHUB_ENV would keep, so the quotes are dropped.
       - name: Export its settings
         run: |
-          npx supabase status -o env --override-name db.url=SUPABASE_DB_URL 2>/dev/null \
+          npx supabase status -o env --override-name db.url=SUPABASE_DB_URL \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY 2>/dev/null \
             | sed -E 's/^([A-Z0-9_]+)="(.*)"$/\1=\2/' | grep -E '^[A-Z0-9_]+=' >> "$GITHUB_ENV"
-      - name: Point the app at it
-        run: echo "DATABASE_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+      # `next typegen` loads next.config.ts, which requires the Supabase settings exported above.
+      - run: npm run typecheck
       # cacheComponents prerender errors only surface at build time.
       - run: npm run build
       - run: npm test
@@ -49,7 +49,8 @@ jobs:
         run: npx supabase start -x "$SUPABASE_EXCLUDE"
       - name: Export its settings
         run: |
-          npx supabase status -o env --override-name db.url=SUPABASE_DB_URL 2>/dev/null \
+          npx supabase status -o env --override-name db.url=SUPABASE_DB_URL \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY 2>/dev/null \
             | sed -E 's/^([A-Z0-9_]+)="(.*)"$/\1=\2/' | grep -E '^[A-Z0-9_]+=' >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e

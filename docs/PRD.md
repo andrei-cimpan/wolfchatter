@@ -45,7 +45,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 
 **Viewport loading and clustering.** The map requests only the pins in view (`bbox` and `zoom`). The server groups rooms into grid cells of roughly 64 px at that zoom and returns one cluster (count and centre) per crowded cell, and individual rooms elsewhere. At zoom 16 and above rooms are never clustered.
 
-**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `createRoomWithMessage`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime`). v1 provides `PostgresChatRepository`. v2 adds `SupabaseChatRepository` without changing UI code.
+**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `createRoomWithMessage`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime`). v1 provides `PostgresChatRepository`. v2 replaces it with `SupabaseChatRepository`, which goes through the Supabase API, without changing UI code.
 
 **API (REST, JSON).**
 

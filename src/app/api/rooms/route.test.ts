@@ -1,13 +1,10 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { MapItem, Message, Room } from "@/lib/types";
 import { roomCreationLimiter } from "@/server/http/rate-limit";
-import { getPool } from "@/server/repositories/db";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { GET, POST } from "./route";
 
 setupTestDatabase();
-// The routes use the app's shared pool; leaving it open keeps the test worker alive.
-afterAll(() => getPool().end());
 // The limiter is module state shared by every test in this file.
 beforeEach(() => roomCreationLimiter.reset());
 

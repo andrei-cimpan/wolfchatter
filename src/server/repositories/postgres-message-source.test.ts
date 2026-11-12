@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/lib/types";
 import { InMemoryRealtimeHub, type Subscriber } from "@/server/realtime/hub";
-import { PostgresChatRepository } from "./postgres-chat-repository";
+import { SupabaseChatRepository } from "./supabase-chat-repository";
 import { PostgresMessageSource, parseMessageNotification } from "./postgres-message-source";
+import { anonClient } from "./test/supabase-client";
 import { startTcpProxy, type TcpProxy } from "./test/tcp-proxy";
 import { setupTestDatabase } from "./test/test-db";
 
 const db = setupTestDatabase();
-const repo = () => new PostgresChatRepository(db());
+const repo = () => new SupabaseChatRepository(anonClient());
 
 // Each test names its listener, so test runs sharing the database never see or kill each other's.
 let applicationName = "";
@@ -35,7 +36,7 @@ async function startSource() {
   const received: Message[] = [];
   const onDisconnect = vi.fn();
   const onReconnect = vi.fn();
-  source = new PostgresMessageSource(process.env.DATABASE_URL!, options());
+  source = new PostgresMessageSource(process.env.SUPABASE_DB_URL!, options());
   await source.start({ onMessage: (m) => received.push(m), onDisconnect, onReconnect });
   return { received, onDisconnect, onReconnect };
 }
@@ -145,7 +146,7 @@ describe("PostgresMessageSource", () => {
 
 describe("PostgresMessageSource behind a proxy", () => {
   beforeEach(async () => {
-    proxy = await startTcpProxy(process.env.DATABASE_URL!);
+    proxy = await startTcpProxy(process.env.SUPABASE_DB_URL!);
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 

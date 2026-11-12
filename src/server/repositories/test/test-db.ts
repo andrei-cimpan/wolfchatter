@@ -2,15 +2,15 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach } from "vitest";
 import { assertLocalSupabaseDatabase } from "./local-database";
 
-// Registers hooks that give each test empty tables. vitest.config.mts points DATABASE_URL at the
-// local Supabase database and runs files one at a time, so one file cannot truncate another's rows.
+// Registers hooks that give each test empty tables in the local Supabase database (SUPABASE_DB_URL).
+// vitest.config.mts runs files one at a time, so one file cannot truncate another's rows.
 export function setupTestDatabase(): () => pg.Pool {
   let pool: pg.Pool | undefined;
 
   beforeAll(async () => {
     // The URL this pool empties, checked here rather than trusted from the config.
-    await assertLocalSupabaseDatabase(process.env.DATABASE_URL ?? "");
-    pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    await assertLocalSupabaseDatabase(process.env.SUPABASE_DB_URL ?? "");
+    pool = new pg.Pool({ connectionString: process.env.SUPABASE_DB_URL });
   });
   beforeEach(async () => {
     await pool!.query("truncate messages, rooms restart identity cascade");

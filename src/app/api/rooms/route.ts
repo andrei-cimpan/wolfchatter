@@ -16,7 +16,7 @@ export const GET = withErrorHandling(async (request: Request) => {
   const query = mapItemsQuerySchema.safeParse(queryInput(params, ["bbox", "zoom"]));
   if (!query.success) return validationError(query.error);
 
-  return Response.json(await getChatRepository().listMapItems(query.data));
+  return Response.json(await getChatRepository(request).listMapItems(query.data));
 });
 
 /** Creates a room at `{ lat, lng }`, together with `firstMessage: { author, body }` if given. */
@@ -31,7 +31,7 @@ export const POST = withErrorHandling(async (request: Request) => {
   if (!input.success) return validationError(input.error);
 
   const { firstMessage, ...position } = input.data;
-  const repository = getChatRepository();
+  const repository = getChatRepository(request);
   if (!firstMessage) return roomCreated(await repository.createRoom(position));
   const { room, message } = await repository.createRoomWithMessage(position, firstMessage);
   return roomCreated({ ...room, firstMessage: message });

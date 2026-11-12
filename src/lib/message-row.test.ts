@@ -24,4 +24,13 @@ describe("messageFromRow", () => {
     const fromQuery = messageFromRow({ ...row, created_at: new Date("2026-11-03T10:00:00.123Z") });
     expect(fromNotify).toEqual(fromQuery);
   });
+
+  it("reads the timestamp text PostgREST and Realtime send", () => {
+    expect(messageFromRow({ ...row, created_at: "2026-11-03T10:00:00.123456+00:00" }).createdAt).toBe(
+      "2026-11-03T10:00:00.123Z",
+    );
+    expect(messageFromRow({ ...row, created_at: "2026-11-03 10:00:00.123456+00" }).createdAt).toBe(
+      "2026-11-03T10:00:00.123Z",
+    );
+  });
 });

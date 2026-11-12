@@ -1,14 +1,11 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { Message, Room } from "@/lib/types";
 import { messagePostLimiter } from "@/server/http/rate-limit";
 import { getChatRepository } from "@/server/repositories";
-import { getPool } from "@/server/repositories/db";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { GET, POST } from "./route";
 
 setupTestDatabase();
-// The routes use the app's shared pool; leaving it open keeps the test worker alive.
-afterAll(() => getPool().end());
 // The limiter is module state shared by every test in this file.
 beforeEach(() => messagePostLimiter.reset());
 
@@ -32,7 +29,7 @@ function postMessage(roomId: string, body: string, headers: Record<string, strin
 }
 
 function createRoom(): Promise<Room> {
-  return getChatRepository().createRoom({ lat: 44.43, lng: 26.1 });
+  return getChatRepository(new Request("http://localhost/")).createRoom({ lat: 44.43, lng: 26.1 });
 }
 
 async function post(roomId: string, body: string): Promise<Message> {
@@ -64,7 +61,7 @@ describe("POST /api/rooms/:id/messages", () => {
       body: "hello\nthere",
       createdAt: expect.any(String),
     });
-    expect((await getChatRepository().getRoom(room.id))?.messageCount).toBe(1);
+    expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(1);
   });
 
   it.each([
@@ -80,7 +77,7 @@ describe("POST /api/rooms/:id/messages", () => {
     expect(await expectError(await postMessage(room.id, JSON.stringify(body)), 400, "validation_error")).toMatch(
       message,
     );
-    expect((await getChatRepository().getRoom(room.id))?.messageCount).toBe(0);
+    expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(0);
   });
 
   it("rejects a non-JSON body with 400", async () => {
@@ -115,7 +112,7 @@ describe("POST /api/rooms/:id/messages", () => {
     const room = await createRoom();
     const response = await postMessage(room.id, JSON.stringify({ author: "ana", body: "hi" }), headers);
     await expectError(response, 415, "unsupported_media_type");
-    expect((await getChatRepository().getRoom(room.id))?.messageCount).toBe(0);
+    expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(0);
   });
 
   describe("rate limiting", () => {
@@ -130,7 +127,7 @@ describe("POST /api/rooms/:id/messages", () => {
       const response = await send(room.id, "203.0.113.7");
       await expectError(response, 429, "rate_limited");
       expect(Number(response.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
-      expect((await getChatRepository().getRoom(room.id))?.messageCount).toBe(LIMIT);
+      expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(LIMIT);
     });
 
     it("keeps each IP's budget separate", async () => {
@@ -163,7 +160,7 @@ describe("GET /api/rooms/:id/messages", () => {
   // should fail here rather than silently change what clients get.
   it("returns 50 messages without a limit and 100 with limit=100", async () => {
     const room = await createRoom();
-    const repository = getChatRepository();
+    const repository = getChatRepository(new Request("http://localhost/"));
     for (let i = 1; i <= 101; i++) {
       await repository.postMessage(room.id, { author: "ana", body: `m${i}` });
     }

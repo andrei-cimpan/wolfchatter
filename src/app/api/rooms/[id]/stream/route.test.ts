@@ -2,15 +2,13 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { Message } from "@/lib/types";
 import { stopRealtimeHub } from "@/server/realtime";
 import { getChatRepository } from "@/server/repositories";
-import { getPool } from "@/server/repositories/db";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { GET } from "./route";
 
 setupTestDatabase();
-// The hub holds a LISTEN connection and the route uses the shared pool; both keep the worker alive.
+// The hub holds a LISTEN connection, which would keep the test worker alive.
 afterAll(async () => {
   await stopRealtimeHub();
-  await getPool().end();
 });
 
 const UNKNOWN_ID = "00000000-0000-4000-8000-000000000000";
@@ -43,7 +41,7 @@ describe("GET /api/rooms/:id/stream", () => {
   });
 
   it("streams a message posted after ready, and only for its own room", async () => {
-    const repository = getChatRepository();
+    const repository = getChatRepository(new Request("http://localhost/"));
     const [room, other] = await Promise.all([
       repository.createRoom({ lat: 44.43, lng: 26.1 }),
       repository.createRoom({ lat: 45.75, lng: 21.23 }),

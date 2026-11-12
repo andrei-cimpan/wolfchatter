@@ -80,10 +80,11 @@ Notes under a task are still open. Notes that were resolved are kept, by task, u
 Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task's steps, files and checks are in the plan, `docs/superpowers/plans/2026-11-03-wolfchatter-v2.md`. One branch and PR per task, targeting `v2`.
 
 - [x] **T8.1** Local Supabase and the v1 schema (plan Task 1).
-- [ ] **T8.2** `SupabaseChatRepository` (Task 2).
+- [x] **T8.2** `SupabaseChatRepository` (Task 2).
 - [ ] **T8.3** Live messages with Supabase Realtime (Task 3).
 - [ ] **T8.4** Author names and row-level security (Task 4; lands with Tasks 5 and 6).
 - [ ] **T8.5** Sessions and the signed-in API (Task 5).
+  *From the PR #31 review (#1):* `getChatRepository` cannot stop the Supabase client refreshing a nearly expired access token (within 90 s) before a request, and its no-op `setAll` drops the new tokens, which can sign the user out. Test that a route given a nearly expired cookie makes no `/auth/v1/token` call, and fix it here, for example with the `accessToken` client option. In the same case PostgREST answered "JWT cryptographic operation failed" for an invalid token, so a stale cookie can turn a public read into a 500.
 - [ ] **T8.6** Sign-in in the chat card (Task 6).
 - [ ] **T8.7** Deploy to Vercel, owner-led (Task 7).
 - [ ] **T8.8** Mapbox map and pins (Task 8; lands with Task 9).

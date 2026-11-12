@@ -17,7 +17,7 @@ export const GET = withErrorHandling(async (request: Request, ctx: Context) => {
   const query = listMessagesQuerySchema.safeParse(queryInput(params, ["before", "after", "limit"]));
   if (!query.success) return validationError(query.error);
 
-  const repository = getChatRepository();
+  const repository = getChatRepository(request);
   // listMessages answers [] for an unknown room, which would read as "a room with no messages".
   if (!(await repository.getRoom(id))) return roomNotFound();
   return Response.json(await repository.listMessages(id, query.data));
@@ -39,7 +39,7 @@ export const POST = withErrorHandling(async (request: Request, ctx: Context) => 
 
   try {
     // No Location header: there is no endpoint that serves a single message.
-    return Response.json(await getChatRepository().postMessage(id, input.data), { status: 201 });
+    return Response.json(await getChatRepository(request).postMessage(id, input.data), { status: 201 });
   } catch (error) {
     if (error instanceof RoomNotFoundError) return roomNotFound();
     throw error;
