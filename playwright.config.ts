@@ -10,7 +10,6 @@ const PORT = Number(process.env.E2E_PORT || 3100);
 // Reusing a server is opt-in: otherwise a server already on the port, perhaps another checkout's
 // with other code and env, would be tested silently. Without it, a busy port fails loudly.
 const REUSE_SERVER = !process.env.CI && process.env.E2E_REUSE_SERVER === "1";
-const MAP_TIMING_SPECS = /(rooms|map-input|map-flights)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -22,13 +21,7 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",
   },
-  projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: MAP_TIMING_SPECS },
-    // These wait on click timers and map animations, which run late under CPU load. They once
-    // shared one file, so they ran one at a time; run in parallel with each other, a few failed
-    // in every full run, each time different ones.
-    { name: "chromium-map", use: { ...devices["Desktop Chrome"] }, testMatch: MAP_TIMING_SPECS, workers: 1 },
-  ],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `npm run dev -- --port ${PORT}`,
     url: `http://localhost:${PORT}`,
