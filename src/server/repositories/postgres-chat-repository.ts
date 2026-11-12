@@ -1,9 +1,9 @@
 import type pg from "pg";
 import { MESSAGE_LIMIT_DEFAULT, MESSAGE_LIMIT_MAX } from "@/lib/limits";
+import { CLUSTER_MAX_ZOOM, clusterCellSize } from "@/lib/map-grid";
 import type { Bbox, MapItem, Message, Room } from "@/lib/types";
 import { RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
-import { CLUSTER_MAX_ZOOM, clusterCellSize } from "@/lib/map-grid";
-import { MAP_ITEMS_LIMIT, longitudeRanges, viewportCenter } from "./map-grid";
+import { MAP_ITEMS_LIMIT, longitudeRanges, viewportCenter } from "./viewport-ranges";
 
 const FOREIGN_KEY_VIOLATION = "23503";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

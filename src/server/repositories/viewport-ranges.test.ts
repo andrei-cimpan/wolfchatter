@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { longitudeRanges, viewportCenter } from "./map-grid";
+import { longitudeRanges, viewportCenter } from "./viewport-ranges";
 
 describe("longitudeRanges", () => {
   it("returns the viewport range for a normal viewport", () => {
