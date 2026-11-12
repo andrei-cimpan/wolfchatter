@@ -8,12 +8,13 @@ import { focusShiftPx, WIDE_SCREEN_QUERY } from "@/lib/map-focus";
 export type FlyTarget = { id: string; lat: number; lng: number };
 
 /**
- * Brings the selected room into view whenever the selection changes, at the current zoom. A page
- * opened on a room starts there rather than flying in from the default view.
+ * Brings the focused pin into view whenever the focus changes, at the current zoom. `focusId` is
+ * the open draft's id, or else the selected room's, or `null` when neither is open. A page opened
+ * on a room starts there rather than flying in from the default view.
  */
-export function useFlyToRoom(selectedRoomId: string | null, target: FlyTarget | undefined) {
+export function useFlyToRoom(focusId: string | null, target: FlyTarget | undefined) {
   const map = useMap();
-  const roomAtOpen = useRef(selectedRoomId);
+  const roomAtOpen = useRef(focusId);
   // Not every render: the target's longitude changes as the map moves.
   const placedRoomId = useRef<string | null>(null);
   // A flight passes through fractional zooms and getZoom() reports them, so this is the zoom to
@@ -22,7 +23,7 @@ export function useFlyToRoom(selectedRoomId: string | null, target: FlyTarget | 
   const flightDragged = useRef(false);
 
   useEffect(() => {
-    if (selectedRoomId === null) placedRoomId.current = null;
+    if (focusId === null) placedRoomId.current = null;
     if (!target || placedRoomId.current === target.id) return;
     placedRoomId.current = target.id;
     const isPageOpen = roomAtOpen.current === target.id;
