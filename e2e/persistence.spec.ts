@@ -1,22 +1,10 @@
 import type { Page } from "@playwright/test";
+import { ROOM_URL, messages, openMap, panel, pin, roomTitle, usernameField } from "./chat-page";
 import { expect, serveBlankTiles, test } from "./support";
-
-const ROOM_URL = /\?room=[0-9a-f-]{36}$/;
 
 test.beforeEach(async ({ page }) => {
   await serveBlankTiles(page);
 });
-
-const panel = (page: Page) => page.getByRole("complementary", { name: "Chat" });
-const roomTitle = (page: Page) => panel(page).getByRole("heading", { level: 2 });
-const messages = (page: Page) => panel(page).getByRole("log", { name: "Messages" });
-const usernameField = (page: Page) => panel(page).getByRole("textbox", { name: "Username" });
-const pin = (page: Page, title: string) => page.getByRole("button", { name: title, exact: true });
-
-async function openMap(page: Page) {
-  await page.goto("/");
-  await expect(page.locator(".leaflet-container")).toBeVisible();
-}
 
 type CreatedRoom = { id: string; title: string; lat: number; lng: number };
 

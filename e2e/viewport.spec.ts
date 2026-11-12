@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { openMap } from "./chat-page";
 import { expect, serveBlankTiles, test, tileZooms } from "./support";
 
 // About the real viewport requests, so the map sees every room in the e2e database. Other tests'
@@ -22,11 +23,6 @@ function countViewportRequests(page: Page) {
     if (request.method() === "GET" && isViewportRequest(url)) urls.push(url.searchParams);
   });
   return urls;
-}
-
-async function openMap(page: Page) {
-  await page.goto("/");
-  await expect(page.locator(".leaflet-container")).toBeVisible();
 }
 
 test("the map draws every room and cluster the viewport returns, including rooms made elsewhere", async ({

@@ -1,15 +1,11 @@
 import type { APIRequestContext, Page } from "@playwright/test";
+import { messageField, messages, panel, submit, usernameField } from "./chat-page";
 import { box, dropRealtimeListener, expect, serveBlankTiles, test } from "./support";
 
 test.beforeEach(async ({ page }) => {
   await serveBlankTiles(page);
 });
 
-const panel = (page: Page) => page.getByRole("complementary", { name: "Chat" });
-const messages = (page: Page) => panel(page).getByRole("log", { name: "Messages" });
-const usernameField = (page: Page) => panel(page).getByRole("textbox", { name: "Username" });
-const messageField = (page: Page) => panel(page).getByRole("textbox", { name: "Message" });
-const submit = (page: Page) => panel(page).getByRole("button", { name: "Submit" });
 // The list scrolls in the log's parent, which also holds the loading and empty states.
 const scroller = (page: Page) => messages(page).locator("..");
 const newest = (page: Page) => messages(page).getByRole("listitem").last();

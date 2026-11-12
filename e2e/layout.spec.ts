@@ -1,7 +1,6 @@
 import type { Page } from "@playwright/test";
+import { EMPTY_STATE, messages, panel, submit } from "./chat-page";
 import { box, expect, makeTilesHitTestable, serveBlankTiles, test } from "./support";
-
-const EMPTY_STATE = "Click on the map to start a chat";
 
 test.beforeEach(async ({ page }) => {
   await serveBlankTiles(page);
@@ -117,9 +116,6 @@ async function expectNoSidewaysScroll(page: Page) {
 }
 
 const MIN_LIST_PX = 80;
-const panel = (page: Page) => page.getByRole("complementary", { name: "Chat" });
-const messages = (page: Page) => panel(page).getByRole("log", { name: "Messages" });
-const submit = (page: Page) => panel(page).getByRole("button", { name: "Submit" });
 
 /** Opens a room with enough messages to overflow any list, so the list's height is what the layout gave it. */
 async function openFullRoom(page: Page) {
