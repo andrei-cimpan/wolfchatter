@@ -42,7 +42,7 @@ Creates the local stack, the migrations and the database functions, with posting
 
 **Files:**
 - Create: `supabase/config.toml` (via `npx supabase init`), `supabase/migrations/20261103000001_init.sql`, `src/server/repositories/test/local-database.ts`, `src/server/repositories/test/local-database.test.ts`, `src/server/repositories/database-functions.test.ts`
-- Modify: `package.json`, `.env.example`, `vitest.config.ts`, `src/server/repositories/test/global-setup.ts`, `src/server/repositories/test/test-db.ts`, `next.config.ts`, `.github/workflows/ci.yml`, `e2e/global-setup.ts`, `playwright.config.ts`, `CLAUDE.md` (Commands)
+- Modify: `docs/TASKS.md` (section 8), `package.json`, `.env.example`, `vitest.config.mts`, `src/server/repositories/test/global-setup.ts`, `src/server/repositories/test/test-db.ts`, `next.config.ts`, `.github/workflows/ci.yml`, `e2e/global-setup.ts`, `playwright.config.ts`, `CLAUDE.md` (Commands)
 - Delete: `db/migrations/0001_init.sql`, `scripts/migrate.mts`, `scripts/migrate.test.mts`, `src/server/repositories/test/scratch-database.ts` and its test, `src/server/repositories/test/global-setup.test.ts` if it only covers the scratch setup, `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `scripts/check-docker-shutdown.sh`, the `DOCKER_BUILD` handling in `next.config.ts`
 
 **Interfaces:**
@@ -66,7 +66,7 @@ expect(() => assertLocalDatabase("postgresql://postgres:postgres@localhost:54322
 
 - [ ] **Step 4: Implement the guard and the harness**
 
-`assertLocalDatabase` parses the URL and allows only hosts `127.0.0.1` and `localhost`. `global-setup.ts` and `test-db.ts` call it on `SUPABASE_DB_URL` before any truncate, and connect with `pg`. `setupTestDatabase` keeps its truncate and its `room_number_seq` restart. `vitest.config.ts` drops `TEST_DATABASE_URL` and `APP_DATABASE_URL`, and sets `DATABASE_URL` to `SUPABASE_DB_URL`, so the Postgres repository and its tests keep running against the local stack until Task 2. `.env.example` and `package.json` swap to local Supabase values, with scripts `db:start` (`supabase start`) and `db:migrate` (`supabase migration up`).
+`assertLocalDatabase` parses the URL and allows only hosts `127.0.0.1` and `localhost`. `global-setup.ts` and `test-db.ts` call it on `SUPABASE_DB_URL` before any truncate, and connect with `pg`. `setupTestDatabase` keeps its truncate and its `room_number_seq` restart. `vitest.config.mts` drops `TEST_DATABASE_URL` and `APP_DATABASE_URL`, and sets `DATABASE_URL` to `SUPABASE_DB_URL`, so the Postgres repository and its tests keep running against the local stack until Task 2. `.env.example` and `package.json` swap to local Supabase values, with scripts `db:start` (`supabase start`) and `db:migrate` (`supabase migration up`).
 
 - [ ] **Step 5: Write the failing function tests** (`database-functions.test.ts`, through `pg` as a superuser, porting v1's expectations)
 
@@ -86,22 +86,25 @@ Port `db/migrations/0001_init.sql`, keeping `pg_notify` for now, because the SSE
 
 - [ ] **Step 9: Verify.** Run lint, typecheck, `npm test`, `npm run build`, `npm run e2e`. Expected: all pass, with the app still on its Postgres repository, now pointed at the local Supabase database.
 
-- [ ] **Step 10: Commit.** `feat: add local Supabase with the v1 schema`
+- [ ] **Step 10: Replace `docs/TASKS.md` section 8** with this plan's nine tasks, one line each, and tick Task 1. Each later task ticks its own line in its commit.
+
+- [ ] **Step 11: Commit.** `feat: add local Supabase with the v1 schema`
 
 ---
 
 ### Task 2: SupabaseChatRepository
 
 **Files:**
-- Create: `src/lib/supabase/config.ts` and test, `src/lib/message-row.ts` and test, `src/server/repositories/supabase-chat-repository.ts`, `src/server/repositories/supabase-chat-repository.test.ts` (port of the Postgres test)
-- Modify: `src/server/repositories/index.ts`, `src/app/health/route.ts`, `src/app/api/rooms/route.ts`, `src/app/api/rooms/[id]/route.ts`, `src/app/api/rooms/[id]/messages/route.ts`, route tests, `next.config.ts`, `docs/DESIGN.md`, `docs/PRD.md`, `docs/TASKS.md`, `CLAUDE.md`, `README.md`
+- Create: `src/lib/supabase/config.ts` and test, `src/server/repositories/supabase-chat-repository.ts`, `src/server/repositories/supabase-chat-repository.test.ts` (port of the Postgres test)
+- Modify: `src/lib/message-row.test.ts`, `src/server/repositories/index.ts`, `src/app/health/route.ts`, `src/app/api/rooms/route.ts`, `src/app/api/rooms/[id]/route.ts`, `src/app/api/rooms/[id]/messages/route.ts`, route tests, `next.config.ts`, `docs/DESIGN.md`, `docs/PRD.md`, `docs/TASKS.md`, `CLAUDE.md`, `README.md`
 - Delete: `postgres-chat-repository.ts` and test, `db.ts` and `db.test.ts`, `schema.test.ts` if covered by Task 1
 
 The SSE stream keeps running on Postgres `NOTIFY` until Task 3: `createMessageSource` connects `PostgresMessageSource` to `SUPABASE_DB_URL`, and `pg` stays a dependency.
 
 **Interfaces:**
 - Consumes: Task 1's SQL functions.
-- Produces: `messageFromRow(row: MessageRow): Message`, `MessageRow = { id: string; room_id: string; author: string; body: string; created_at: string }` in `src/lib/message-row.ts` (shared with Task 3); `supabaseConfigFromEnv(): { url: string; anonKey: string }`; `class SupabaseChatRepository implements ChatRepository { constructor(client: SupabaseClient) }`; `getChatRepository(request: Request): ChatRepository` (sync, built from the request's cookies, every route passes its `Request`).
+- Consumes: `messageFromRow(row: MessageRow): Message` and `MessageRow` (`created_at: Date | string`) from `src/lib/message-row.ts`, which v1's repository and `LISTEN` parser already share (baseline review #8). Task 3 uses them too.
+- Produces: `supabaseConfigFromEnv(): { url: string; anonKey: string }`; `class SupabaseChatRepository implements ChatRepository { constructor(client: SupabaseClient) }`; `getChatRepository(request: Request): ChatRepository` (sync, built from the request's cookies, every route passes its `Request`).
 
 - [ ] **Step 1: Branch.** `git switch v2`, then `git switch -c feat/v2-supabase-repository`.
 
@@ -109,7 +112,7 @@ The SSE stream keeps running on Postgres `NOTIFY` until Task 3: `createMessageSo
 
 - [ ] **Step 3: Write the failing tests**
 
-`message-row.test.ts`:
+`message-row.test.ts`, two more cases for the timestamp text PostgREST and Realtime send. Node already parses both, so these pass at once and only pin the behaviour:
 
 ```ts
 expect(messageFromRow({ ...row, created_at: "2026-11-03T10:00:00.123456+00:00" }).createdAt).toBe("2026-11-03T10:00:00.123Z");
@@ -120,7 +123,7 @@ expect(messageFromRow({ ...row, created_at: "2026-11-03 10:00:00.123456+00" }).c
 
 `supabase-chat-repository.test.ts`: port every case from `postgres-chat-repository.test.ts` with the same expectations, using a client built with the anon key. Keep the cases for a malformed id, bounds across the antimeridian, the 500-item cap and zoom at `CLUSTER_MAX_ZOOM`.
 
-- [ ] **Step 4: Run them and confirm they fail.** Run `npx vitest run message-row config supabase-chat-repository`. Expected: FAIL, modules not found.
+- [ ] **Step 4: Run them and confirm they fail.** Run `npx vitest run config supabase-chat-repository`. Expected: FAIL, modules not found.
 
 - [ ] **Step 5: Implement**
 
@@ -167,7 +170,7 @@ Keep every behaviour test against a fake `subscribe`: `ready` runs `onReady` and
 
 - [ ] **Step 7: Update e2e**
 
-Replace `dropRealtimeListener` with `dropLiveConnection(page)`, which uses `page.routeWebSocket(/\/realtime\/v1\/websocket/, ...)`, proxies with `connectToServer()`, and closes the socket on demand. Rewrite the three tests at `e2e/messages.spec.ts:273`, `:297` and `:491` on it, with the same expectations: messages sent meanwhile appear once and in order. Add `a signed-out reader sees a message live` (it becomes meaningful in Task 6, and passes trivially now).
+Replace `dropRealtimeListener` with `dropLiveConnection(page)`, which uses `page.routeWebSocket(/\/realtime\/v1\/websocket/, ...)`, proxies with `connectToServer()`, and closes the socket on demand. Rewrite the three tests that use `dropRealtimeListener` or the stream (`after the stream reconnects, messages sent meanwhile appear once and in order`, `a hidden tab gives up its stream and catches up when it returns`, and `a stream that drops after live messages catches up once, in order (review #3)`) on it, with the same expectations: messages sent meanwhile appear once and in order. Add `a signed-out reader sees a message live` (it becomes meaningful in Task 6, and passes trivially now).
 
 - [ ] **Step 8: Verify.** Run lint, typecheck, `npm test`, `npm run build`, `npm run e2e`. Expected: all pass.
 
@@ -285,7 +288,7 @@ The UI still sends `author` and has no sign-in, so `npm run e2e` is expected to 
 
 **Files:**
 - Create: `src/hooks/useCurrentUser.ts` and test, `src/lib/pending-draft.ts` and test, `src/components/SignInPrompt.tsx`, `src/components/PostingAs.tsx`, `e2e/auth.spec.ts`
-- Modify: `src/lib/api-client.ts` and test, `src/hooks/useMessages.ts` and test, `src/hooks/useCreateRoom.ts` and test, `src/components/MessageForm.tsx`, `src/components/RoomPanel.tsx` and test, `src/components/ChatShell.tsx`, `src/lib/limits.ts`, `e2e/support.ts`, `e2e/*.spec.ts`, `playwright.config.ts`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md`, `README.md`
+- Modify: `src/lib/api-client.ts` and test, `src/lib/message-input.ts` and test, `src/hooks/usePostMessage.ts`, `src/hooks/useCreateRoom.ts`, `src/components/MessageForm.tsx`, `src/components/RoomPanel.tsx` and test, `src/components/ChatShell.tsx`, `src/lib/limits.ts`, `e2e/chat-page.ts`, `e2e/support.ts`, `e2e/*.spec.ts`, `playwright.config.ts`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md`, `README.md`
 - Delete: `src/lib/saved-username.ts` and test
 
 **Interfaces:**
@@ -297,11 +300,11 @@ The UI still sends `author` and has no sign-in, so `npm run e2e` is expected to 
 - [ ] **Step 2: Write the failing unit tests**
 
 - `pending-draft.test.ts`: a save and a take return the position; a second take returns `null`; malformed JSON, `lat: 91` and missing keys return `null` and clear the entry.
-- `useMessages.test.ts`: `messageInputError("")` is `"Enter a message."`. `postMessageErrorMessage(new ApiError(401, "unauthenticated", ""))` is `"You've been signed out. Signing in again clears this message, so copy it first."`
-- `useCreateRoom.test.ts`: `createRoomErrorMessage` on a 401 gives the same text, and `createRoom` sends `{ lat, lng, firstMessage: { body } }`.
+- `message-input.test.ts`: `messageInputError("")` is `"Enter a message."`. `postMessageErrorMessage(new ApiError(401, "unauthenticated", ""))` is `"You've been signed out. Signing in again clears this message, so copy it first."`
+- `message-input.test.ts`: `createRoomErrorMessage` on a 401 gives the same text. `api-client.test.ts`: `createRoom` sends `{ lat, lng, firstMessage: { body } }`.
 - `api-client.test.ts`: `postMessage(id, { body })` sends only `body`; `getMe()` returns `{ name }`.
 
-- [ ] **Step 3: Confirm they fail.** Run `npx vitest run pending-draft useMessages useCreateRoom api-client`. Expected: FAIL.
+- [ ] **Step 3: Confirm they fail.** Run `npx vitest run pending-draft message-input api-client`. Expected: FAIL.
 
 - [ ] **Step 4: Implement the hooks and API client**
 
@@ -326,7 +329,7 @@ Add `signInAs(context, name = "Ana Popescu")` to `support.ts`. It calls `createT
 
 `SignInPrompt` takes `label` and optional `draft`. `RoomContent` shows the form when `signedIn`, the prompt when `signedOut`, and neither while `loading`, so nothing flashes. `DraftContent` swaps `DRAFT_NOTE` and the form for the signed-out note and prompt. `PostingAs` sits directly above the form fields, with the sign-out link. A 401 shows the error plus a `SignInPrompt`, with the form still on screen. `ChatShell` restores a pending draft in a mount effect through `startDraft`. Remove all `author` props and the username input.
 
-- [ ] **Step 7: Update the existing e2e specs.** Remove the username steps (`usernameField` and the 47 matching lines), and expect the test user's name wherever a test asserted its typed username. Tests of username persistence are deleted. Tests of 429 messages are deleted.
+- [ ] **Step 7: Update the existing e2e specs.** Remove the username steps (`usernameField` in `e2e/chat-page.ts` and its uses, found with `grep -rn usernameField e2e/`), and expect the test user's name wherever a test asserted its typed username. Tests of username persistence are deleted. Tests of 429 messages are deleted.
 
 - [ ] **Step 8: Verify, and try it for real**
 
@@ -420,7 +423,7 @@ From `react-map-gl/mapbox`. Set `projection="mercator"` and `renderWorldCopies`,
 
 **Files:**
 - Create: `src/components/MapInteractions.tsx` if `MapboxMap.tsx` grows too large
-- Modify: `src/components/MapboxMap.tsx`, `src/components/MapMarkers.tsx`, `src/components/ChatShell.tsx`, `e2e/rooms.spec.ts`, `e2e/layout.spec.ts`, `e2e/viewport.spec.ts`, `e2e/persistence.spec.ts`, `e2e/support.ts`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md`, `CLAUDE.md`, `README.md`
+- Modify: `src/components/MapboxMap.tsx`, `src/components/MapMarkers.tsx`, `src/components/ChatShell.tsx`, `e2e/rooms.spec.ts`, `e2e/map-input.spec.ts`, `e2e/map-flights.spec.ts`, `e2e/chat-page.ts`, `e2e/layout.spec.ts`, `e2e/viewport.spec.ts`, `e2e/persistence.spec.ts`, `e2e/support.ts`, `docs/PRD.md`, `docs/DESIGN.md`, `docs/TASKS.md`, `CLAUDE.md`, `README.md`
 
 **Interfaces:**
 - Consumes: `MapboxMap`, `stubMapbox`.
@@ -428,7 +431,7 @@ From `react-map-gl/mapbox`. Set `projection="mercator"` and `renderWorldCopies`,
 
 - [ ] **Step 1: Port the e2e selectors first, and watch them fail**
 
-Replace the 100 Leaflet references: `.leaflet-container` becomes `.mapboxgl-canvas-container`, the focus target `.mapboxgl-canvas`, `.leaflet-marker-icon` the pin's own element, and `.leaflet-control-zoom-in` `.mapboxgl-ctrl-zoom-in`. `tileZooms` and `makeTilesHitTestable` are replaced by `mapZoom(page)` reading a `data-zoom` attribute the map sets, since there are no tile images to inspect. Keep every behaviour test: only update zoom values to Mapbox's scale (5 becomes 4, 16 becomes 15).
+Replace every Leaflet selector (`grep -rn leaflet e2e/`): `.leaflet-container` becomes `.mapboxgl-canvas-container`, the focus target `.mapboxgl-canvas`, `.leaflet-marker-icon` the pin's own element, and `.leaflet-control-zoom-in` `.mapboxgl-ctrl-zoom-in`. `tileZooms` and `makeTilesHitTestable` are replaced by `mapZoom(page)` reading a `data-zoom` attribute the map sets, since there are no tile images to inspect. Keep every behaviour test: only update zoom values to Mapbox's scale (5 becomes 4, 16 becomes 15).
 Run: `npm run e2e`. Expected: click, double-click and keyboard tests FAIL. List them, and use them as the checklist below.
 
 - [ ] **Step 2: Port `ClickToDraft`**
@@ -443,6 +446,6 @@ Set `role` and `aria-label` on `map.getCanvas()`, which is Mapbox's focus target
 
 - [ ] **Step 5: Check by hand.** On desktop and a phone: double-click zooms and leaves no pin, a single click drops one, dragging drops none, Enter on the focused map drops one, Mapbox's logo and attribution are visible on the mobile banner layout, and a phone on its side still works. Expected: all work.
 
-- [ ] **Step 6: Finish the docs.** `docs/DESIGN.md`, `docs/PRD.md` and `CLAUDE.md` describe the v2 stack, and `docs/DESIGN.md` loses its SSE, rate-limiting and Docker sections. `docs/INFRA.md` gains one line saying it describes v1 on `main`. `README.md` covers setup from zero and shutdown. Replace `docs/TASKS.md` section 8 with these tasks, ticked.
+- [ ] **Step 6: Finish the docs.** `docs/DESIGN.md`, `docs/PRD.md` and `CLAUDE.md` describe the v2 stack, and `docs/DESIGN.md` loses its SSE, rate-limiting and Docker sections. `docs/INFRA.md` gains one line saying it describes v1 on `main`. `README.md` covers setup from zero and shutdown. Do T7.5 in `docs/TASKS.md` (restructure `docs/DESIGN.md` for reading) while rewriting it, and tick T7.5 and Task 9.
 
 - [ ] **Step 7: Commit, merge and deploy.** `feat: handle map clicks and keyboard on Mapbox`. Merge `feat/v2-mapbox` into `v2` (the owner merges). Then repeat Task 7's Step 4 on the public link, and confirm requests carry the URL-limited token.
