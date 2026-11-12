@@ -64,10 +64,9 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 
 ## 5. Scale assumptions
 
-The brief gives no load figures. Assumed: ~50k monthly users at launch, with a design ceiling of millions. v1 builds viewport loading and clustering from the start and documents the rest of the path:
+The brief gives no load figures. Assumed: ~50k monthly users at launch, with a design ceiling of millions. v1 builds viewport loading, clustering, and cursor-paginated messages from the start, and documents the rest of the path:
 
 - Move spatial queries to PostGIS with a GiST index once the plain (lat, lng) index and grid clustering stop being fast enough.
-- Paginate messages with cursors, and add PostGIS if spatial queries are needed.
 - Move to a paid tile provider, since public OSM tiles are not meant for production traffic.
 - Scale real-time with a dedicated WebSocket layer and Redis pub/sub.
 
