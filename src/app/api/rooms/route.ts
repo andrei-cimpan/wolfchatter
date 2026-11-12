@@ -1,8 +1,9 @@
 import { createRoomSchema, mapItemsQuerySchema } from "@/lib/schemas";
 import type { Room, RoomWithFirstMessage } from "@/lib/types";
-import { readJson, validationError, withErrorHandling } from "@/server/http/api-errors";
+import { validationError, withErrorHandling } from "@/server/http/api-errors";
 import { queryInput } from "@/server/http/query-input";
 import { enforceRateLimit, roomCreationLimiter } from "@/server/http/rate-limit";
+import { readJson } from "@/server/http/read-json";
 import { getChatRepository } from "@/server/repositories";
 
 function roomCreated(room: Room | RoomWithFirstMessage): Response {

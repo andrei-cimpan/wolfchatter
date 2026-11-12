@@ -1,7 +1,8 @@
 import { listMessagesQuerySchema, postMessageSchema, roomIdSchema } from "@/lib/schemas";
-import { readJson, roomNotFound, validationError, withErrorHandling } from "@/server/http/api-errors";
+import { roomNotFound, validationError, withErrorHandling } from "@/server/http/api-errors";
 import { queryInput } from "@/server/http/query-input";
 import { enforceRateLimit, messagePostLimiter } from "@/server/http/rate-limit";
+import { readJson } from "@/server/http/read-json";
 import { getChatRepository, RoomNotFoundError } from "@/server/repositories";
 
 type Context = RouteContext<"/api/rooms/[id]/messages">;
