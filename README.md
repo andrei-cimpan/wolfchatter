@@ -22,16 +22,16 @@ A real-time chat app built on a map. Click the map to drop a pin, and send the f
 - After a dropped connection, the chat reconnects by itself and fills in the messages it missed.
 - Keyboard use: Enter on the focused map drops a draft at its centre, and the arrow keys move the map first.
 - A phone on its side shows the chat beside the map, so the form stays usable.
-- Ready to deploy behind a proxy: a Docker image, a `/health` endpoint, and a clean shutdown with chats open.
+- A `/health` endpoint, and a clean shutdown with chats open.
 
 ## Tech stack
 
-Next.js (App Router), TypeScript, Tailwind, react-leaflet (OpenStreetMap tiles), PostgreSQL, Zod, TanStack Query, Vitest, Playwright, Docker Compose.
+Next.js (App Router), TypeScript, Tailwind, react-leaflet (OpenStreetMap tiles), PostgreSQL, Zod, TanStack Query, Vitest, Playwright, Supabase CLI (the local stack).
 
 ## Prerequisites
 
-- Docker, with Compose, for PostgreSQL.
-- Node.js 26 or newer and npm, unless you run everything in Docker (below). `.nvmrc` pins the version used in CI, so `nvm use` picks it up.
+- Docker, which the Supabase CLI uses to run the local stack (PostgreSQL and the Supabase services).
+- Node.js 26 or newer and npm. `.nvmrc` pins the version used in CI, so `nvm use` picks it up.
 
 No accounts or API keys are required.
 
@@ -41,9 +41,8 @@ No accounts or API keys are required.
 git clone https://github.com/andrei-cimpan/wolfchatter.git
 cd wolfchatter
 cp .env.example .env          # defaults work for local development
-docker compose up -d db       # start PostgreSQL
 npm install
-npm run db:migrate            # create tables
+npm run db:start              # start local Supabase and create the tables; the first run pulls images
 npm run dev                   # http://localhost:3000
 ```
 
@@ -51,15 +50,9 @@ npm run dev                   # http://localhost:3000
 
 To see real-time delivery, open the app in two browser windows, open the same room in both, and post a message in one.
 
-**Or run everything in Docker**, with no local Node.js and no `.env`. This builds the production image, applies the migrations, and serves the app at http://localhost:3000:
-
-```bash
-docker compose --profile app up --build
-```
-
 ## Tests
 
-Start the database first (`docker compose up -d db`), with `.env` in place as above. Tests never touch your development data: each kind creates and migrates its own database.
+Start the local stack first (`npm run db:start`), with `.env` in place as above. Both test suites use the local Supabase database and empty it, so they wipe what `npm run dev` stored there, and they must not run at the same time. They refuse any database that is not on this machine.
 
 ```bash
 npm run lint
@@ -78,7 +71,8 @@ npm run e2e                          # end-to-end tests
 |---|---|
 | `npm run dev` | Start the app in development mode |
 | `npm run build`, `npm start` | Build the app and serve the production build |
-| `npm run db:migrate` | Apply SQL migrations |
+| `npm run db:start` | Start the local Supabase stack and apply its migrations |
+| `npm run db:migrate` | Apply migrations written since the stack started |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript check |
 | `npm test` | Unit and API tests (needs the database running) |
@@ -90,12 +84,10 @@ All configuration is through environment variables. `.env.example` lists them al
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `TEST_DATABASE_URL` | Database used by `npm test`; created and migrated automatically, emptied between tests. Must end in `_test` |
-| `E2E_DATABASE_URL` | Database used by `npm run e2e`; created and migrated automatically, emptied once per run. Must end in `_e2e` |
+| `DATABASE_URL` | PostgreSQL connection string the app uses |
+| `SUPABASE_DB_URL` | The local Supabase database, which `npm test` and `npm run e2e` use and empty. Must be on `127.0.0.1` or `localhost` |
 | `RATE_LIMIT_ROOMS_PER_MINUTE`, `RATE_LIMIT_MESSAGES_PER_MINUTE` | Optional per-IP limits on creating rooms and posting messages (defaults: 10 and 30) |
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Optional basemap (default: OpenStreetMap). Read at build time |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`, `APP_PORT` | Optional overrides for `docker-compose.yml` |
 
 ## Project structure
 
@@ -105,9 +97,8 @@ src/components/      ChatShell, MapView, LeafletMap, MapMarkers, RoomPanel, Mess
 src/hooks/           data and real-time hooks
 src/lib/             shared types, validation schemas
 src/server/          repository (database access), real-time hub, HTTP helpers
-db/migrations/       SQL migrations
+supabase/            local stack config and SQL migrations
 e2e/                 Playwright tests
-scripts/             migration runner, Docker shutdown check
 docs/                PRD, design, tasks, infrastructure, review
 .claude/             AI review skill
 CLAUDE.md            standing instructions for AI tooling
@@ -136,7 +127,7 @@ The project was built docs-first with Claude.
 The main ones are below. The full list is in [the design note](docs/DESIGN.md#known-limitations-documented-not-built).
 
 - Rooms created by other users appear only when the map next fetches that area: on moving to an area or zoom it has no fresh result for, or when the window regains focus. Real-time covers messages only.
-- No authentication: usernames are self-declared. Basic per-IP rate limiting is the only abuse protection, and it needs a proxy that appends to `X-Forwarded-For`. Do not expose the Docker image directly: a client could set that header and escape the limit.
+- No authentication: usernames are self-declared. Basic per-IP rate limiting is the only abuse protection, and it needs a proxy that appends to `X-Forwarded-For`. Do not expose the app directly: a client could set that header and escape the limit.
 - A room shows only its latest 50 messages; there is no "load older" yet.
 - Clustering is grid-based over a plain `(lat, lng)` index; PostGIS is the next step at larger scale.
 - OpenStreetMap public tiles are for development and light use only.

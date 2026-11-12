@@ -5,7 +5,8 @@ import { defineConfig, devices } from "@playwright/test";
 if (existsSync(".env")) process.loadEnvFile(".env");
 
 // Not 3000, so a running `npm run dev` (pointed at the dev database) is never reused for tests.
-// E2E_PORT (and E2E_DATABASE_URL) let parallel checkouts run e2e side by side.
+// E2E_PORT lets another checkout run its dev server beside this one, though not its e2e: both
+// suites empty the one local Supabase database.
 const PORT = Number(process.env.E2E_PORT || 3100);
 // Reusing a server is opt-in: otherwise a server already on the port, perhaps another checkout's
 // with other code and env, would be tested silently. Without it, a busy port fails loudly.
@@ -28,8 +29,8 @@ export default defineConfig({
     reuseExistingServer: REUSE_SERVER,
     timeout: 120_000,
     env: {
-      // Process env wins over .env in Next.js, so the app writes to the e2e database.
-      DATABASE_URL: process.env.E2E_DATABASE_URL ?? "",
+      // Process env wins over .env in Next.js, so the app writes to the database global setup checked.
+      DATABASE_URL: process.env.SUPABASE_DB_URL ?? "",
       // Every test browser posts from the same address, so the per-IP limits would turn busy tests
       // (such as creating enough rooms to cluster) into 429s. A server reused with E2E_REUSE_SERVER=1 keeps its own env.
       RATE_LIMIT_ROOMS_PER_MINUTE: "10000",

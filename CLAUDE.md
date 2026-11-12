@@ -9,18 +9,18 @@ Read these before changing code:
 
 ## Stack (v1)
 
-Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · PostgreSQL (Docker Compose) · Zod · TanStack Query · Vitest · Playwright
+Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · PostgreSQL (local Supabase stack, Supabase CLI) · Zod · TanStack Query · Vitest · Playwright
 
 ## Commands
 
-- `docker compose up -d db`: start local Postgres
-- `npm run db:migrate`: apply SQL migrations
+- `npm run db:start`: start the local Supabase stack (Docker), applying `supabase/migrations/`
+- `npm run db:migrate`: apply migrations written since the stack started (`npx supabase db reset` rebuilds it)
 - `npm run dev`: start the app at http://localhost:3000
 - `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e`
 
 ## Architecture rules
 
-- UI and route handlers use the `ChatRepository` interface only. Application code never imports the DB client outside `src/server/repositories/`; tooling in `scripts/` (such as the migration runner) is the only exception.
+- UI and route handlers use the `ChatRepository` interface only. Application code never imports the DB client outside `src/server/repositories/`; test setup (`src/server/repositories/test/`, `e2e/`) is the only exception.
 - Validate every API input with Zod at the route boundary.
 - Render user text as plain text. Never use `dangerouslySetInnerHTML`.
 - Server state lives in TanStack Query. The selected room lives in the URL (`?room=<id>`). No global store.

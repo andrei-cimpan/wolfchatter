@@ -5,26 +5,13 @@ on:
   push:
   workflow_dispatch:
 
+# The local Supabase stack, without the containers no test uses, which saves pulling them.
+env:
+  SUPABASE_EXCLUDE: studio,postgres-meta,imgproxy,storage-api,edge-runtime,logflare,vector,mailpit,supavisor
+
 jobs:
   checks:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: wolfchatter
-          POSTGRES_PASSWORD: wolfchatter
-          POSTGRES_DB: wolfchatter
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U wolfchatter -d wolfchatter"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 15
-    env:
-      DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter
-      TEST_DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter_test
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -35,52 +22,21 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - name: Start the local Supabase stack
+        run: npx supabase start -x "$SUPABASE_EXCLUDE"
+      # `status -o env` quotes its values, which $GITHUB_ENV would keep, so the quotes are dropped.
+      - name: Export its settings
+        run: |
+          npx supabase status -o env --override-name db.url=SUPABASE_DB_URL 2>/dev/null \
+            | sed -E 's/^([A-Z0-9_]+)="(.*)"$/\1=\2/' | grep -E '^[A-Z0-9_]+=' >> "$GITHUB_ENV"
+      - name: Point the app at it
+        run: echo "DATABASE_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
       # cacheComponents prerender errors only surface at build time.
       - run: npm run build
-      - run: npm run db:migrate
       - run: npm test
-
-  # Nothing else builds the image, and shutdown only behaves this way under the production server.
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: docker compose --profile app up --build --wait --wait-timeout 300
-      - name: The image serves the app and reports healthy
-        run: |
-          curl --fail --silent --show-error http://localhost:3000/health | grep '"status":"ok"'
-          curl --fail --silent --show-error --output /dev/null http://localhost:3000/
-      - name: An open stream does not hold up shutdown
-        run: bash scripts/check-docker-shutdown.sh
-      - name: Health reports a database that is down
-        run: |
-          docker compose --profile app start app
-          timeout 30 sh -c 'until curl --fail --silent http://localhost:3000/health; do sleep 1; done'
-          docker compose stop db
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:3000/health)" = 503
-      - if: failure()
-        run: docker compose --profile app logs
 
   e2e:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: wolfchatter
-          POSTGRES_PASSWORD: wolfchatter
-          POSTGRES_DB: wolfchatter
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U wolfchatter -d wolfchatter"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 15
-    env:
-      DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter
-      # Playwright's global setup creates and migrates it; the dev server writes rooms there.
-      E2E_DATABASE_URL: postgres://wolfchatter:wolfchatter@localhost:5432/wolfchatter_e2e
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -89,6 +45,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Start the local Supabase stack
+        run: npx supabase start -x "$SUPABASE_EXCLUDE"
+      - name: Export its settings
+        run: |
+          npx supabase status -o env --override-name db.url=SUPABASE_DB_URL 2>/dev/null \
+            | sed -E 's/^([A-Z0-9_]+)="(.*)"$/\1=\2/' | grep -E '^[A-Z0-9_]+=' >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
       - if: failure()

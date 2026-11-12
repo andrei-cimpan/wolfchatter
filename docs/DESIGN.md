@@ -33,7 +33,7 @@ src/
     http/                 # route helpers: errors, JSON bodies, query strings, rate limits, SSE, /health
     repositories/         # ChatRepository + PostgresChatRepository, PostgresMessageSource (pg LISTEN)
     realtime/             # MessageSource interface, RealtimeHub (in-memory fan-out, heartbeat), shutdown
-db/migrations/            # SQL migrations
+supabase/                 # local stack config (config.toml) and SQL migrations
 e2e/                      # Playwright specs; shared locators in chat-page.ts, fixtures in support.ts
 ```
 
@@ -235,6 +235,8 @@ Two interfaces keep the hub independent of where messages come from and how they
 
 ## Deployment
 
+On the `v2` branch the Dockerfile, Compose and the migration runner are gone (v2 Task 1); this section describes v1, as on `main`, until v2's Vercel deployment replaces it. Migrations live in `supabase/migrations/` and are applied with the Supabase CLI.
+
 **The image.** The `Dockerfile` builds Next's standalone server (`output: "standalone"`, turned on by `DOCKER_BUILD` so that `next start` does not warn about it elsewhere), runs as the non-root `node` user, and needs only `DATABASE_URL` at run time; the optional `RATE_LIMIT_*` are read at run time too, and Compose passes them on. `NEXT_PUBLIC_MAP_*` are build args, since they are inlined into client code. `docker compose --profile app up --build` runs it with the database; the profile leaves `docker compose up -d db` starting only the database. It does not yet contain the RDS CA bundle, which `INFRA.md` lists as needed before a first deploy.
 
 **Migrations** are a separate command in the same image (`node scripts/migrate.mts`, Compose's `migrate` service), not part of starting the app, so a deployment runs them once and before the new instances.
@@ -245,9 +247,10 @@ Two interfaces keep the hub independent of where messages come from and how they
 
 ## Testing approach
 
-- **Unit**: zod schemas, clustering grid math, repository against a test database (including bounds that cross the antimeridian).
-- **API**: route handlers with a real Postgres (Docker Compose).
-- **E2E (Playwright)**: drop a draft that saves nothing, create the room with its first message, reload and see persistence; move, discard and double-click a draft; a second browser sees a posted message live; after the stream fails for a while, messages sent meanwhile appear once and in order; and after the app's `LISTEN` connection is terminated in Postgres (`dropRealtimeListener`), an open stream reconnects and catches up once, in order. Playwright starts its own dev server on port 3100 (`E2E_PORT`), never `npm run dev` on 3000, and fails if that port is busy unless `E2E_REUSE_SERVER=1`, so it cannot silently test another checkout's server, with `DATABASE_URL` set to `E2E_DATABASE_URL`. Its global setup creates and migrates that database (its name must end in `_e2e`) and empties it once per run, so tests never write to the dev database and must not depend on each other's rooms. Because tests share that database and click the same spots, a fixture (`ownRoomsOnly`, on by default) answers each page's viewport requests with only the rooms that page created; viewport tests turn it off and never rely on an area being empty. Shared locators and actions live in `e2e/chat-page.ts`. `rooms.spec.ts` stays one file on purpose: its tests wait on click timers and map animations, which run late under CPU load, and as one file they run one at a time. Split into three files that ran in parallel, a few failed in most full runs.
+- **Unit**: zod schemas, clustering grid math, repository and SQL functions against the local Supabase database (including bounds that cross the antimeridian).
+- **API**: route handlers with a real Postgres, the local Supabase stack's.
+- **Which database:** unit, API and e2e tests all use the local stack's one database (`SUPABASE_DB_URL`) and empty it, so they wipe dev data and must not run at the same time. Each suite first refuses any URL whose host is not `127.0.0.1` or `localhost` (`assertLocalDatabase`), so a `.env` pointing at the hosted project cannot be emptied, then applies migrations written since the stack started.
+- **E2E (Playwright)**: drop a draft that saves nothing, create the room with its first message, reload and see persistence; move, discard and double-click a draft; a second browser sees a posted message live; after the stream fails for a while, messages sent meanwhile appear once and in order; and after the app's `LISTEN` connection is terminated in Postgres (`dropRealtimeListener`), an open stream reconnects and catches up once, in order. Playwright starts its own dev server on port 3100 (`E2E_PORT`), never `npm run dev` on 3000, and fails if that port is busy unless `E2E_REUSE_SERVER=1`, so it cannot silently test another checkout's server, with `DATABASE_URL` set to `SUPABASE_DB_URL`. Its global setup empties that database once per run, so tests must not depend on each other's rooms. Because tests share that database and click the same spots, a fixture (`ownRoomsOnly`, on by default) answers each page's viewport requests with only the rooms that page created; viewport tests turn it off and never rely on an area being empty. Shared locators and actions live in `e2e/chat-page.ts`. `rooms.spec.ts` stays one file on purpose: its tests wait on click timers and map animations, which run late under CPU load, and as one file they run one at a time. Split into three files that ran in parallel, a few failed in most full runs.
 
 ## Known limitations (documented, not built)
 
