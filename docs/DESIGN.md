@@ -22,14 +22,19 @@ src/
     api/rooms/...         # REST + SSE endpoints
     health/               # GET /health
   instrumentation.ts      # checks the rate limits, registers the shutdown handler
-  components/             # MapView, RoomPanel, MessageList, MessageForm
-  hooks/                  # useMapItems, useMessages, useRoomStream
-  lib/                    # shared types, zod schemas, api client
+  components/             # ChatShell (draft + creation), MapView/LeafletMap/MapMarkers (map),
+                          # RoomPanel, MessageList, MessageForm, VisibleAlert, Providers
+  hooks/                  # React hooks: data (useRoom, useMapItems, useMessages, usePostMessage,
+                          # useCreateRoom), live messages (useRoomStream), the draft (useDraft),
+                          # selection in the URL (useSelectedRoom), the map (useFlyToRoom), useHydrated
+  lib/                    # no React and no server code: shared types, zod schemas, API client,
+                          # message cache and catch-up, draft reducer, map and viewport math
   server/
+    http/                 # route helpers: errors, JSON bodies, query strings, rate limits, SSE, /health
     repositories/         # ChatRepository + PostgresChatRepository, PostgresMessageSource (pg LISTEN)
     realtime/             # MessageSource interface, RealtimeHub (in-memory fan-out, heartbeat), shutdown
-supabase/ (v2 only)
 db/migrations/            # SQL migrations
+e2e/                      # Playwright specs; shared locators in chat-page.ts, fixtures in support.ts
 ```
 
 ## UI behavior
