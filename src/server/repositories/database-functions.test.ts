@@ -108,6 +108,50 @@ describe("list_rooms_in_view", () => {
   });
 });
 
+// A viewport across the antimeridian arrives as two longitude ranges: here 170 to 180 and -180 to
+// -170. Task 2 deletes the v1 repository test that covered this path (review #6).
+const ACROSS_ANTIMERIDIAN = [0, 20, 170, 180, -180, -170];
+
+describe("list_rooms_in_view across the antimeridian", () => {
+  it("returns rooms on both sides of the line and none outside the two ranges", async () => {
+    const east = await room(10, 175);
+    const west = await room(10, -175);
+    await room(10, 0);
+    const { rows } = await db().query<{ id: string }>("select id from list_rooms_in_view($1, $2, $3, $4, $5, $6, $7)", [
+      ...ACROSS_ANTIMERIDIAN,
+      10,
+    ]);
+    expect(rows.map((r) => r.id).sort()).toEqual([east, west].sort());
+  });
+});
+
+describe("list_room_cells across the antimeridian", () => {
+  const cells = async (centerLng: number) =>
+    (
+      await db().query<{ id: string }>("select id from list_room_cells($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [
+        ...ACROSS_ANTIMERIDIAN,
+        2.8125,
+        10,
+        centerLng,
+        10,
+      ])
+    ).rows.map((r) => r.id);
+
+  it("returns cells on both sides of the line and none outside the two ranges", async () => {
+    const east = await room(10, 175);
+    const west = await room(10, -175);
+    await room(10, 0);
+    expect((await cells(180)).sort()).toEqual([east, west].sort());
+  });
+
+  it("measures distance to the centre the short way round", async () => {
+    // From a centre at -179, 178 is 3 degrees away across the line, and -170 is 9.
+    const acrossTheLine = await room(10, 178);
+    const sameSide = await room(10, -170);
+    expect(await cells(-179)).toEqual([acrossTheLine, sameSide]);
+  });
+});
+
 describe("list_room_cells", () => {
   type Cell = { count: number; lat: number; lng: number; id: string; title: string; message_count: number };
   const cells = async (cell: number, center: [number, number], limit = 500) =>
