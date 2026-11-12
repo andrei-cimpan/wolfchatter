@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { assertLocalDatabase } from "./local-database";
+import { assertLocalSupabaseDatabase } from "./local-database";
 
 export default async function setup(): Promise<void> {
   try {
-    assertLocalDatabase(process.env.SUPABASE_DB_URL ?? "");
+    await assertLocalSupabaseDatabase(process.env.SUPABASE_DB_URL ?? "");
     // `supabase start` applies the migrations it finds; this adds any written since, as v1's runner
     // migrated its test database on every run.
     execFileSync("npx", ["supabase", "migration", "up", "--local"], { stdio: "pipe" });
