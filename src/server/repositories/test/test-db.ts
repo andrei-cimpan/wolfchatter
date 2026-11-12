@@ -1,7 +1,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach } from "vitest";
 
-// Registers hooks that give each test an empty schema. vitest.config.ts points DATABASE_URL at
+// Registers hooks that give each test an empty schema. vitest.config.mts points DATABASE_URL at
 // the test database and runs files one at a time, so one file cannot truncate another's rows.
 export function setupTestDatabase(): () => pg.Pool {
   let pool: pg.Pool | undefined;

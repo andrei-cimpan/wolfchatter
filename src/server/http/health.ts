@@ -1,5 +1,5 @@
 // The pool waits with no limit for a connection, and a load balancer's probe should not.
-export const HEALTH_TIMEOUT_MS = 2_000;
+const HEALTH_TIMEOUT_MS = 2_000;
 
 const HEADERS = { "Cache-Control": "no-store" };
 

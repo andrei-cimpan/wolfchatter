@@ -3,7 +3,7 @@ import { sseHeartbeat, sseMessage, sseReady, sseRetry, sseRetryDelay } from "./s
 
 // subscribe waits out a database outage with no limit of its own. Ending the stream instead makes
 // the browser retry, rather than holding a connection that looks open but receives nothing.
-export const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;
+const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;
 
 // Writes queued for a client whose connection has stalled, once its socket buffer is full. Measured
 // on the production server: a stalled client's queue grows by one per write, while a reading client's
