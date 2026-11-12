@@ -6,13 +6,12 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { useMapItems } from "@/hooks/useMapItems";
 import { useRoom } from "@/hooks/useRoom";
 import { useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import type { Draft, PinAnchor } from "@/lib/draft";
 import { focusShiftPx, WIDE_SCREEN_QUERY } from "@/lib/map-focus";
 import { INITIAL_VIEW, tileConfigFromEnv } from "@/lib/map-config";
 import type { Bbox, MapItem } from "@/lib/types";
 import { nextViewportQuery, type ViewportQuery } from "@/lib/viewport";
-import { MapMarkers, type Cluster, type DraftPosition, type PinAnchor, type PinRoom } from "./MapMarkers";
-
-export type { PinAnchor } from "./MapMarkers";
+import { MapMarkers, type Cluster, type PinRoom } from "./MapMarkers";
 
 const tileConfig = tileConfigFromEnv();
 
@@ -28,7 +27,7 @@ const isPastWorldEdge = (lat: number) => Math.abs(lat) > MAX_MAP_LATITUDE;
 
 export interface LeafletMapProps {
   pinAnchor: PinAnchor | null;
-  draft: DraftPosition | null;
+  draft: Draft | null;
   onMapClick: (lat: number, lng: number) => void;
   onDoubleClickUndo: () => void;
   onRoomClick: (id: string) => void;

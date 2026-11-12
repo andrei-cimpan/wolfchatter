@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
+import type { Draft } from "@/lib/draft";
 import { createRoomErrorMessage } from "@/lib/message-input";
 import { readSavedUsername, saveUsername } from "@/lib/saved-username";
 import { MessageForm, RoomMessageForm } from "./MessageForm";
@@ -11,17 +12,6 @@ import { MessageList } from "./MessageList";
 
 const EMPTY_STATE = "Click on the map to start a chat";
 const DRAFT_NOTE = "Send the first message to create this chatroom. Until then, nobody else can see it.";
-
-/** A pin dropped on the map but not saved: nothing exists on the server until its first message. */
-export type DraftPin = {
-  id: string;
-  lat: number;
-  lng: number;
-  /** See DraftToSend. */
-  openedOverRoom: boolean;
-  /** The room it became, until the panel has switched to that room. */
-  savedAs?: string;
-};
 
 // Narrow screens: a sheet rising from the bottom edge, clear of the phone's home indicator.
 const PANEL_SHEET =
@@ -178,11 +168,11 @@ function RoomContent({ roomId, author, onAuthorChange, autoFocusBody }: RoomCont
 }
 
 interface RoomPanelProps {
-  draft: DraftPin | null;
+  draft: Draft | null;
   creating: boolean;
   creationError: Error | null;
   createdRoomId: string | null;
-  onSendDraft: (draft: DraftPin, author: string, body: string, onSent: () => void) => void;
+  onSendDraft: (draft: Draft, author: string, body: string, onSent: () => void) => void;
   onClearCreationError: () => void;
   onDiscardDraft: () => void;
   onDraftSaved: () => void;

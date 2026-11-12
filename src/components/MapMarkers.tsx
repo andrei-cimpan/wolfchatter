@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { Marker, useMap, useMapEvents } from "react-leaflet";
 import { useFlyToRoom } from "@/hooks/useFlyToRoom";
 import { nearestWorldCopy } from "@/lib/bbox";
+import type { Draft, PinAnchor } from "@/lib/draft";
 import { clusterBubble } from "@/lib/cluster-bubble";
 import { CLUSTER_MAX_ZOOM, clusterCellBounds } from "@/lib/map-grid";
 import type { Room } from "@/lib/types";
@@ -33,11 +34,8 @@ const pinIcon = new L.Icon({
 const draftPinIcon = new L.Icon({ ...pinIcon.options, className: "draft-pin" });
 const DRAFT_PIN_TITLE = "New chatroom (not created yet)";
 
-/** The longitude a pin was clicked at, possibly on a repeated copy of the world. */
-export type PinAnchor = { roomId: string; lng: number };
-
 export type PinRoom = Pick<Room, "id" | "title" | "lat" | "lng">;
-export type DraftPosition = { id: string; lat: number; lng: number; savedAs?: string };
+type DraftPosition = Pick<Draft, "id" | "lat" | "lng" | "savedAs">;
 export type Cluster = { lat: number; lng: number; count: number };
 
 // Leaflet makes markers focusable buttons but only handles Enter when a popup is bound.

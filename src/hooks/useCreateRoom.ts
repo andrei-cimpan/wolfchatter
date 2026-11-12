@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { createRoom } from "@/lib/api-client";
+import type { Draft } from "@/lib/draft";
 import { messagesQueryKey } from "@/lib/message-cache";
 import type { Room } from "@/lib/types";
 import { MAP_ITEMS_KEY } from "./useMapItems";
@@ -21,15 +22,7 @@ type CreateRoomVariables = {
   replaceEntry: boolean;
 };
 
-export type DraftToSend = {
-  lat: number;
-  lng: number;
-  /**
-   * The draft closed an open room, adding a history entry for the map with no room. Saving replaces
-   * that entry, so Back returns to the previous room rather than to a draft that is gone.
-   */
-  openedOverRoom: boolean;
-};
+type DraftToSend = Pick<Draft, "lat" | "lng" | "openedOverRoom">;
 
 /**
  * Creates a room from a draft and its first message, caches both so the panel shows them without a
