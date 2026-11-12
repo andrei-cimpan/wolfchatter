@@ -1,9 +1,5 @@
 import type { Bbox } from "./types";
 
-// Leaflet keeps counting longitude past ±180 as the map is panned around the world.
-// The range is half-open, [-180, 180), so the antimeridian has one spelling; normalizeBbox relies
-// on 180 becoming -180. In-range values are returned untouched, and others move by whole turns
-// in a single subtraction, because chained float arithmetic would turn 26.1 into 26.100000000000023.
 /**
  * The copy of a stored (wrapped) longitude closest to the view's centre, so a pin is drawn on the
  * copy of the world being looked at, such as where a click on a repeated copy created it.
@@ -12,6 +8,10 @@ export function nearestWorldCopy(lng: number, centerLng: number): number {
   return lng + 360 * Math.round((centerLng - lng) / 360);
 }
 
+// Leaflet keeps counting longitude past ±180 as the map is panned around the world.
+// The range is half-open, [-180, 180), so the antimeridian has one spelling; normalizeBbox relies
+// on 180 becoming -180. In-range values are returned untouched, and others move by whole turns
+// in a single subtraction, because chained float arithmetic would turn 26.1 into 26.100000000000023.
 export function wrapLongitude(lng: number): number {
   if (lng >= -180 && lng < 180) return lng;
   const wrapped = lng - 360 * Math.floor((lng + 180) / 360);
