@@ -114,6 +114,7 @@ v2 runs on Vercel with a hosted Supabase project. Vercel deploys the `v2` branch
    ```
 3. Under Integrations > GitHub, connect the repo with production branch `v2`, Supabase directory `supabase`, and "Deploy to production" on. It applies only migrations merged after it is connected, which is why step 2 is needed once. From then on, never run `db push` again: two mechanisms would apply the same migration. Preview branches are not needed.
 4. Do not edit a migration once it is applied here; add a new one.
+5. A merge into `v2` deploys to both at once. Supabase's migration usually lands within seconds and Vercel's build takes about a minute, but nothing orders them, and code that reads a new column fails until it exists. So a migration the code cannot run without goes in its own PR, merged first; at the least, check the integration's run after merging (Integrations > GitHub, or the PR's Supabase check).
 
 `supabase/config.toml` is for the local stack only. Production's Auth settings are set by hand in the dashboard (step 3 below), because the config has email sign-in on and local URLs.
 
