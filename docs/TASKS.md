@@ -83,7 +83,7 @@ Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task'
 - [x] **T8.2** `SupabaseChatRepository` (Task 2).
 - [x] **T8.3** Live messages with Supabase Realtime (Task 3).
 - [x] **T8.4** Author names and row-level security (Task 4; lands with Tasks 5 and 6).
-  *Deferred from the PR #33 review (#6):* anyone can read `messages.user_id` and `rooms.created_by`, which links one account's posts across rooms although names ("Ana P.") are not unique. Column grants could hide them from the API, but Realtime sends the whole inserted row to subscribers, so hiding them needs a look at what Realtime publishes too. Low stakes for a handful of users.
+  *Deferred from the PR #33 review (#6):* anyone can read `messages.user_id` and `rooms.created_by`, which links one account's posts across rooms although names ("Ana P.") are not unique. Column grants could hide them from the API, but Realtime sends the whole inserted row to subscribers, so hiding them needs a look at what Realtime publishes too. Since room deletion (T8.10) `rooms` is published as well, so its inserts and updates stream `created_by` to subscribers. Low stakes for a handful of users.
 - [x] **T8.5** Sessions and the signed-in API (Task 5).
 - [x] **T8.6** Sign-in in the chat card (Task 6).
 - [ ] **T8.7** Deploy to Vercel, owner-led (Task 7).
