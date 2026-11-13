@@ -98,6 +98,53 @@ All configuration is through environment variables. `.env.example` lists them al
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Google sign-in for local Supabase, read by `supabase/config.toml`. Optional; tests do not need them |
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Optional basemap (default: OpenStreetMap). Read at build time |
 
+## Deploy (v2)
+
+v2 runs on Vercel with a hosted Supabase project. Vercel deploys the `v2` branch, and Supabase applies new migrations when they are merged into it. `<ref>` below is the Supabase project ref, the subdomain of `https://<ref>.supabase.co`.
+
+**1. Supabase project**
+
+1. Create a project at supabase.com.
+2. Apply the migrations once, from the repo:
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <ref>        # asks for the database password
+   npx supabase db push --dry-run               # lists the migrations it would apply
+   npx supabase db push
+   ```
+3. Under Integrations > GitHub, connect the repo with production branch `v2`, Supabase directory `supabase`, and "Deploy to production" on. It applies only migrations merged after it is connected, which is why step 2 is needed once. From then on, never run `db push` again: two mechanisms would apply the same migration. Preview branches are not needed.
+4. Do not edit a migration once it is applied here; add a new one.
+
+`supabase/config.toml` is for the local stack only. Production's Auth settings are set by hand in the dashboard (step 3 below), because the config has email sign-in on and local URLs.
+
+**2. Vercel**
+
+1. Import the repo. The import deploys the default branch (`main`, v1); ignore that deploy.
+2. Under Settings > Environments > Production, set Branch Tracking to `v2`, then create a deployment from `v2` (Deployments > Create Deployment).
+3. Set `NEXT_PUBLIC_SUPABASE_URL` (`https://<ref>.supabase.co`) and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Project Settings > API Keys, the publishable key). They are inlined at build time, so redeploy after changing them. Never set `SUPABASE_SERVICE_ROLE_KEY` here.
+4. Optionally, add a custom domain under Settings > Domains.
+
+**3. Sign-in**
+
+1. In Supabase, under Authentication > Sign In / Providers: turn Google on with the client ID and secret, and turn **Email off**. The database lets only users with a Google identity post, but no account should be made without Google.
+2. In the Google client (see [Google sign-in locally](#google-sign-in-locally)), add the redirect URI `https://<ref>.supabase.co/auth/v1/callback`. Keep the local one.
+3. The Google app's publishing status must be In production, or only its test users can sign in. With the basic scopes, publishing needs no verification.
+4. In Supabase, under Authentication > URL Configuration: set the Site URL to the app's URL, and add `https://<app domain>/**` to the Redirect URLs for each domain that serves the app. A missing one sends people to the Site URL after sign-in, instead of back to their room or pin.
+
+**4. Check it**
+
+- `/health` answers 200 `{"status":"ok"}`, and `/api/me` answers `{"name":null}` when signed out.
+- Signing in from a room returns to the room, and from a dropped pin returns to the pin.
+- A message posted in one browser appears live in another, including one that is signed out.
+
+The free Supabase plan pauses a project after a week without activity; restore it from the dashboard.
+
+## Shut down (v2)
+
+1. Vercel: delete the project (Settings > General), which removes its domains. Remove the custom domain's DNS record.
+2. Supabase: pause the project to keep its data, or delete it (Project Settings > General). Disconnect the GitHub integration first if the project is kept.
+3. Google: remove the hosted redirect URI from the OAuth client, or delete the client if it is not used locally.
+
 ## Project structure
 
 ```
@@ -148,4 +195,4 @@ v2 is a personal idea outside the brief: a smaller version for a small userbase,
 - Supabase for Postgres and Realtime, replacing the SSE hub; the `ChatRepository` interface stays.
 - Supabase Auth: anyone can read, signed-in users post, enforced with row-level security.
 - Mapbox via react-map-gl instead of OpenStreetMap tiles.
-- Deployment to a simple host, for example Vercel.
+- Deployed on Vercel with a hosted Supabase project; see [Deploy (v2)](#deploy-v2).
