@@ -5,6 +5,8 @@ export type RoomChannelStatus = "ready" | "failed";
 
 export type RoomChannelHandlers = {
   onInsert(row: MessageRow): void;
+  /** The room was deleted, by its creator. */
+  onRoomDeleted(): void;
   /** `ready` once inserts are being delivered; `failed` when the channel will deliver no more. */
   onStatus(status: RoomChannelStatus): void;
 };
@@ -15,8 +17,11 @@ type SystemPayload = { extension?: string; status?: string };
 // The client reuses a channel whose topic is already open, so each subscription gets its own.
 let channelCount = 0;
 
+/** What Realtime sends of a deleted row: its primary key only, under row-level security. */
+type DeletedRoom = { id?: string };
+
 /**
- * Delivers every new message in one room until the returned function is called. Rows arrive as
+ * Delivers every new message in one room, and the room's deletion, until the returned function is called. Rows arrive as
  * Postgres sent them; callers check them, since nothing here vouches for their shape.
  *
  * `ready` waits for Realtime's own word that it is watching the table, not for the channel's
@@ -53,8 +58,20 @@ export function subscribeToRoomMessages(
       if (status !== "SUBSCRIBED") fail();
     });
 
+  // Its own channel: Realtime fails a whole channel when it refuses one binding, as it does while
+  // `rooms` is not yet published (a deploy whose migration has not landed), and messages must not
+  // stop for that. Its status is not watched: a refetch of the room on every `ready` covers a
+  // deletion this channel missed. Realtime cannot filter deletions by row, so every room's arrives.
+  const deletions = client
+    .channel(`room-deletions:${roomId}:${channelCount}`)
+    .on<DeletedRoom>("postgres_changes", { event: "DELETE", schema: "public", table: "rooms" }, (payload) => {
+      if (!unsubscribed && payload.old.id === roomId) handlers.onRoomDeleted();
+    })
+    .subscribe();
+
   return () => {
     unsubscribed = true;
     void client.removeChannel(channel);
+    void client.removeChannel(deletions);
   };
 }

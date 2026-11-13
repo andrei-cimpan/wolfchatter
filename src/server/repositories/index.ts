@@ -5,6 +5,7 @@ import { SupabaseChatRepository } from "./supabase-chat-repository";
 import { accessTokenFromCookies } from "./supabase-session";
 
 export {
+  NotRoomCreatorError,
   NotSignedInError,
   RoomNotFoundError,
   type ChatRepository,

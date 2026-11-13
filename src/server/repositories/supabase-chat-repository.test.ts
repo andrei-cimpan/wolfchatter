@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Bbox, MapItem } from "@/lib/types";
 import { MESSAGE_LIMIT_MAX } from "@/lib/limits";
-import { NotSignedInError, RoomNotFoundError } from "./chat-repository";
+import { NotRoomCreatorError, NotSignedInError, RoomNotFoundError } from "./chat-repository";
 import { SupabaseChatRepository } from "./supabase-chat-repository";
 import { anonClient } from "./test/supabase-client";
 import { SEED_USER_ID, setupTestDatabase } from "./test/test-db";
@@ -79,7 +79,7 @@ describe("errors from the database", () => {
 describe("rooms", () => {
   it("creates a room and reads it back", async () => {
     const created = await repo().createRoom({ lat: 44.43, lng: 26.1 });
-    expect(created).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 0 });
+    expect(created).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 0, canDelete: true });
     expect(new Date(created.createdAt).toISOString()).toBe(created.createdAt);
     expect(await repo().getRoom(created.id)).toEqual(created);
   });
@@ -96,7 +96,7 @@ describe("createRoomWithMessage", () => {
       { lat: 44.43, lng: 26.1 },
       { body: "hello" },
     );
-    expect(room).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 1 });
+    expect(room).toMatchObject({ title: "Chatroom 1", lat: 44.43, lng: 26.1, messageCount: 1, canDelete: true });
     expect(message).toMatchObject({ roomId: room.id, author: "Ana P.", body: "hello" });
     expect(await repo().getRoom(room.id)).toEqual(room);
     expect(bodies(await repo().listMessages(room.id))).toEqual(["hello"]);
@@ -111,6 +111,30 @@ describe("createRoomWithMessage", () => {
   });
 });
 
+describe("deleteRoom", () => {
+  it("deletes the creator's room and its messages", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    await repo().postMessage(room.id, { body: "hello" });
+    await repo().deleteRoom(room.id);
+    expect(await repo().getRoom(room.id)).toBeNull();
+    expect(await repo().listMessages(room.id)).toEqual([]);
+  });
+
+  it("refuses anyone but the creator, who still sees the room as deletable by them only", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    const other = new SupabaseChatRepository((await createTestUser({ full_name: "Ion Ionescu" })).client);
+    expect((await other.getRoom(room.id))?.canDelete).toBe(false);
+    await expect(other.deleteRoom(room.id)).rejects.toBeInstanceOf(NotRoomCreatorError);
+    await expect(signedOut().deleteRoom(room.id)).rejects.toBeInstanceOf(NotSignedInError);
+    expect(await repo().getRoom(room.id)).toEqual(room);
+  });
+
+  it("throws RoomNotFoundError for an unknown or malformed id", async () => {
+    await expect(repo().deleteRoom(UNKNOWN_ID)).rejects.toBeInstanceOf(RoomNotFoundError);
+    await expect(repo().deleteRoom("not-a-uuid")).rejects.toBeInstanceOf(RoomNotFoundError);
+  });
+});
+
 describe("signed out", () => {
   it("cannot create rooms", async () => {
     await expect(signedOut().createRoom({ lat: 0, lng: 0 })).rejects.toBeInstanceOf(NotSignedInError);
@@ -122,7 +146,7 @@ describe("signed out", () => {
   it("can read", async () => {
     const room = await repo().createRoom({ lat: 0, lng: 0 });
     await repo().postMessage(room.id, { body: "hello" });
-    expect(await signedOut().getRoom(room.id)).toEqual(await repo().getRoom(room.id));
+    expect(await signedOut().getRoom(room.id)).toEqual({ ...room, messageCount: 1, canDelete: false });
     expect(bodies(await signedOut().listMessages(room.id))).toEqual(["hello"]);
     expect(await signedOut().listMapItems({ bbox: WORLD, zoom: 16 })).toHaveLength(1);
   });

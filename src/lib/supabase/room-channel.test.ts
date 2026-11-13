@@ -8,7 +8,7 @@ import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { createTestUser } from "@/server/repositories/test/test-users";
 import { subscribeToRoomMessages } from "./room-channel";
 
-setupTestDatabase();
+const db = setupTestDatabase();
 
 let client: SupabaseClient;
 let unsubscribes: (() => void)[];
@@ -32,10 +32,12 @@ const repo = () => new SupabaseChatRepository(poster);
 /** Subscribes, and resolves once the channel reports ready; `onReady` runs inside that callback. */
 function subscribe(roomId: string, onReady: () => void = () => {}) {
   const rows: MessageRow[] = [];
+  const deleted = { count: 0 };
   const ready = new Promise<void>((resolve, reject) => {
     unsubscribes.push(
       subscribeToRoomMessages(client, roomId, {
         onInsert: (row) => rows.push(row),
+        onRoomDeleted: () => deleted.count++,
         onStatus: (status) => {
           if (status === "failed") return reject(new Error("channel failed"));
           onReady();
@@ -44,7 +46,7 @@ function subscribe(roomId: string, onReady: () => void = () => {}) {
       }),
     );
   });
-  return { rows, ready };
+  return { rows, deleted, ready };
 }
 
 // A duplicate would follow within milliseconds on the same socket; this waits well past that.
@@ -94,5 +96,34 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
     // The other room's insert happened first, so by the time this one arrives it would have too.
     await deliveredOnce(rows, here);
     expect(rows.map((row) => row.body)).toEqual(["here"]);
+  });
+
+  it("reports the subscribed room's deletion, and no other's", async () => {
+    const watched = await repo().createRoom({ lat: 0, lng: 0 });
+    const other = await repo().createRoom({ lat: 1, lng: 1 });
+    const { deleted, ready } = subscribe(watched.id);
+    await ready;
+
+    await repo().deleteRoom(other.id);
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+    expect(deleted.count).toBe(0);
+
+    await repo().deleteRoom(watched.id);
+    await expect.poll(() => deleted.count, { timeout: 5000 }).toBe(1);
+  });
+
+  // PR #35 review #1: until a deploy's migration lands, the hosted project may not publish rooms,
+  // and a binding Realtime refuses fails its whole channel; messages must not depend on it.
+  it("still delivers messages when room deletions cannot be watched", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    await db().query("alter publication supabase_realtime drop table public.rooms");
+    try {
+      const { rows, ready } = subscribe(room.id);
+      await ready;
+      const posted = await repo().postMessage(room.id, { body: "still live" });
+      await deliveredOnce(rows, posted);
+    } finally {
+      await db().query("alter publication supabase_realtime add table public.rooms");
+    }
   });
 });

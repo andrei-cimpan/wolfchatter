@@ -28,6 +28,8 @@ export function useCurrentUser(): CurrentUser {
       // Neither changes who is signed in, and the first fires on every page load.
       if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return;
       void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+      // Whether the user may delete a room depends on who they are.
+      void queryClient.invalidateQueries({ queryKey: ["room"] });
     });
     return () => data.subscription.unsubscribe();
   }, [queryClient]);

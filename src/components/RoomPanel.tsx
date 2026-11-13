@@ -2,12 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useDeletingRoom } from "@/hooks/useDeleteRoom";
 import { useFormAcrossSignOut } from "@/hooks/useFormAcrossSignOut";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
 import type { Draft } from "@/lib/draft";
 import { createRoomErrorMessage, isSignedOutError } from "@/lib/message-input";
+import { DeleteRoomButton } from "./DeleteRoomButton";
 import { MessageForm, RoomMessageForm } from "./MessageForm";
 import { MessageList } from "./MessageList";
 import { PostingAs } from "./PostingAs";
@@ -16,6 +18,7 @@ import { SignInPrompt } from "./SignInPrompt";
 const EMPTY_STATE = "Click on the map to start a chat";
 const DRAFT_NOTE = "Send the first message to create this chatroom. Until then, nobody else can see it.";
 const SIGNED_OUT_DRAFT_NOTE = "Sign in to create a chatroom here. Your pin stays where you dropped it.";
+const CLOSED_NOTE = "The owner has closed the room";
 
 // Narrow screens: a sheet rising from the bottom edge, clear of the phone's home indicator.
 const PANEL_SHEET =
@@ -73,7 +76,8 @@ function SheetHeader({
 }) {
   return (
     <div className="relative mb-2 flex h-11 shrink-0 items-center justify-between md:hidden">
-      {leading ?? <span />}
+      {/* A wrapper even when empty, which a component that renders nothing would not leave. */}
+      <div className="flex">{leading}</div>
       <span aria-hidden className="absolute left-1/2 top-0 h-1 w-10 -translate-x-1/2 rounded-full bg-foreground/20 short-wide:hidden" />
       <button
         type="button"
@@ -161,18 +165,43 @@ interface RoomContentProps {
   autoFocusBody: boolean;
 }
 
+/** Where a room deleted while open ends up, for everyone but the creator, whose panel closes. */
+function RoomClosed() {
+  return (
+    <>
+      <p role="status">{CLOSED_NOTE}</p>
+      <button type="button" onClick={() => selectRoom(null)} className="mt-2 h-11 self-start rounded px-2 underline hover:bg-foreground/10">
+        Close
+      </button>
+    </>
+  );
+}
+
 function RoomContent({ roomId, autoFocusBody }: RoomContentProps) {
   const { data: room, isPending, isError } = useRoom(roomId);
   const user = useCurrentUser();
   const form = useFormAcrossSignOut(user.status);
   const hydrated = useHydrated();
   const [sentCount, setSentCount] = useState(0);
+  const deleting = useDeletingRoom(roomId);
+  // A room that was here and now is not has been deleted while open, rather than never existing.
+  const [seenRoom, setSeenRoom] = useState(false);
+  if (room && !seenRoom) setSeenRoom(true);
   if (isPending || !hydrated) return <p role="status">Loading chatroom…</p>;
   if (isError) return <p role="alert">Couldn&apos;t load this chatroom. Please try again.</p>;
-  if (room === null) return <p>This chatroom doesn&apos;t exist.</p>;
+  if (room === null) {
+    // The creator's own deletion closes the panel; its live echo may land a moment before.
+    if (deleting) return null;
+    return seenRoom ? <RoomClosed /> : <p>This chatroom doesn&apos;t exist.</p>;
+  }
   return (
     <>
-      <h2 className="text-center font-medium">{room.title}</h2>
+      {/* The sheet has the button in its header instead, where it costs no height or width. The
+          negative margin keeps the card's title line its usual height around the 44 px target. */}
+      <div className="flex shrink-0 items-center justify-center gap-2 md:has-[button]:justify-between">
+        <h2 className="font-medium">{room.title}</h2>
+        <DeleteRoomButton roomId={room.id} className="-my-2.5 hidden md:block" />
+      </div>
       <MessageList roomId={room.id} sentCount={sentCount} />
       {/* Nothing until /api/me answers, so neither the form nor the prompt flashes. */}
       {user.status === "signedOut" && !form.showForm && <SignInPrompt label="Sign in with Google to post" />}
@@ -231,7 +260,13 @@ export function RoomPanel({
         <SheetHeader
           onClose={close}
           closeUnavailable={openDraft !== null && creating}
-          leading={openDraft && <DiscardButton onClick={onDiscardDraft} unavailable={creating} />}
+          leading={
+            openDraft ? (
+              <DiscardButton onClick={onDiscardDraft} unavailable={creating} />
+            ) : (
+              roomId !== null && <DeleteRoomButton key={roomId} roomId={roomId} />
+            )
+          }
         />
       )}
       {creating && (

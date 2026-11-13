@@ -58,6 +58,7 @@ describe("signed out", () => {
     await new Promise<void>((resolve, reject) => {
       const unsubscribe = subscribeToRoomMessages(anon, roomId, {
         onInsert: (row) => rows.push(row),
+        onRoomDeleted: () => {},
         onStatus: (status) => {
           if (status === "failed") return reject(new Error("channel failed"));
           const posted = async () => {
@@ -192,7 +193,8 @@ describe("signed in", () => {
     expect(error?.code).toBe(INSUFFICIENT_PRIVILEGE);
   });
 
-  it("cannot update or delete rooms or messages, even their own", async () => {
+  // Deleting a whole room is the creator's (see "deleting a room"); nothing else may change.
+  it("cannot update rooms or messages, or delete messages, even their own", async () => {
     const { client } = await createTestUser({ full_name: "Ana Popescu" });
     const roomId = await createRoom(client);
     await client.from("messages").insert({ room_id: roomId, body: "original" });
@@ -200,7 +202,6 @@ describe("signed in", () => {
     await client.from("rooms").update({ lat: 2 }).eq("id", roomId);
     await client.from("messages").update({ body: "edited" }).eq("room_id", roomId);
     await client.from("messages").delete().eq("room_id", roomId);
-    await client.from("rooms").delete().eq("id", roomId);
 
     const { rows: rooms } = await db().query<{ lat: number }>("select lat from rooms where id = $1", [roomId]);
     const { rows: messages } = await db().query<{ body: string }>("select body from messages where room_id = $1", [
@@ -218,5 +219,61 @@ describe("signed in", () => {
       room: { lat: 1, lng: 2, message_count: 1, created_by: userId },
       message: { body: "first", author: "Ana P.", user_id: userId },
     });
+  });
+});
+
+describe("deleting a room", () => {
+  async function roomWithMessages(client: SupabaseClient, other: SupabaseClient): Promise<string> {
+    const roomId = await createRoom(client);
+    await client.from("messages").insert({ room_id: roomId, body: "mine" });
+    await other.from("messages").insert({ room_id: roomId, body: "theirs" });
+    return roomId;
+  }
+
+  async function stored(roomId: string): Promise<{ rooms: number; messages: number }> {
+    const { rows } = await db().query<{ rooms: number; messages: number }>(
+      `select (select count(*)::int from rooms where id = $1) as rooms,
+              (select count(*)::int from messages where room_id = $1) as messages`,
+      [roomId],
+    );
+    return rows[0]!;
+  }
+
+  it("the creator deletes it, with every message in it, others' included", async () => {
+    const owner = await createTestUser();
+    const other = await createTestUser({ full_name: "Ion Ionescu" });
+    const roomId = await roomWithMessages(owner.client, other.client);
+
+    const { data, error } = await owner.client.from("rooms").delete().eq("id", roomId).select("id");
+    expect(error).toBeNull();
+    expect(data).toEqual([{ id: roomId }]);
+    expect(await stored(roomId)).toEqual({ rooms: 0, messages: 0 });
+  });
+
+  it("nobody else can delete it, or its messages", async () => {
+    const owner = await createTestUser();
+    const other = await createTestUser({ full_name: "Ion Ionescu" });
+    const roomId = await roomWithMessages(owner.client, other.client);
+
+    const byOther = await other.client.from("rooms").delete().eq("id", roomId).select("id");
+    const signedOut = await anonClient().from("rooms").delete().eq("id", roomId);
+    const messages = await other.client.from("messages").delete().eq("room_id", roomId);
+
+    expect(byOther.error).toBeNull();
+    expect(byOther.data).toEqual([]);
+    expect(signedOut.error?.code).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(messages.error?.code).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(await stored(roomId)).toEqual({ rooms: 1, messages: 2 });
+  });
+
+  it("can_delete is true for the creator only", async () => {
+    const owner = await createTestUser();
+    const other = await createTestUser({ full_name: "Ion Ionescu" });
+    const roomId = await createRoom(owner.client);
+
+    const read = (client: SupabaseClient) => client.from("rooms").select("can_delete").eq("id", roomId).single();
+    expect((await read(owner.client)).data).toEqual({ can_delete: true });
+    expect((await read(other.client)).data).toEqual({ can_delete: false });
+    expect((await read(anonClient())).data).toEqual({ can_delete: false });
   });
 });

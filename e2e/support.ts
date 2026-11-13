@@ -223,7 +223,9 @@ export async function watchLiveConnection(page: Page): Promise<LiveConnection> {
       void ws.close();
     });
   });
-  const ofRoom = (topics: Iterable<string>, roomId: string) => [...topics].filter((topic) => topic.includes(roomId));
+  // The room's message channel only: its deletion channel (room-deletions:) carries the id too.
+  const ofRoom = (topics: Iterable<string>, roomId: string) =>
+    [...topics].filter((topic) => topic.includes(`room-messages:${roomId}`));
   const readyCount = (roomId: string) => ofRoom(readyTopics, roomId).length;
   const liveChannels = (roomId: string) => ofRoom(readyTopics, roomId).filter((t) => !endedTopics.has(t)).length;
   return {
