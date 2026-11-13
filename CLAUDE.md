@@ -20,7 +20,7 @@ Next.js (App Router) · TypeScript (strict) · Tailwind · react-leaflet · Supa
 
 ## Architecture rules
 
-- UI and route handlers use the `ChatRepository` interface only. Application code never imports the DB client outside `src/server/repositories/`; test setup (`src/server/repositories/test/`, `e2e/`) is the only exception. On v2 the browser Supabase client in `src/lib/supabase/` may subscribe to Realtime, never read or write.
+- UI and route handlers use the `ChatRepository` interface only. Application code never imports the DB client outside `src/server/repositories/`; test setup (`src/server/repositories/test/`, `e2e/`) is the only exception. On v2 the browser Supabase client in `src/lib/supabase/` may sign in and out and subscribe to Realtime, never read or write chat data.
 - Validate every API input with Zod at the route boundary.
 - Render user text as plain text. Never use `dangerouslySetInnerHTML`.
 - Server state lives in TanStack Query. The selected room lives in the URL (`?room=<id>`). No global store.

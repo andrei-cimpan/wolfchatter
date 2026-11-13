@@ -372,13 +372,10 @@ test.describe("desktop", () => {
     await expectDraftPinTipAt(page, { x: CARD_FOCUS_X, y: 360 });
     expect(posts).toHaveLength(0);
 
-    const username = panel(page).getByRole("textbox", { name: "Username" });
     await expect(async () => {
       await page.keyboard.press("Tab");
-      await expect(username).toBeFocused({ timeout: 100 });
+      await expect(messageField(page)).toBeFocused({ timeout: 100 });
     }).toPass({ timeout: 10_000, intervals: [0] });
-    await page.keyboard.type("ana");
-    await page.keyboard.press("Tab");
     await page.keyboard.type("Typed, never clicked");
     await page.keyboard.press("Tab");
     const posted = postedRoomPosition(page);
@@ -529,29 +526,23 @@ test.describe("desktop", () => {
     expect(posts).toHaveLength(0);
   });
 
-  test("a rate-limited first message explains the wait, keeps the text and creates nothing", async ({ page }) => {
-    let limited = true;
+  test("a failed first message explains, keeps the text and creates nothing", async ({ page }) => {
+    let failing = true;
     await page.route("**/api/rooms", (route) =>
-      route.request().method() === "POST" && limited
-        ? route.fulfill({
-            status: 429,
-            headers: { "Retry-After": "30" },
-            json: { error: { code: "rate_limited", message: "Too many requests" } },
-          })
+      route.request().method() === "POST" && failing
+        ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } })
         : route.fallback(),
     );
     await openMap(page);
     await startDraftAt(page, 400, 300);
     await fillDraft(page, "Worth keeping");
     await submit(page).click();
-    await expect(panel(page).getByRole("alert")).toHaveText(
-      "You're creating chatrooms too quickly. Try again in 30 seconds.",
-    );
+    await expect(panel(page).getByRole("alert")).toHaveText("Couldn't create the chatroom. Please try again.");
     await expect(page).toHaveURL(/\/$/);
     await expect(draftPin(page)).toBeVisible();
     await expect(messageField(page)).toHaveValue("Worth keeping");
 
-    limited = false;
+    failing = false;
     await submit(page).click();
     await expect(page).toHaveURL(ROOM_URL);
     await expect(panel(page).getByRole("log", { name: "Messages" })).toContainText("Worth keeping");

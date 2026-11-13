@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { postMessage } from "@/lib/api-client";
 import { addMessage } from "@/lib/message-cache";
 
-type PostMessageVariables = { roomId: string; author: string; body: string };
+type PostMessageVariables = { roomId: string; body: string };
 
 /**
  * Posts to a room and adds the stored message to that room's list (keyed by the message's own
@@ -17,7 +17,7 @@ export function usePostMessage(roomId: string) {
   const sendingRef = useRef(false);
 
   const mutation = useMutation({
-    mutationFn: ({ roomId: id, author, body }: PostMessageVariables) => postMessage(id, { author, body }),
+    mutationFn: ({ roomId: id, body }: PostMessageVariables) => postMessage(id, { body }),
     onSuccess: (message) => addMessage(queryClient, message),
     onSettled: () => {
       sendingRef.current = false;
@@ -25,10 +25,10 @@ export function usePostMessage(roomId: string) {
   });
 
   /** Sends the message unless one is already on its way; `onSent` runs only while still mounted. */
-  function send(author: string, body: string, onSent: () => void) {
+  function send(body: string, onSent: () => void) {
     if (sendingRef.current) return;
     sendingRef.current = true;
-    mutation.mutate({ roomId, author, body }, { onSuccess: onSent });
+    mutation.mutate({ roomId, body }, { onSuccess: onSent });
   }
 
   /** Forgets the last failure. Not while sending: a reset would drop that post's `onSent`. */

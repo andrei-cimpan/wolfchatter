@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Message, Room } from "@/lib/types";
-import { messagePostLimiter } from "@/server/http/rate-limit";
 import { getChatRepository } from "@/server/repositories";
+import { sessionCookieHeader } from "@/server/repositories/test/session-cookies";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
+import { createTestUser } from "@/server/repositories/test/test-users";
 import { GET, POST } from "./route";
 
-setupTestDatabase();
-// The limiter is module state shared by every test in this file.
-beforeEach(() => messagePostLimiter.reset());
+const db = setupTestDatabase();
+
+// Requests come from a signed-in user unless a test sends `cookie: ""`.
+let cookie: string;
+beforeEach(async () => {
+  cookie = await sessionCookieHeader((await createTestUser({ full_name: "Ana Popescu" })).session);
+});
+const repository = () => getChatRepository(new Request("http://test/", { headers: { cookie } }));
 
 const UNKNOWN_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -23,17 +29,17 @@ function postMessage(roomId: string, body: string, headers: Record<string, strin
   const request = new Request(`http://test/api/rooms/${roomId}/messages`, {
     method: "POST",
     body,
-    headers: { "content-type": "application/json", ...headers },
+    headers: { "content-type": "application/json", cookie, ...headers },
   });
   return POST(request, context(roomId));
 }
 
 function createRoom(): Promise<Room> {
-  return getChatRepository(new Request("http://localhost/")).createRoom({ lat: 44.43, lng: 26.1 });
+  return repository().createRoom({ lat: 44.43, lng: 26.1 });
 }
 
 async function post(roomId: string, body: string): Promise<Message> {
-  return (await postMessage(roomId, JSON.stringify({ author: "ana", body }))).json();
+  return (await postMessage(roomId, JSON.stringify({ body }))).json();
 }
 
 async function bodies(response: Response): Promise<string[]> {
@@ -49,35 +55,34 @@ async function expectError(response: Response, status: number, code: string): Pr
 }
 
 describe("POST /api/rooms/:id/messages", () => {
-  it("creates a trimmed message and counts it on the room", async () => {
+  it("creates a trimmed message by the signed-in user, whatever author it sends", async () => {
     const room = await createRoom();
-    const response = await postMessage(room.id, JSON.stringify({ author: " ana ", body: " hello\nthere " }));
+    const response = await postMessage(room.id, JSON.stringify({ author: "X", body: " hello\nthere " }));
     expect(response.status).toBe(201);
     expect(response.headers.get("location")).toBeNull();
     expect(await response.json()).toEqual({
       id: expect.any(String),
       roomId: room.id,
-      author: "ana",
+      author: "Ana P.",
       body: "hello\nthere",
       createdAt: expect.any(String),
     });
-    expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(1);
+    expect((await repository().getRoom(room.id))?.messageCount).toBe(1);
   });
 
   it.each([
-    ["a missing author", { body: "hi" }, /^author: /],
-    ["an empty body", { author: "ana", body: "" }, /^body: /],
-    ["a body of zero-width spaces", { author: "ana", body: "\u200B\u200B" }, /^body: Message is required$/],
-    ["an author over 32 characters", { author: "a".repeat(33), body: "hi" }, /^author: /],
-    ["a body over 1000 characters", { author: "ana", body: "a".repeat(1001) }, /^body: /],
-    ["a non-string body", { author: "ana", body: 5 }, /^body: /],
-    ["an array body", ["ana", "hi"], /./],
+    ["only an author", { author: "ana" }, /^body: /],
+    ["an empty body", { body: "" }, /^body: /],
+    ["a body of zero-width spaces", { body: "\u200B\u200B" }, /^body: Message is required$/],
+    ["a body over 1000 characters", { body: "a".repeat(1001) }, /^body: /],
+    ["a non-string body", { body: 5 }, /^body: /],
+    ["an array body", ["hi"], /./],
   ])("rejects %s with 400", async (_label, body, message) => {
     const room = await createRoom();
     expect(await expectError(await postMessage(room.id, JSON.stringify(body)), 400, "validation_error")).toMatch(
       message,
     );
-    expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(0);
+    expect((await repository().getRoom(room.id))?.messageCount).toBe(0);
   });
 
   it("rejects a non-JSON body with 400", async () => {
@@ -87,12 +92,12 @@ describe("POST /api/rooms/:id/messages", () => {
 
   it("rejects an oversized body with 413", async () => {
     const room = await createRoom();
-    const body = JSON.stringify({ author: "ana", body: "hi", pad: "x".repeat(20_000) });
+    const body = JSON.stringify({ body: "hi", pad: "x".repeat(20_000) });
     await expectError(await postMessage(room.id, body), 413, "payload_too_large");
   });
 
   it.each([UNKNOWN_ID, "not-a-uuid"])("answers room %s with 404 room_not_found", async (id) => {
-    const response = await postMessage(id, JSON.stringify({ author: "ana", body: "hi" }));
+    const response = await postMessage(id, JSON.stringify({ body: "hi" }));
     expect(await expectError(response, 404, "room_not_found")).toBe("Room not found");
   });
 
@@ -110,36 +115,33 @@ describe("POST /api/rooms/:id/messages", () => {
     ["text/plain, as a cross-site form sends", { "content-type": "text/plain" }],
   ])("rejects %s with 415 before writing", async (_label, headers) => {
     const room = await createRoom();
-    const response = await postMessage(room.id, JSON.stringify({ author: "ana", body: "hi" }), headers);
+    const response = await postMessage(room.id, JSON.stringify({ body: "hi" }), headers);
     await expectError(response, 415, "unsupported_media_type");
-    expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(0);
+    expect((await repository().getRoom(room.id))?.messageCount).toBe(0);
   });
 
-  describe("rate limiting", () => {
-    const LIMIT = 30;
-    const send = (roomId: string, ip: string) =>
-      postMessage(roomId, JSON.stringify({ author: "ana", body: "hi" }), { "x-forwarded-for": ip });
+  it("answers a signed-out post with 401 unauthenticated, and stores nothing", async () => {
+    const room = await createRoom();
+    const response = await postMessage(room.id, JSON.stringify({ body: "hi" }), { cookie: "" });
+    await expectError(response, 401, "unauthenticated");
+    expect((await repository().getRoom(room.id))?.messageCount).toBe(0);
+  });
 
-    it("answers the post after the per-IP budget with 429 and Retry-After", async () => {
-      const room = await createRoom();
-      for (let i = 0; i < LIMIT; i++) expect((await send(room.id, "203.0.113.7")).status).toBe(201);
-
-      const response = await send(room.id, "203.0.113.7");
-      await expectError(response, 429, "rate_limited");
-      expect(Number(response.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
-      expect((await getChatRepository(new Request("http://localhost/")).getRoom(room.id))?.messageCount).toBe(LIMIT);
+  // Its token stays valid until it expires, but the account is gone (PR #33 review #5).
+  it("answers a post from a deleted user with 401, not as an unknown room", async () => {
+    const room = await createRoom();
+    const gone = await createTestUser({ full_name: "Bo Ionescu" });
+    await db().query("delete from auth.users where id = $1", [gone.userId]);
+    const response = await postMessage(room.id, JSON.stringify({ body: "hi" }), {
+      cookie: await sessionCookieHeader(gone.session),
     });
+    await expectError(response, 401, "unauthenticated");
+  });
 
-    it("keeps each IP's budget separate", async () => {
-      const room = await createRoom();
-      for (let i = 0; i < LIMIT; i++) await send(room.id, "203.0.113.7");
-      expect((await send(room.id, "203.0.113.8")).status).toBe(201);
-    });
-
-    it("counts invalid requests, and limits before checking the room", async () => {
-      for (let i = 0; i < LIMIT; i++) await postMessage("not-a-uuid", "{}", { "x-forwarded-for": "203.0.113.7" });
-      await expectError(await send("not-a-uuid", "203.0.113.7"), 429, "rate_limited");
-    });
+  // Validation comes first, so a broken client learns what is wrong before being asked to sign in.
+  it("answers an invalid signed-out post with 400", async () => {
+    const room = await createRoom();
+    await expectError(await postMessage(room.id, "{}", { cookie: "" }), 400, "validation_error");
   });
 });
 
@@ -160,9 +162,8 @@ describe("GET /api/rooms/:id/messages", () => {
   // should fail here rather than silently change what clients get.
   it("returns 50 messages without a limit and 100 with limit=100", async () => {
     const room = await createRoom();
-    const repository = getChatRepository(new Request("http://localhost/"));
     for (let i = 1; i <= 101; i++) {
-      await repository.postMessage(room.id, { author: "ana", body: `m${i}` });
+      await repository().postMessage(room.id, { body: `m${i}` });
     }
 
     const latest = await bodies(await getMessages(room.id));

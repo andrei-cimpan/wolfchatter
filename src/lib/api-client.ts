@@ -4,22 +4,13 @@ import type { Bbox, MapItem, Message, Room, RoomWithFirstMessage } from "./types
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  /** From `Retry-After` on a 429, in seconds. */
-  readonly retryAfterSeconds?: number;
 
-  constructor(status: number, code: string, message: string, retryAfterSeconds?: number) {
+  constructor(status: number, code: string, message: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
-    this.retryAfterSeconds = retryAfterSeconds;
   }
-}
-
-/** "in 30 seconds" for a 429 with `Retry-After`, otherwise "in a minute" (the limiters' window). */
-export function retryAfterPhrase(error: ApiError): string {
-  const wait = error.retryAfterSeconds;
-  return wait === undefined ? "in a minute" : `in ${wait} second${wait === 1 ? "" : "s"}`;
 }
 
 function isErrorBody(body: unknown): body is { error: { code: string; message: string } } {
@@ -38,12 +29,10 @@ function isErrorBody(body: unknown): body is { error: { code: string; message: s
 async function toApiError(response: Response): Promise<ApiError> {
   // A proxy or crash can answer with HTML or nothing, so the JSON error body is optional.
   const body: unknown = await response.json().catch(() => undefined);
-  const retryAfter = Number(response.headers.get("Retry-After"));
   return new ApiError(
     response.status,
     isErrorBody(body) ? body.error.code : "http_error",
     isErrorBody(body) ? body.error.message : `Request failed with status ${response.status}`,
-    Number.isInteger(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
   );
 }
 
@@ -56,11 +45,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** Saves the room and its first message together: both or neither. */
+/** Saves the room and its first message together: both or neither. The author is the signed-in user. */
 export function createRoom(input: {
   lat: number;
   lng: number;
-  firstMessage: { author: string; body: string };
+  firstMessage: { body: string };
 }): Promise<RoomWithFirstMessage> {
   return request<RoomWithFirstMessage>("/api/rooms", {
     method: "POST",
@@ -101,10 +90,16 @@ export function listMessages(roomId: string, options: { after?: string; limit?: 
   return request<Message[]>(`${roomPath(roomId)}/messages${query}`);
 }
 
-export function postMessage(roomId: string, input: { author: string; body: string }): Promise<Message> {
+/** Posts as the signed-in user, whose name becomes the author. */
+export function postMessage(roomId: string, input: { body: string }): Promise<Message> {
   return request<Message>(`${roomPath(roomId)}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+}
+
+/** Who is signed in: the name they post under, or null. Per user, so never from a cache. */
+export function getMe(): Promise<{ name: string | null }> {
+  return request<{ name: string | null }>("/api/me", { cache: "no-store" });
 }

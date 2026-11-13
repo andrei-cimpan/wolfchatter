@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { setupTestDatabase } from "./test/test-db";
+import { SEED_USER_ID, setupTestDatabase } from "./test/test-db";
 
 const db = setupTestDatabase();
 
 async function createRoom(lat = 44.43, lng = 26.1): Promise<{ id: string; title: string }> {
   const { rows } = await db().query<{ id: string; title: string }>(
-    "insert into rooms (lat, lng) values ($1, $2) returning id, title",
-    [lat, lng],
+    "insert into rooms (lat, lng, created_by) values ($1, $2, $3) returning id, title",
+    [lat, lng, SEED_USER_ID],
   );
   return rows[0]!;
 }
@@ -49,7 +49,12 @@ describe("initial schema", () => {
   ])("rejects an out-of-range author or body (case %#)", async (author, body) => {
     const room = await createRoom();
     await expect(
-      db().query("insert into messages (room_id, author, body) values ($1, $2, $3)", [room.id, author, body]),
+      db().query("insert into messages (room_id, author, body, user_id) values ($1, $2, $3, $4)", [
+        room.id,
+        author,
+        body,
+        SEED_USER_ID,
+      ]),
     ).rejects.toThrow(/check constraint/);
   });
 });

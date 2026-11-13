@@ -48,42 +48,43 @@ describe("createRoomSchema", () => {
 });
 
 describe("postMessageSchema", () => {
-  it("trims author and body but keeps line breaks inside the body", () => {
-    expect(postMessageSchema.parse({ author: "  ana ", body: " line 1\nline 2 \n" })).toEqual({
-      author: "ana",
-      body: "line 1\nline 2",
-    });
+  it("trims the body but keeps line breaks inside it", () => {
+    expect(postMessageSchema.parse({ body: " line 1\nline 2 \n" })).toEqual({ body: "line 1\nline 2" });
   });
 
-  it("accepts the maximum lengths", () => {
-    expect(postMessageSchema.safeParse({ author: "a".repeat(32), body: "b".repeat(1000) }).success).toBe(true);
+  // The database sets the author from the signed-in user, so one sent by a client is dropped.
+  it("drops an author the client sends", () => {
+    expect(postMessageSchema.parse({ author: "Someone Else", body: "hi" })).toEqual({ body: "hi" });
+  });
+
+  it("requires a body even when an author is sent", () => {
+    expect(postMessageSchema.safeParse({ author: "ana" }).success).toBe(false);
+  });
+
+  it("accepts the maximum length", () => {
+    expect(postMessageSchema.safeParse({ body: "b".repeat(1000) }).success).toBe(true);
   });
 
   it.each([
-    ["empty author", "", "hi"],
-    ["whitespace-only author", "   ", "hi"],
-    ["over-long author", "a".repeat(33), "hi"],
-    ["empty body", "ana", ""],
-    ["whitespace-only body", "ana", " \n\t "],
-    ["over-long body", "ana", "b".repeat(1001)],
-  ])("rejects an %s", (_label, author, body) => {
-    expect(postMessageSchema.safeParse({ author, body }).success).toBe(false);
+    ["empty body", ""],
+    ["whitespace-only body", " \n\t "],
+    ["over-long body", "b".repeat(1001)],
+  ])("rejects an %s", (_label, body) => {
+    expect(postMessageSchema.safeParse({ body }).success).toBe(false);
   });
 
   it("counts characters the way Postgres does, not UTF-16 units", () => {
     const emoji = "🐺";
     expect(emoji.length).toBe(2);
-    expect(postMessageSchema.safeParse({ author: "ana", body: emoji.repeat(1000) }).success).toBe(true);
-    expect(postMessageSchema.safeParse({ author: "ana", body: emoji.repeat(1001) }).success).toBe(false);
-    expect(postMessageSchema.safeParse({ author: emoji.repeat(32), body: "hi" }).success).toBe(true);
+    expect(postMessageSchema.safeParse({ body: emoji.repeat(1000) }).success).toBe(true);
+    expect(postMessageSchema.safeParse({ body: emoji.repeat(1001) }).success).toBe(false);
   });
 
   it.each([
     ["a NUL character", "a\u0000b"],
     ["a lone surrogate", "a\uD800b"],
   ])("rejects text Postgres cannot store as sent: %s", (_label, text) => {
-    expect(postMessageSchema.safeParse({ author: "ana", body: text }).success).toBe(false);
-    expect(postMessageSchema.safeParse({ author: text, body: "hi" }).success).toBe(false);
+    expect(postMessageSchema.safeParse({ body: text }).success).toBe(false);
   });
 
   // trim() keeps these, and a message made only of them renders as a blank bubble.
@@ -99,11 +100,9 @@ describe("postMessageSchema", () => {
     ["a Khitan filler", "\u{16FE4}"],
     ["a mix with ordinary spaces", " \u200B \u0085 "],
   ])("rejects text made only of invisible characters: %s", (_label, text) => {
-    for (const input of [{ author: text, body: "hi" }, { author: "ana", body: text }]) {
-      const result = postMessageSchema.safeParse(input);
-      expect(result.success).toBe(false);
-      expect(result.error?.issues[0]?.message).toMatch(/is required$/);
-    }
+    const result = postMessageSchema.safeParse({ body: text });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toMatch(/is required$/);
   });
 
   it.each([
@@ -113,12 +112,12 @@ describe("postMessageSchema", () => {
     ["an Arabic number sign before a digit", "\u06001"],
     ["an Arabic end-of-ayah sign before a digit", "\u06DD1"],
   ])("accepts visible text that contains invisible characters: %s", (_label, text) => {
-    expect(postMessageSchema.safeParse({ author: text, body: text }).success).toBe(true);
+    expect(postMessageSchema.safeParse({ body: text }).success).toBe(true);
   });
 
   it("names the field in the error message", () => {
-    const result = postMessageSchema.safeParse({ author: "", body: "hi" });
-    expect(result.error?.issues[0]).toMatchObject({ path: ["author"], message: "Author is required" });
+    const result = postMessageSchema.safeParse({ body: "" });
+    expect(result.error?.issues[0]).toMatchObject({ path: ["body"], message: "Message is required" });
   });
 });
 

@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { MapItem, Message, Room } from "@/lib/types";
-import { roomCreationLimiter } from "@/server/http/rate-limit";
+import { sessionCookieHeader } from "@/server/repositories/test/session-cookies";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
+import { createTestUser } from "@/server/repositories/test/test-users";
 import { GET, POST } from "./route";
 
 setupTestDatabase();
-// The limiter is module state shared by every test in this file.
-beforeEach(() => roomCreationLimiter.reset());
+
+// Requests come from a signed-in user unless a test sends `cookie: ""`.
+let cookie: string;
+beforeEach(async () => {
+  cookie = await sessionCookieHeader((await createTestUser({ full_name: "Ana Popescu" })).session);
+});
 
 function getRooms(query: string): Promise<Response> {
   return GET(new Request(`http://test/api/rooms${query}`));
@@ -17,7 +22,7 @@ function postRoom(body: string, headers: Record<string, string> = {}): Promise<R
     new Request("http://test/api/rooms", {
       method: "POST",
       body,
-      headers: { "content-type": "application/json", ...headers },
+      headers: { "content-type": "application/json", cookie, ...headers },
     }),
   );
 }
@@ -44,12 +49,13 @@ describe("POST /api/rooms", () => {
 
   it("saves a first message with the room, in one request", async () => {
     const response = await postRoom(
-      JSON.stringify({ lat: 44.43, lng: 26.1, firstMessage: { author: " ana ", body: "hello" } }),
+      JSON.stringify({ lat: 44.43, lng: 26.1, firstMessage: { author: "X", body: "hello" } }),
     );
     expect(response.status).toBe(201);
     const room: Room & { firstMessage: Message } = await response.json();
     expect(room).toMatchObject({ title: "Chatroom 1", messageCount: 1 });
-    expect(room.firstMessage).toMatchObject({ roomId: room.id, author: "ana", body: "hello" });
+    // The author is the signed-in user's, whatever the request sent.
+    expect(room.firstMessage).toMatchObject({ roomId: room.id, author: "Ana P.", body: "hello" });
     expect(response.headers.get("location")).toBe(`/api/rooms/${room.id}`);
   });
 
@@ -58,9 +64,8 @@ describe("POST /api/rooms", () => {
   });
 
   it.each([
-    ["an empty author", { author: " ", body: "hello" }, /^firstMessage\.author: /],
-    ["a body with nothing visible", { author: "ana", body: "​" }, /^firstMessage\.body: /],
-    ["a missing body", { author: "ana" }, /^firstMessage\.body: /],
+    ["a body with nothing visible", { body: "​" }, /^firstMessage\.body: /],
+    ["a missing body", {}, /^firstMessage\.body: /],
     ["a null message", null, /^firstMessage: /],
   ])("rejects a first message with %s, and creates no room", async (_label, firstMessage, message) => {
     const body = JSON.stringify({ lat: 67.5, lng: 12.5, firstMessage });
@@ -111,40 +116,42 @@ describe("POST /api/rooms", () => {
     expect(response.status).toBe(201);
   });
 
-  describe("rate limiting", () => {
-    const LIMIT = 10;
-    const send = (ip: string) => postRoom(JSON.stringify({ lat: 0, lng: 0 }), { "x-forwarded-for": ip });
+  it.each([
+    ["a room", { lat: 1, lng: 2 }],
+    ["a room with its first message", { lat: 1, lng: 2, firstMessage: { body: "hi" } }],
+  ])("answers a signed-out request for %s with 401 unauthenticated, and stores nothing", async (_label, body) => {
+    await expectError(await postRoom(JSON.stringify(body), { cookie: "" }), 401, "unauthenticated");
+    expect(await (await getRooms("?bbox=-180,-90,180,90&zoom=16")).json()).toEqual([]);
+  });
 
-    it("answers the request after the per-IP budget with 429 and Retry-After", async () => {
-      for (let i = 0; i < LIMIT; i++) expect((await send("203.0.113.7")).status).toBe(201);
+  it("answers an invalid signed-out request with 400", async () => {
+    await expectError(await postRoom(JSON.stringify({ lat: 91, lng: 0 }), { cookie: "" }), 400, "validation_error");
+  });
 
-      const response = await send("203.0.113.7");
-      await expectError(response, 429, "rate_limited");
-      expect(Number(response.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
-      const items: MapItem[] = await (await getRooms("?bbox=-180,-90,180,90&zoom=16")).json();
-      expect(items).toHaveLength(LIMIT);
-    });
-
-    it("keys on the rightmost X-Forwarded-For entry, which the client cannot choose", async () => {
-      for (let i = 0; i < LIMIT; i++) await send(`10.0.0.${i}, 203.0.113.7`);
-      await expectError(await send("10.0.0.99, 203.0.113.7"), 429, "rate_limited");
-      expect((await send("203.0.113.8")).status).toBe(201);
-    });
-
-    it("shares one budget across an IPv6 /64", async () => {
-      for (let i = 0; i < LIMIT; i++) await send(`2001:db8:1:2::${i + 1}`);
-      await expectError(await send("2001:db8:1:2:dead:beef:0:1"), 429, "rate_limited");
-      expect((await send("2001:db8:1:3::1")).status).toBe(201);
-    });
-
-    it("counts invalid requests against the budget", async () => {
-      for (let i = 0; i < LIMIT; i++) await postRoom("not json", { "x-forwarded-for": "203.0.113.7" });
-      await expectError(await send("203.0.113.7"), 429, "rate_limited");
-    });
+  it("rejects a first message with only an author with 400", async () => {
+    const response = await postRoom(JSON.stringify({ lat: 1, lng: 2, firstMessage: { author: "ana" } }));
+    expect(await expectError(response, 400, "validation_error")).toMatch(/^firstMessage\.body: /);
   });
 });
 
 describe("GET /api/rooms", () => {
+  // A token the database will not accept (rotated keys, another project's cookie) must not make a
+  // public read fail: reading needs no account (PR #33 review #4).
+  it("answers as if signed out when the session cookie holds a token the database rejects", async () => {
+    await createRoom(44.43, 26.1);
+    const { session } = await createTestUser();
+    const rejected = await sessionCookieHeader({ ...session, access_token: "garbage.token.here" });
+    const response = await GET(new Request("http://test/api/rooms?bbox=-180,-90,180,90&zoom=16", { headers: { cookie: rejected } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toHaveLength(1);
+  });
+
+  it("still answers 401 for a post with such a token", async () => {
+    const { session } = await createTestUser();
+    const rejected = await sessionCookieHeader({ ...session, access_token: "garbage.token.here" });
+    await expectError(await postRoom(JSON.stringify({ lat: 1, lng: 2 }), { cookie: rejected }), 401, "unauthenticated");
+  });
+
   it("returns rooms and clusters in the viewport", async () => {
     await createRoom(44.43, 26.1);
     await createRoom(44.44, 26.11);

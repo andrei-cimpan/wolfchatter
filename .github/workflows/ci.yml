@@ -27,7 +27,8 @@ jobs:
       - name: Export its settings
         run: |
           npx supabase status -o env --override-name db.url=SUPABASE_DB_URL \
-            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY 2>/dev/null \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY 2>/dev/null \
             | sed -E 's/^([A-Z0-9_]+)="(.*)"$/\1=\2/' | grep -E '^[A-Z0-9_]+=' >> "$GITHUB_ENV"
       # `next typegen` loads next.config.ts, which requires the Supabase settings exported above.
       - run: npm run typecheck
@@ -50,7 +51,8 @@ jobs:
       - name: Export its settings
         run: |
           npx supabase status -o env --override-name db.url=SUPABASE_DB_URL \
-            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY 2>/dev/null \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY 2>/dev/null \
             | sed -E 's/^([A-Z0-9_]+)="(.*)"$/\1=\2/' | grep -E '^[A-Z0-9_]+=' >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e

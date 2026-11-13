@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getChatRepository } from "@/server/repositories";
+import { sessionCookieHeader } from "@/server/repositories/test/session-cookies";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
+import { createTestUser } from "@/server/repositories/test/test-users";
 import { GET } from "./route";
 
 setupTestDatabase();
@@ -11,7 +13,10 @@ function getRoom(id: string): Promise<Response> {
 
 describe("GET /api/rooms/:id", () => {
   it("returns the room", async () => {
-    const room = await getChatRepository(new Request("http://localhost/")).createRoom({ lat: 44.43, lng: 26.1 });
+    const { session } = await createTestUser();
+    const signedIn = new Request("http://test/", { headers: { cookie: await sessionCookieHeader(session) } });
+    const room = await getChatRepository(signedIn).createRoom({ lat: 44.43, lng: 26.1 });
+    // Read signed out: rooms are public.
     const response = await getRoom(room.id);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(room);

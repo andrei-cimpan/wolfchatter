@@ -27,9 +27,8 @@ function countViewportRequests(page: Page) {
 
 test("the map draws every room and cluster the viewport returns, including rooms made elsewhere", async ({
   page,
-  request,
 }) => {
-  const created = await request.post("/api/rooms", { data: { lat: 55, lng: 1 } });
+  const created = await page.request.post("/api/rooms", { data: { lat: 55, lng: 1 } });
   expect(created.status()).toBe(201);
   const room = (await created.json()) as { id: string; lat: number; lng: number };
 
@@ -90,14 +89,14 @@ for (const { place, viewport, south, firstWest } of [
     firstWest: -90,
   },
 ]) {
-  test(`clicking a cluster ${place} zooms in`, async ({ page, request }, testInfo) => {
+  test(`clicking a cluster ${place} zooms in`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     // Each attempt gets its own zoom-5 cell, and the two places are too far apart to share a view.
     const attempt = testInfo.repeatEachIndex * 2 + testInfo.retry;
     const cell = 360 / 2 ** 5 / 4;
     const west = firstWest + 40 * cell * attempt;
     const post = async (lat: number, lng: number) => {
-      const created = await request.post("/api/rooms", { data: { lat, lng } });
+      const created = await page.request.post("/api/rooms", { data: { lat, lng } });
       expect(created.status()).toBe(201);
       return (await created.json()) as { id: string };
     };
@@ -106,7 +105,18 @@ for (const { place, viewport, south, firstWest } of [
 
     const requests = countViewportRequests(page);
     await page.goto(`/?room=${opened.id}`);
+    // The map shows the default view until the room has loaded, and other tests' rooms there can
+    // form 3-room clusters too. So wait for the view around the room, then for its bubble alone.
+    await expect
+      .poll(() =>
+        requests.some((query) => {
+          const [, bboxSouth = 0, , bboxNorth = 0] = (query.get("bbox") ?? "").split(",").map(Number);
+          return bboxSouth <= south && south <= bboxNorth;
+        }),
+      )
+      .toBe(true);
     const bubble = page.getByRole("button", { name: "3 chatrooms", exact: true });
+    await expect(bubble).toHaveCount(1);
     await expect(bubble).toBeInViewport();
     await expect.poll(() => requests.at(-1)?.get("zoom")).toBe("5");
     await bubble.click();
@@ -118,7 +128,6 @@ for (const { place, viewport, south, firstWest } of [
 
 test("rooms close together cluster when zoomed out, through the real API, and a click expands them", async ({
   page,
-  request,
 }, testInfo) => {
   // Each attempt (a retry, or a copy under --repeat-each) gets its own zoom-5 cell in the mid-Pacific,
   // where no other test puts rooms, and its own count, which makes its bubble the only one of that name.
@@ -129,7 +138,7 @@ test("rooms close together cluster when zoomed out, through the real API, and a 
   // Towards the equator: Mercator stretches cells further south, and one past 50°S no longer fits at zoom 8.
   const south = -39.375 + 2 * cell * Math.floor(attempt / 8);
   const post = async (lat: number, lng: number) => {
-    const created = await request.post("/api/rooms", { data: { lat, lng } });
+    const created = await page.request.post("/api/rooms", { data: { lat, lng } });
     expect(created.status()).toBe(201);
     return (await created.json()) as { id: string; title: string };
   };
@@ -230,8 +239,8 @@ test("when a viewport fails to load, the pins already shown stay", async ({ page
   await expect(bubble).toHaveCount(1);
 });
 
-test("flying to a far room makes one viewport request, once the map arrives", async ({ page, request }) => {
-  const created = await request.post("/api/rooms", { data: { lat: -33.87, lng: 151.2 } });
+test("flying to a far room makes one viewport request, once the map arrives", async ({ page }) => {
+  const created = await page.request.post("/api/rooms", { data: { lat: -33.87, lng: 151.2 } });
   const { id } = (await created.json()) as { id: string };
   const requests = countViewportRequests(page);
   await openMap(page);
@@ -249,8 +258,8 @@ test("flying to a far room makes one viewport request, once the map arrives", as
 test.describe("narrow screen", () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
-  test("a flight that raises the sheet makes one viewport request, once the map arrives", async ({ page, request }) => {
-    const created = await request.post("/api/rooms", { data: { lat: -33.87, lng: 151.2 } });
+  test("a flight that raises the sheet makes one viewport request, once the map arrives", async ({ page }) => {
+    const created = await page.request.post("/api/rooms", { data: { lat: -33.87, lng: 151.2 } });
     const { id } = (await created.json()) as { id: string };
     const requests = countViewportRequests(page);
     await openMap(page);

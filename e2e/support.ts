@@ -1,13 +1,48 @@
-import { test as base, expect, type Page, type WebSocketRoute } from "@playwright/test";
+import { test as base, expect, type BrowserContext, type Page, type WebSocketRoute } from "@playwright/test";
+import { sessionCookies } from "../src/server/repositories/test/session-cookies";
+import { createTestUser } from "../src/server/repositories/test/test-users";
 
-// The browser logs every non-2xx response, and some tests trigger a 404, 429 or 500 on purpose.
-const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded with a status of (404|429|500)/];
+// The browser logs every non-2xx response, and some tests trigger a 401, 404 or 500 on purpose.
+const EXPECTED_CONSOLE_ERRORS = [/^Failed to load resource: the server responded with a status of (401|404|500)/];
+
+/** The name `signInAs` gives a user by default, and how the app shows it. */
+export const TEST_USER_NAME = "Ana Popescu";
+export const TEST_AUTHOR = "Ana P.";
+
+/**
+ * Signs the browser context in as a new user, the way a finished Google sign-in leaves it: with the
+ * session cookies `@supabase/ssr` writes. The app contains no test login; Google's page cannot be
+ * automated, so the user is created through the admin API instead.
+ */
+export async function signInAs(context: BrowserContext, baseURL: string, fullName = TEST_USER_NAME): Promise<void> {
+  const { session } = await createTestUser({ full_name: fullName });
+  await context.addCookies(sessionCookies(session).map(({ name, value }) => ({ name, value, url: baseURL })));
+}
 
 /**
  * Fails any test whose page throws or logs a console error, such as React's hydration mismatch,
  * which otherwise only shows in the dev server log while the test passes.
  */
-export const test = base.extend<{ failOnBrowserErrors: void; ownRoomsOnly: boolean; hideOtherRooms: void }>({
+export const test = base.extend<{
+  failOnBrowserErrors: void;
+  ownRoomsOnly: boolean;
+  hideOtherRooms: void;
+  signedIn: boolean;
+  signIn: void;
+}>({
+  /**
+   * Tests run signed in as TEST_USER_NAME unless they turn this off. It applies to the test's own
+   * context, so `page.request` posts as that user too; a context made with `browser.newContext()`
+   * starts signed out.
+   */
+  signedIn: [true, { option: true }],
+  signIn: [
+    async ({ context, signedIn, baseURL }, use) => {
+      if (signedIn) await signInAs(context, baseURL ?? "");
+      await use();
+    },
+    { auto: true },
+  ],
   /**
    * The e2e database is emptied once per run, not per test, and tests click the same spots, so
    * each would see (and cluster with) the others' rooms. By default a test's map shows only the

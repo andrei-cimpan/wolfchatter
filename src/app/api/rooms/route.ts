@@ -2,7 +2,6 @@ import { createRoomSchema, mapItemsQuerySchema } from "@/lib/schemas";
 import type { Room, RoomWithFirstMessage } from "@/lib/types";
 import { validationError, withErrorHandling } from "@/server/http/api-errors";
 import { queryInput } from "@/server/http/query-input";
-import { enforceRateLimit, roomCreationLimiter } from "@/server/http/rate-limit";
 import { readJson } from "@/server/http/read-json";
 import { getChatRepository } from "@/server/repositories";
 
@@ -19,12 +18,11 @@ export const GET = withErrorHandling(async (request: Request) => {
   return Response.json(await getChatRepository(request).listMapItems(query.data));
 });
 
-/** Creates a room at `{ lat, lng }`, together with `firstMessage: { author, body }` if given. */
+/**
+ * Creates a room at `{ lat, lng }`, together with `firstMessage: { body }` if given, as the
+ * signed-in user. Signed out, a valid request gets 401.
+ */
 export const POST = withErrorHandling(async (request: Request) => {
-  // Counted before validation, so a flood of invalid requests spends the budget too.
-  const limited = enforceRateLimit(roomCreationLimiter, request);
-  if (limited) return limited;
-
   const body = await readJson(request);
   if (!body.ok) return body.response;
   const input = createRoomSchema.safeParse(body.value);

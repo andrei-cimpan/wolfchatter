@@ -139,10 +139,9 @@ async function expectUsableChat(page: Page, viewportHeight: number) {
 }
 
 async function post(page: Page) {
-  await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
-  await panel(page).getByRole("textbox", { name: "Message" }).fill("Sent from a short screen");
+  await panel(page).getByRole("textbox", { name: "Message" }).fill("Sent from here");
   await submit(page).click();
-  await expect(messages(page).getByRole("listitem").last()).toContainText("Sent from a short screen");
+  await expect(messages(page).getByRole("listitem").last()).toContainText("Sent from here");
 }
 
 async function expectSelectedPinTipAt(page: Page, point: { x: number; y: number }) {
@@ -174,10 +173,9 @@ for (const { width, height } of [
       await openFullRoom(page);
       await page.route("**/messages", (route) =>
         route.request().method() === "POST"
-          ? route.fulfill({ status: 429, headers: { "Retry-After": "30" }, json: { error: { code: "rate_limited", message: "Too many" } } })
+          ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } })
           : route.fallback(),
       );
-      await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
       await panel(page).getByRole("textbox", { name: "Message" }).fill("Will fail");
       await submit(page).click();
 
@@ -195,7 +193,7 @@ test.describe("errors in a very short draft", () => {
   test("a failed room creation's error comes into view", async ({ page }) => {
     await page.route("**/api/rooms", (route) =>
       route.request().method() === "POST"
-        ? route.fulfill({ status: 429, headers: { "Retry-After": "30" }, json: { error: { code: "rate_limited", message: "Too many" } } })
+        ? route.fulfill({ status: 500, json: { error: { code: "internal_error", message: "down" } } })
         : route.fallback(),
     );
     await page.goto("/");
@@ -203,7 +201,6 @@ test.describe("errors in a very short draft", () => {
     // High up and to the right: in a window this short, Next's dev badge covers the lower left.
     await page.locator(".leaflet-container").click({ position: { x: 400, y: 60 } });
     await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText("New chatroom");
-    await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
     await panel(page).getByRole("textbox", { name: "Message" }).fill("Will fail");
     await submit(page).click();
 
@@ -322,7 +319,6 @@ test.describe("phone on its side, 667x375", () => {
     await expect(page.locator(".leaflet-container")).toBeVisible();
     await page.locator(".leaflet-container").click({ position: { x: 500, y: 100 } });
     await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText("New chatroom");
-    await panel(page).getByRole("textbox", { name: "Username" }).fill("ana");
     await panel(page).getByRole("textbox", { name: "Message" }).fill("Hello");
     await submit(page).click();
     await expectSelectedPinTipAt(page, { x: 667 / 4, y: 375 / 2 });
