@@ -90,6 +90,7 @@ Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task'
   *From the PR #33 review (#1):* turn the email provider off on the hosted project (Auth > Providers). Locally it stays on for the test users' password sign-in; the database lets only users with a Google identity post, but no account should be made without Google at all.
 - [ ] **T8.8** Mapbox map and pins (Task 8; lands with Task 9).
 - [ ] **T8.9** Mapbox clicks, keyboard and the e2e port (Task 9).
+- [x] **T8.10** Room deletion: a room's creator deletes it and its messages after confirming; readers with it open see "The owner has closed the room" live (FR9; not in the plan, added on request).
 
 ## Closed notes
 

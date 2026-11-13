@@ -25,6 +25,7 @@ v1 must be fully submittable on its own. v2 is built only after v1 is complete.
 - **FR6** Messages from other users appear in real time without a refresh.
 - **FR7** Pins load by map viewport. Zoomed out, nearby rooms collapse into clusters that show a count, and clicking a cluster zooms in.
 - **FR8** The layout is responsive. On desktop the chat panel sits on the right of the map. On narrow screens it becomes a bottom sheet: with no room selected, a banner below the map, so the map's attribution stays visible; once a room is open, a sheet raised over the map. A phone on its side is too short for a sheet, so there the open room sits beside the map instead.
+- **FR9** (v2) A room's creator can delete it, with all its messages, after confirming in a dialog. Anyone else with the room open is told "The owner has closed the room".
 
 **Usability improvements (beyond the brief):** remember the username locally, auto-scroll to the newest message, disable Submit when a field is empty, fly the map to the selected pin, and save a room only when its first message is sent, so a stray click leaves nothing behind.
 
@@ -45,7 +46,7 @@ Indexes: `messages (room_id, created_at)` and `rooms (lat, lng)`. Room titles de
 
 **Viewport loading and clustering.** The map requests only the pins in view (`bbox` and `zoom`). The server groups rooms into grid cells of roughly 64 px at that zoom and returns one cluster (count and centre) per crowded cell, and individual rooms elsewhere. At zoom 16 and above rooms are never clustered.
 
-**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `createRoomWithMessage`, `listMessages`, `postMessage`). Live delivery is a separate module (`server/realtime` in v1; on v2 the browser subscribes to Supabase Realtime). v1 provides `PostgresChatRepository`. v2 replaces it with `SupabaseChatRepository`, which goes through the Supabase API, without changing UI code.
+**Data access abstraction.** The UI and API handlers depend only on a `ChatRepository` interface (`getRoom`, `listMapItems`, `createRoom`, `createRoomWithMessage`, `listMessages`, `postMessage`; on v2 also `currentAuthorName` and `deleteRoom`). Live delivery is a separate module (`server/realtime` in v1; on v2 the browser subscribes to Supabase Realtime). v1 provides `PostgresChatRepository`. v2 replaces it with `SupabaseChatRepository`, which goes through the Supabase API, without changing UI code.
 
 **API (REST, JSON).**
 
