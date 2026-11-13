@@ -135,6 +135,23 @@ describe("POST /api/rooms", () => {
 });
 
 describe("GET /api/rooms", () => {
+  // A token the database will not accept (rotated keys, another project's cookie) must not make a
+  // public read fail: reading needs no account (PR #33 review #4).
+  it("answers as if signed out when the session cookie holds a token the database rejects", async () => {
+    await createRoom(44.43, 26.1);
+    const { session } = await createTestUser();
+    const rejected = await sessionCookieHeader({ ...session, access_token: "garbage.token.here" });
+    const response = await GET(new Request("http://test/api/rooms?bbox=-180,-90,180,90&zoom=16", { headers: { cookie: rejected } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toHaveLength(1);
+  });
+
+  it("still answers 401 for a post with such a token", async () => {
+    const { session } = await createTestUser();
+    const rejected = await sessionCookieHeader({ ...session, access_token: "garbage.token.here" });
+    await expectError(await postRoom(JSON.stringify({ lat: 1, lng: 2 }), { cookie: rejected }), 401, "unauthenticated");
+  });
+
   it("returns rooms and clusters in the viewport", async () => {
     await createRoom(44.43, 26.1);
     await createRoom(44.44, 26.11);

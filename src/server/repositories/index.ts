@@ -26,5 +26,6 @@ export function getChatRepository(request: Request): ChatRepository {
     // Read once per repository; null falls back to the anon key.
     accessToken: () => (token ??= accessTokenFromCookies(cookieHeader)),
   });
-  return new SupabaseChatRepository(client);
+  // Reads the database rejects the caller's token for are retried signed out: reading needs no account.
+  return new SupabaseChatRepository(client, createClient(url, anonKey, { auth: { persistSession: false } }));
 }

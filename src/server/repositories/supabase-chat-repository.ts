@@ -74,35 +74,52 @@ function viewportParams(bbox: Bbox) {
   return { p_south: bbox.south, p_north: bbox.north, p_from1: a.from, p_to1: a.to, p_from2: b.from, p_to2: b.to };
 }
 
+type Result = { data: unknown; error: PostgrestError | null };
+
 // The client returns errors as plain objects, typed as PostgrestError but not built as one; thrown
 // as they are, they carry no stack and fail `instanceof Error`.
 function asError(error: PostgrestError): Error {
-  if (error.code === INSUFFICIENT_PRIVILEGE || REJECTED_TOKEN.has(error.code)) return new NotSignedInError();
   return error instanceof Error ? error : new PostgrestError(error);
 }
 
 // Without generated database types the client types every result as `any`; this names the row
 // type each call expects, and turns PostgREST's `{ error }` into a thrown error.
-function rowsOf<T>({ data, error }: { data: unknown; error: PostgrestError | null }): T {
+function rowsOf<T>({ data, error }: Result): T {
   if (error) throw asError(error);
   return data as T;
 }
 
+// A write the database refused for want of a signed-in user. Only writes: on a read the same codes
+// would be a grant bug or a bad token, neither of which the caller can fix by signing in.
+function writtenRowsOf<T>(result: Result): T {
+  const code = result.error?.code;
+  if (code === INSUFFICIENT_PRIVILEGE || (code !== undefined && REJECTED_TOKEN.has(code))) throw new NotSignedInError();
+  return rowsOf<T>(result);
+}
+
 export class SupabaseChatRepository implements ChatRepository {
   private readonly client: SupabaseClient;
+  private readonly signedOutClient: SupabaseClient;
 
-  constructor(client: SupabaseClient) {
+  /**
+   * `signedOutClient` serves reads that the caller's token was rejected for (a rotated key, another
+   * project's cookie), since reading needs no account.
+   */
+  constructor(client: SupabaseClient, signedOutClient: SupabaseClient = client) {
     this.client = client;
+    this.signedOutClient = signedOutClient;
+  }
+
+  private async read(run: (client: SupabaseClient) => PromiseLike<Result>): Promise<Result> {
+    const result = await run(this.client);
+    const code = result.error?.code;
+    if (code === undefined || !REJECTED_TOKEN.has(code) || this.signedOutClient === this.client) return result;
+    return run(this.signedOutClient);
   }
 
   async ping(): Promise<void> {
     // No retries: a health check should report a failure now, not after the client's backoff.
-    const { error } = await this.client
-      .from("rooms")
-      .select("id", { head: true, count: "estimated" })
-      .limit(1)
-      .retry(false);
-    if (error) throw asError(error);
+    rowsOf(await this.read((c) => c.from("rooms").select("id", { head: true, count: "estimated" }).limit(1).retry(false)));
   }
 
   async getRoom(id: string): Promise<Room | null> {
@@ -111,13 +128,15 @@ export class SupabaseChatRepository implements ChatRepository {
     // backoff would hold each for about 7 s before its 500 when the API is down. RPC calls are
     // POSTs, which the client never retries, so this is the only other read that needs it.
     const row = rowsOf<RoomRow | null>(
-      await this.client.from("rooms").select(ROOM_COLUMNS).eq("id", id).retry(false).maybeSingle(),
+      await this.read((c) => c.from("rooms").select(ROOM_COLUMNS).eq("id", id).retry(false).maybeSingle()),
     );
     return row ? toRoom(row) : null;
   }
 
   async createRoom({ lat, lng }: { lat: number; lng: number }): Promise<Room> {
-    return toRoom(rowsOf<RoomRow>(await this.client.from("rooms").insert({ lat, lng }).select(ROOM_COLUMNS).single()));
+    return toRoom(
+      writtenRowsOf<RoomRow>(await this.client.from("rooms").insert({ lat, lng }).select(ROOM_COLUMNS).single()),
+    );
   }
 
   async createRoomWithMessage(
@@ -125,7 +144,7 @@ export class SupabaseChatRepository implements ChatRepository {
     { body }: { body: string },
   ): Promise<{ room: Room; message: Message }> {
     // One function call is one transaction, so a refused message leaves no room behind.
-    const result = rowsOf<{ room: RoomRow; message: MessageRow }>(
+    const result = writtenRowsOf<{ room: RoomRow; message: MessageRow }>(
       await this.client.rpc("create_room_with_message", { p_lat: lat, p_lng: lng, p_body: body }),
     );
     return { room: toRoom(result.room), message: messageFromRow(result.message) };
@@ -134,20 +153,22 @@ export class SupabaseChatRepository implements ChatRepository {
   async listMapItems({ bbox, zoom }: { bbox: Bbox; zoom: number }): Promise<MapItem[]> {
     if (zoom >= CLUSTER_MAX_ZOOM) {
       const rows = rowsOf<RoomRow[]>(
-        await this.client.rpc("list_rooms_in_view", { ...viewportParams(bbox), p_limit: MAP_ITEMS_LIMIT }),
+        await this.read((c) => c.rpc("list_rooms_in_view", { ...viewportParams(bbox), p_limit: MAP_ITEMS_LIMIT })),
       );
       return rows.map(toRoomItem);
     }
 
     const center = viewportCenter(bbox);
     const rows = rowsOf<CellRow[]>(
-      await this.client.rpc("list_room_cells", {
-        ...viewportParams(bbox),
-        p_cell: clusterCellSize(zoom),
-        p_center_lat: center.lat,
-        p_center_lng: center.lng,
-        p_limit: MAP_ITEMS_LIMIT,
-      }),
+      await this.read((c) =>
+        c.rpc("list_room_cells", {
+          ...viewportParams(bbox),
+          p_cell: clusterCellSize(zoom),
+          p_center_lat: center.lat,
+          p_center_lng: center.lng,
+          p_limit: MAP_ITEMS_LIMIT,
+        }),
+      ),
     );
     return rows.map((row) =>
       row.count === 1 ? toRoomItem(row) : { type: "cluster", lat: row.lat, lng: row.lng, count: row.count },
@@ -163,18 +184,20 @@ export class SupabaseChatRepository implements ChatRepository {
     if (!isUuid(roomId) || (cursor !== undefined && !isUuid(cursor))) return [];
 
     const rows = rowsOf<MessageRow[]>(
-      await this.client.rpc("list_messages", {
-        p_room_id: roomId,
-        p_before: before ?? null,
-        p_after: after ?? null,
-        p_limit: clampLimit(opts.limit),
-      }),
+      await this.read((c) =>
+        c.rpc("list_messages", {
+          p_room_id: roomId,
+          p_before: before ?? null,
+          p_after: after ?? null,
+          p_limit: clampLimit(opts.limit),
+        }),
+      ),
     );
     return rows.map(messageFromRow);
   }
 
   async currentAuthorName(): Promise<string | null> {
-    return rowsOf<string | null>(await this.client.rpc("current_author_name"));
+    return rowsOf<string | null>(await this.read((c) => c.rpc("current_author_name")));
   }
 
   async postMessage(roomId: string, { body }: { body: string }): Promise<Message> {
@@ -185,6 +208,6 @@ export class SupabaseChatRepository implements ChatRepository {
       .select(MESSAGE_COLUMNS)
       .single();
     if (error?.code === FOREIGN_KEY_VIOLATION) throw new RoomNotFoundError(roomId);
-    return messageFromRow(rowsOf<MessageRow>({ data, error }));
+    return messageFromRow(writtenRowsOf<MessageRow>({ data, error }));
   }
 }
