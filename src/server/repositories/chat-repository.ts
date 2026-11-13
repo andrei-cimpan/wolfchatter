@@ -16,6 +16,14 @@ export class RoomNotFoundError extends Error {
   }
 }
 
+// Only a room's creator may delete it; routes answer 403 without knowing who that is.
+export class NotRoomCreatorError extends Error {
+  constructor(roomId: string) {
+    super(`Only the creator of room ${roomId} may delete it`);
+    this.name = "NotRoomCreatorError";
+  }
+}
+
 // Writing needs a signed-in user; routes answer 401 without knowing how sessions are checked.
 export class NotSignedInError extends Error {
   constructor() {
@@ -43,6 +51,11 @@ export interface ChatRepository {
    * room does not exist, and NotSignedInError when signed out.
    */
   postMessage(roomId: string, input: { body: string }): Promise<Message>;
+  /**
+   * Deletes the room and all its messages. Throws RoomNotFoundError if it does not exist,
+   * NotRoomCreatorError if the signed-in user did not create it, and NotSignedInError when signed out.
+   */
+  deleteRoom(roomId: string): Promise<void>;
   /** The name the signed-in user posts under, or null when signed out. */
   currentAuthorName(): Promise<string | null>;
 }

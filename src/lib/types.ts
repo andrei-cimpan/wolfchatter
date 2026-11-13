@@ -7,6 +7,8 @@ export type Room = {
   lng: number;
   messageCount: number;
   createdAt: string;
+  /** Whether the user asking is the room's creator, who may delete it. */
+  canDelete: boolean;
 };
 
 export type Message = {

@@ -32,10 +32,12 @@ const repo = () => new SupabaseChatRepository(poster);
 /** Subscribes, and resolves once the channel reports ready; `onReady` runs inside that callback. */
 function subscribe(roomId: string, onReady: () => void = () => {}) {
   const rows: MessageRow[] = [];
+  const deleted = { count: 0 };
   const ready = new Promise<void>((resolve, reject) => {
     unsubscribes.push(
       subscribeToRoomMessages(client, roomId, {
         onInsert: (row) => rows.push(row),
+        onRoomDeleted: () => deleted.count++,
         onStatus: (status) => {
           if (status === "failed") return reject(new Error("channel failed"));
           onReady();
@@ -44,7 +46,7 @@ function subscribe(roomId: string, onReady: () => void = () => {}) {
       }),
     );
   });
-  return { rows, ready };
+  return { rows, deleted, ready };
 }
 
 // A duplicate would follow within milliseconds on the same socket; this waits well past that.
@@ -94,5 +96,19 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
     // The other room's insert happened first, so by the time this one arrives it would have too.
     await deliveredOnce(rows, here);
     expect(rows.map((row) => row.body)).toEqual(["here"]);
+  });
+
+  it("reports the subscribed room's deletion, and no other's", async () => {
+    const watched = await repo().createRoom({ lat: 0, lng: 0 });
+    const other = await repo().createRoom({ lat: 1, lng: 1 });
+    const { deleted, ready } = subscribe(watched.id);
+    await ready;
+
+    await repo().deleteRoom(other.id);
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+    expect(deleted.count).toBe(0);
+
+    await repo().deleteRoom(watched.id);
+    await expect.poll(() => deleted.count, { timeout: 5000 }).toBe(1);
   });
 });

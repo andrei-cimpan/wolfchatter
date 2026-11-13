@@ -11,6 +11,8 @@ export type RoomStreamHandlers = {
   /** Live messages are flowing: catch up on anything sent before. Runs on every (re)subscribe. */
   onReady(): void;
   onMessage(message: Message): void;
+  /** The room was deleted. The stream has stopped and will not reconnect. */
+  onClosed(): void;
 };
 
 /** Subscribes to a room's new messages until the returned function is called. */
@@ -51,12 +53,20 @@ export function connectRoomStream(
   let unsubscribe: (() => void) | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryMs = STREAM_RETRY_MIN_MS;
+  let closed = false;
 
   function connect(): void {
     const current = subscribe(roomId, {
       onInsert: (row) => {
         const message = parseMessage(row);
         if (message?.roomId === roomId) handlers.onMessage(message);
+      },
+      onRoomDeleted: () => {
+        if (closed || unsubscribe !== current) return;
+        closed = true;
+        disconnect();
+        page?.removeEventListener("visibilitychange", onVisibilityChange);
+        handlers.onClosed();
       },
       onStatus: (status) => {
         if (unsubscribe !== current) return;

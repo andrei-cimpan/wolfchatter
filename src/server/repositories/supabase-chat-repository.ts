@@ -3,7 +3,7 @@ import { MESSAGE_LIMIT_DEFAULT, MESSAGE_LIMIT_MAX } from "@/lib/limits";
 import { CLUSTER_MAX_ZOOM, clusterCellSize } from "@/lib/map-grid";
 import { messageFromRow, type MessageRow } from "@/lib/message-row";
 import type { Bbox, MapItem, Message, Room } from "@/lib/types";
-import { NotSignedInError, RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
+import { NotRoomCreatorError, NotSignedInError, RoomNotFoundError, type ChatRepository, type ListMessagesOptions } from "./chat-repository";
 import { MAP_ITEMS_LIMIT, longitudeRanges, viewportCenter } from "./viewport-ranges";
 
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -26,6 +26,8 @@ type RoomRow = {
   lng: number;
   message_count: number;
   created_at: string;
+  /** From `public.can_delete`, read only where asked for. */
+  can_delete?: boolean;
 };
 
 type CellRow = {
@@ -40,7 +42,8 @@ type CellRow = {
 const ROOM_COLUMNS = "id, title, lat, lng, message_count, created_at";
 const MESSAGE_COLUMNS = "id, room_id, author, body, created_at";
 
-function toRoom(row: RoomRow): Room {
+// Rooms just created are the caller's own.
+function toRoom(row: RoomRow, canDelete = row.can_delete ?? true): Room {
   return {
     id: row.id,
     title: row.title,
@@ -48,6 +51,7 @@ function toRoom(row: RoomRow): Room {
     lng: row.lng,
     messageCount: row.message_count,
     createdAt: new Date(row.created_at).toISOString(),
+    canDelete,
   };
 }
 
@@ -128,9 +132,9 @@ export class SupabaseChatRepository implements ChatRepository {
     // backoff would hold each for about 7 s before its 500 when the API is down. RPC calls are
     // POSTs, which the client never retries, so this is the only other read that needs it.
     const row = rowsOf<RoomRow | null>(
-      await this.read((c) => c.from("rooms").select(ROOM_COLUMNS).eq("id", id).retry(false).maybeSingle()),
+      await this.read((c) => c.from("rooms").select(`${ROOM_COLUMNS}, can_delete`).eq("id", id).retry(false).maybeSingle()),
     );
-    return row ? toRoom(row) : null;
+    return row ? toRoom(row, row.can_delete === true) : null;
   }
 
   async createRoom({ lat, lng }: { lat: number; lng: number }): Promise<Room> {
@@ -194,6 +198,17 @@ export class SupabaseChatRepository implements ChatRepository {
       ),
     );
     return rows.map(messageFromRow);
+  }
+
+  async deleteRoom(roomId: string): Promise<void> {
+    if (!isUuid(roomId)) throw new RoomNotFoundError(roomId);
+    const deleted = writtenRowsOf<{ id: string }[]>(
+      await this.client.from("rooms").delete().eq("id", roomId).select("id"),
+    );
+    if (deleted.length > 0) return;
+    // Row-level security hides other users' rooms from a delete without an error, so ask which it was.
+    if (await this.getRoom(roomId)) throw new NotRoomCreatorError(roomId);
+    throw new RoomNotFoundError(roomId);
   }
 
   async currentAuthorName(): Promise<string | null> {

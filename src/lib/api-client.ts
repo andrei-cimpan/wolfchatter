@@ -99,6 +99,13 @@ export function postMessage(roomId: string, input: { body: string }): Promise<Me
   });
 }
 
+/** Deletes the room and all its messages; only its creator may. */
+export async function deleteRoom(roomId: string): Promise<void> {
+  // 204 has no body, so not through request(), which reads one.
+  const response = await fetch(roomPath(roomId), { method: "DELETE" });
+  if (!response.ok) throw await toApiError(response);
+}
+
 /** Who is signed in: the name they post under, or null. Per user, so never from a cache. */
 export function getMe(): Promise<{ name: string | null }> {
   return request<{ name: string | null }>("/api/me", { cache: "no-store" });

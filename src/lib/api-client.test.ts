@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createRoom, getMe, getRoom, listMapItems, listMessages, postMessage } from "./api-client";
+import { ApiError, createRoom, deleteRoom, getMe, getRoom, listMapItems, listMessages, postMessage } from "./api-client";
 import type { Message, Room } from "./types";
 
 const ROOM: Room = {
@@ -9,6 +9,7 @@ const ROOM: Room = {
   lng: 20,
   messageCount: 0,
   createdAt: "2026-10-31T12:00:00.000Z",
+  canDelete: false,
 };
 
 function stubFetch(response: Response) {
@@ -158,5 +159,18 @@ describe("getMe", () => {
   it("returns null when signed out", async () => {
     stubFetch(Response.json({ name: null }));
     await expect(getMe()).resolves.toEqual({ name: null });
+  });
+});
+
+describe("deleteRoom", () => {
+  it("sends DELETE and resolves on 204", async () => {
+    const fetchMock = stubFetch(new Response(null, { status: 204 }));
+    await expect(deleteRoom(ROOM.id)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM.id}`, { method: "DELETE" });
+  });
+
+  it("turns a 403 into an ApiError", async () => {
+    stubFetch(errorResponse(403, "forbidden", "Only the room's creator can delete it"));
+    await expect(deleteRoom(ROOM.id)).rejects.toMatchObject({ status: 403, code: "forbidden" });
   });
 });

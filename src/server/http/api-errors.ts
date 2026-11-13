@@ -8,6 +8,7 @@ export type ApiErrorCode =
   | "unsupported_media_type"
   | "room_not_found"
   | "unauthenticated"
+  | "forbidden"
   | "internal_error";
 
 /** Every API error uses this one shape, so the client has a single parser. */

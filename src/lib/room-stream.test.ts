@@ -39,10 +39,13 @@ class FakeSubscription {
   insert(value: MessageRow): void {
     this.handlers.onInsert(value);
   }
+  deleteRoom(): void {
+    this.handlers.onRoomDeleted();
+  }
 }
 
 let subscriptions: FakeSubscription[];
-const handlers = { onReady: vi.fn(), onMessage: vi.fn() };
+const handlers = { onReady: vi.fn(), onMessage: vi.fn(), onClosed: vi.fn() };
 
 function subscribe(roomId: string, channelHandlers: RoomChannelHandlers): () => void {
   const subscription = new FakeSubscription(roomId, channelHandlers);
@@ -228,5 +231,22 @@ describe("connectRoomStream", () => {
       disconnectWhileHidden();
       expect(subscriptions).toHaveLength(1);
     });
+  });
+});
+
+describe("when the room is deleted", () => {
+  it("reports it once, and lets the channel go for good", () => {
+    const page = new FakePage();
+    const stop = connectOn(page);
+    subscriptions[0]!.ready();
+    subscriptions[0]!.deleteRoom();
+
+    expect(handlers.onClosed).toHaveBeenCalledTimes(1);
+    expect(subscriptions[0]!.closed).toBe(true);
+    page.setHidden(true);
+    page.setHidden(false);
+    vi.advanceTimersByTime(STREAM_RETRY_MAX_MS * 2);
+    expect(subscriptions).toHaveLength(1);
+    stop();
   });
 });
