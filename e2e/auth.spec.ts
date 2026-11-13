@@ -190,6 +190,44 @@ test.describe("signed in", () => {
     await expect(draftPin(page)).toBeVisible();
   });
 
+  // PR #33 review #3: a session usually ends by an event (another tab's sign-out, a failed refresh),
+  // not on Submit, and the form must not take the typed text with it.
+  test("signing out in another tab keeps what this tab was typing", async ({ page, context }) => {
+    await openMap(page);
+    await startDraftAt(page, 500, 300);
+    await messageField(page).fill("Opening line");
+    await submit(page).click();
+    await expect(page).toHaveURL(ROOM_URL);
+    await messageField(page).fill("Half-written reply");
+
+    const other = await context.newPage();
+    await serveBlankTiles(other);
+    await other.goto(page.url());
+    await signOut(other).click();
+    await expect(signInToPost(other)).toBeVisible();
+
+    await expect(panel(page).getByRole("alert")).toHaveText(SIGNED_OUT_ERROR);
+    await expect(messageField(page)).toHaveValue("Half-written reply");
+    await expect(signIn(page)).toBeVisible();
+    await expect(postingAs(page)).toHaveCount(0);
+  });
+
+  test("signing out in another tab swaps an empty form for the sign-in prompt", async ({ page, context }) => {
+    await openMap(page);
+    await startDraftAt(page, 500, 300);
+    await messageField(page).fill("Opening line");
+    await submit(page).click();
+    await expect(page).toHaveURL(ROOM_URL);
+
+    const other = await context.newPage();
+    await serveBlankTiles(other);
+    await other.goto(page.url());
+    await signOut(other).click();
+
+    await expect(signInToPost(page)).toBeVisible();
+    await expect(messageField(page)).toHaveCount(0);
+  });
+
   test("a session that ends mid-use keeps the typed text and says why the post failed", async ({ page, context }) => {
     await openMap(page);
     await startDraftAt(page, 500, 300);

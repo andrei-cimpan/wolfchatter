@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useFormAcrossSignOut } from "@/hooks/useFormAcrossSignOut";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useRoom } from "@/hooks/useRoom";
 import { selectRoom, useSelectedRoomId } from "@/hooks/useSelectedRoom";
@@ -121,22 +122,25 @@ interface DraftContentProps {
 
 function DraftContent({ draft, send, clearError, isPending, error, onDiscard }: DraftContentProps) {
   const user = useCurrentUser();
+  const form = useFormAcrossSignOut(user.status);
   return (
     <>
       <h2 className="text-center font-medium">New chatroom</h2>
       {/* Nothing until /api/me answers, so neither the form nor the prompt flashes. */}
       {user.status !== "loading" && (
         <p role="status" className="mt-4 flex-auto text-center text-sm text-foreground/70">
-          {user.status === "signedIn" ? DRAFT_NOTE : SIGNED_OUT_DRAFT_NOTE}
+          {form.showForm ? DRAFT_NOTE : SIGNED_OUT_DRAFT_NOTE}
         </p>
       )}
-      {user.status === "signedOut" && (
+      {user.status === "signedOut" && !form.showForm && (
         <SignInPrompt label="Sign in with Google" draft={{ lat: draft.lat, lng: draft.lng }} />
       )}
-      {user.status === "signedIn" && user.name !== null && (
+      {form.showForm && (
         <>
-          <PostingAs name={user.name} />
+          {user.name !== null && <PostingAs name={user.name} />}
           <MessageForm
+            onHasTextChange={form.onHasTextChange}
+            sessionEnded={form.sessionEnded}
             send={send}
             clearError={clearError}
             isPending={isPending}
@@ -160,6 +164,7 @@ interface RoomContentProps {
 function RoomContent({ roomId, autoFocusBody }: RoomContentProps) {
   const { data: room, isPending, isError } = useRoom(roomId);
   const user = useCurrentUser();
+  const form = useFormAcrossSignOut(user.status);
   const hydrated = useHydrated();
   const [sentCount, setSentCount] = useState(0);
   if (isPending || !hydrated) return <p role="status">Loading chatroom…</p>;
@@ -170,12 +175,14 @@ function RoomContent({ roomId, autoFocusBody }: RoomContentProps) {
       <h2 className="text-center font-medium">{room.title}</h2>
       <MessageList roomId={room.id} sentCount={sentCount} />
       {/* Nothing until /api/me answers, so neither the form nor the prompt flashes. */}
-      {user.status === "signedOut" && <SignInPrompt label="Sign in with Google to post" />}
-      {user.status === "signedIn" && user.name !== null && (
+      {user.status === "signedOut" && !form.showForm && <SignInPrompt label="Sign in with Google to post" />}
+      {form.showForm && (
         <>
-          <PostingAs name={user.name} />
+          {user.name !== null && <PostingAs name={user.name} />}
           <RoomMessageForm
             roomId={room.id}
+            onHasTextChange={form.onHasTextChange}
+            sessionEnded={form.sessionEnded}
             onSent={() => setSentCount((count) => count + 1)}
             autoFocusBody={autoFocusBody}
           />

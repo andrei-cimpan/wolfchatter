@@ -5,7 +5,7 @@ import { hasVisibleText, postMessageSchema } from "./schemas";
 // what went wrong after.
 
 // Signing in again leaves for Google's page, which nothing keeps typed text across.
-const SIGNED_OUT = "You've been signed out. Signing in again clears this message, so copy it first.";
+export const SIGNED_OUT_MESSAGE = "You've been signed out. Signing in again clears this message, so copy it first.";
 
 /** What is wrong with the message before it is sent, or `null` when it can be posted. */
 export function messageInputError(body: string): string | null {
@@ -24,7 +24,7 @@ export function isSignedOutError(error: Error): boolean {
 }
 
 export function postMessageErrorMessage(error: Error): string {
-  if (isSignedOutError(error)) return SIGNED_OUT;
+  if (isSignedOutError(error)) return SIGNED_OUT_MESSAGE;
   if (error instanceof ApiError) {
     if (error.status === 404) return "This chatroom no longer exists.";
     if (error.status === 400) return "Enter a message.";
@@ -33,6 +33,6 @@ export function postMessageErrorMessage(error: Error): string {
 }
 
 export function createRoomErrorMessage(error: Error): string {
-  if (isSignedOutError(error)) return SIGNED_OUT;
+  if (isSignedOutError(error)) return SIGNED_OUT_MESSAGE;
   return "Couldn't create the chatroom. Please try again.";
 }

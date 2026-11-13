@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { usePostMessage } from "@/hooks/usePostMessage";
 import { BODY_MAX } from "@/lib/limits";
-import { isSignedOutError, messageInputError, postMessageErrorMessage } from "@/lib/message-input";
+import { isSignedOutError, messageInputError, postMessageErrorMessage, SIGNED_OUT_MESSAGE } from "@/lib/message-input";
 import type { DraftPosition } from "@/lib/pending-draft";
 import { SignInPrompt } from "./SignInPrompt";
 import { VisibleAlert } from "./VisibleAlert";
@@ -12,6 +12,10 @@ const FIELD = "h-11 min-w-0 rounded border border-foreground/30 bg-background px
 
 interface MessageFieldsProps {
   onSent?: () => void;
+  /** Told whether the message field holds text, so a session ending keeps the form while it does. */
+  onHasTextChange?: (hasText: boolean) => void;
+  /** The session ended while the form was open: say so, and offer sign-in, keeping the text. */
+  sessionEnded?: boolean;
   /** For the room just created, so the writer can carry on without clicking back in. */
   autoFocusBody?: boolean;
 }
@@ -48,6 +52,8 @@ export function RoomMessageForm({ roomId, ...fields }: MessageFieldsProps & { ro
 // lenient as the API: an emoji-heavy text can be cut short, but never rejected as too long.
 export function MessageForm({
   onSent,
+  onHasTextChange,
+  sessionEnded = false,
   autoFocusBody = false,
   send,
   clearError,
@@ -63,6 +69,10 @@ export function MessageForm({
   // Once fixed, the next hint waits for another attempt: clearing the field to retype is not one.
   if (triedInvalid && inputError === null) setTriedInvalid(false);
   const bodyRef = useRef<HTMLInputElement>(null);
+  const hasText = body !== "";
+  useEffect(() => {
+    onHasTextChange?.(hasText);
+  }, [hasText, onHasTextChange]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -79,7 +89,8 @@ export function MessageForm({
     });
   }
 
-  const shownError = (triedInvalid ? inputError : null) ?? errorMessage;
+  const shownError = (triedInvalid ? inputError : null) ?? (sessionEnded ? SIGNED_OUT_MESSAGE : errorMessage);
+  const offerSignIn = (signedOut || sessionEnded) && shownError !== inputError;
   return (
     <form onSubmit={handleSubmit} className="mt-2 flex shrink-0 flex-col gap-2">
       {/* Wraps in a very narrow panel, where Submit would otherwise squeeze the field to nothing. */}
@@ -110,7 +121,7 @@ export function MessageForm({
         </button>
       </div>
       {shownError && <VisibleAlert message={shownError} className="text-sm text-red-700 dark:text-red-400" />}
-      {signedOut && shownError === errorMessage && <SignInPrompt label="Sign in with Google" draft={signInDraft} />}
+      {offerSignIn && <SignInPrompt label="Sign in with Google" draft={signInDraft} />}
     </form>
   );
 }
