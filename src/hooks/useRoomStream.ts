@@ -13,18 +13,19 @@ import { markRoomDeleted, roomQueryKey } from "./useRoom";
  */
 export function useRoomStream(roomId: string): void {
   const queryClient = useQueryClient();
-  useEffect(() => {
-    let reconnecting = false;
-    return connectRoomStream(roomId, {
-      onReady: () => {
-        void catchUp(queryClient, roomId);
-        // A deletion while the stream was down (a hidden tab, a lost connection) sent no event to
-        // this page, so ask for the room again.
-        if (reconnecting) void queryClient.invalidateQueries({ queryKey: roomQueryKey(roomId) });
-        reconnecting = true;
-      },
-      onMessage: (message) => addMessage(queryClient, message),
-      onClosed: () => markRoomDeleted(queryClient, roomId),
-    });
-  }, [queryClient, roomId]);
+  useEffect(
+    () =>
+      connectRoomStream(roomId, {
+        onReady: () => {
+          void catchUp(queryClient, roomId);
+          // A deletion while no channel listened sent this page nothing: before it opened the room
+          // (a cached room never goes stale), or while the stream was down (a hidden tab, a lost
+          // connection). So every ready, the first included, asks for the room again.
+          void queryClient.invalidateQueries({ queryKey: roomQueryKey(roomId) });
+        },
+        onMessage: (message) => addMessage(queryClient, message),
+        onClosed: () => markRoomDeleted(queryClient, roomId),
+      }),
+    [queryClient, roomId],
+  );
 }

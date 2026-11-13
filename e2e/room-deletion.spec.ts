@@ -131,4 +131,27 @@ test.describe("signed out", () => {
       await room.close();
     }
   });
+
+  // PR #35 review #2: the cached room never goes stale, so one deleted while closed must still be
+  // found out when it is opened again.
+  test("a room deleted while the reader was elsewhere shows as closed on Back", async ({ page, browser, baseURL }) => {
+    const room = await roomByCreator(browser, baseURL ?? "");
+    try {
+      const live = await watchLiveConnection(page);
+      await page.goto(`/?room=${room.id}`);
+      await live.ready(room.id);
+      await page.evaluate(() => window.history.pushState(null, "", "/"));
+      await expect(panel(page)).toHaveText(/Click on the map to start a chat/);
+      await expect.poll(() => live.liveChannels(room.id)).toBe(0);
+
+      await room.remove();
+      // Realtime reads changes a moment late, so a channel opened right away could still be sent
+      // this deletion; the reader comes back after it has passed.
+      await page.waitForTimeout(1000);
+      await page.goBack();
+      await expect(panel(page).getByRole("status")).toHaveText(CLOSED_NOTE);
+    } finally {
+      await room.close();
+    }
+  });
 });
