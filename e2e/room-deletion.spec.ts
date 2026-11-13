@@ -98,6 +98,15 @@ test("a failed delete keeps the dialog open and says so", async ({ page }) => {
   await expect(roomTitle(page)).toHaveText(/^Chatroom \d+$/);
 });
 
+// PR #35 review #5: whether the button shows depends on who is signed in, which can change in place.
+test("signing out takes the button away", async ({ page }) => {
+  await createRoomInPanel(page);
+  await expect(deleteRoom(page)).toBeVisible();
+  await panel(page).getByRole("button", { name: "Sign out" }).click();
+  await expect(panel(page).getByRole("button", { name: "Sign in with Google to post" })).toBeVisible();
+  await expect(deleteRoom(page)).toHaveCount(0);
+});
+
 test("nobody but the creator is offered the button", async ({ page, browser, baseURL }) => {
   const room = await roomByCreator(browser, baseURL ?? "");
   try {
