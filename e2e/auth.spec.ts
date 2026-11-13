@@ -171,6 +171,25 @@ test.describe("signed in", () => {
     await expect(draftPin(page)).toHaveCount(0);
   });
 
+  // PR #33 review #2: the sign-in under the error is the draft's way back, so it keeps the pin.
+  test("signing in again after a draft's first message was refused keeps the pin", async ({ page, context }) => {
+    await page.route("**/auth/v1/authorize**", (route) => route.fulfill({ status: 200, body: "stopped before Google" }));
+    await openMap(page);
+    await startDraftAt(page, 500, 300);
+    await messageField(page).fill("Not sent yet");
+    await context.clearCookies();
+    await submit(page).click();
+    await expect(panel(page).getByRole("alert")).toHaveText(SIGNED_OUT_ERROR);
+
+    const leaving = page.waitForURL(/\/auth\/v1\/authorize/);
+    await signIn(page).click();
+    await leaving;
+    // Back in the same tab, as /auth/callback would send it (signed out here, since Google was skipped).
+    await openMap(page);
+    await expect(roomTitle(page)).toHaveText(DRAFT_TITLE);
+    await expect(draftPin(page)).toBeVisible();
+  });
+
   test("a session that ends mid-use keeps the typed text and says why the post failed", async ({ page, context }) => {
     await openMap(page);
     await startDraftAt(page, 500, 300);

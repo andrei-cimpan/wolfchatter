@@ -142,6 +142,7 @@ function DraftContent({ draft, send, clearError, isPending, error, onDiscard }: 
             isPending={isPending}
             errorMessage={error ? createRoomErrorMessage(error) : null}
             signedOut={error ? isSignedOutError(error) : false}
+            signInDraft={{ lat: draft.lat, lng: draft.lng }}
           />
         </>
       )}

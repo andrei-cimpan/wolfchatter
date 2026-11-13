@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { usePostMessage } from "@/hooks/usePostMessage";
 import { BODY_MAX } from "@/lib/limits";
 import { isSignedOutError, messageInputError, postMessageErrorMessage } from "@/lib/message-input";
+import type { DraftPosition } from "@/lib/pending-draft";
 import { SignInPrompt } from "./SignInPrompt";
 import { VisibleAlert } from "./VisibleAlert";
 
@@ -24,6 +25,8 @@ interface MessageFormProps extends MessageFieldsProps {
   errorMessage: string | null;
   /** The last send failed because the session ended: offer sign-in below the error, keeping the text. */
   signedOut?: boolean;
+  /** A draft's pin, kept across the sign-in that `signedOut` offers. */
+  signInDraft?: DraftPosition;
 }
 
 /** The form of a room that exists: each message is posted to it. */
@@ -51,6 +54,7 @@ export function MessageForm({
   isPending,
   errorMessage,
   signedOut = false,
+  signInDraft,
 }: MessageFormProps) {
   const [body, setBody] = useState("");
   // Worked out from the current input, so the hint goes away as soon as the input is fixed.
@@ -106,7 +110,7 @@ export function MessageForm({
         </button>
       </div>
       {shownError && <VisibleAlert message={shownError} className="text-sm text-red-700 dark:text-red-400" />}
-      {signedOut && shownError === errorMessage && <SignInPrompt label="Sign in with Google" />}
+      {signedOut && shownError === errorMessage && <SignInPrompt label="Sign in with Google" draft={signInDraft} />}
     </form>
   );
 }
