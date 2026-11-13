@@ -231,7 +231,7 @@ The client needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
 
 ## Deployment
 
-On the `v2` branch the Dockerfile, Compose and the migration runner are gone (v2 Task 1); this section describes v1, as on `main`, until v2's Vercel deployment replaces it. Migrations live in `supabase/migrations/` and are applied with the Supabase CLI.
+On the `v2` branch the Dockerfile, Compose and the migration runner are gone (v2 Task 1); this section describes v1, as on `main`. v2 deploys to Vercel from the `v2` branch, with a hosted Supabase project that Supabase's GitHub integration keeps up to date with `supabase/migrations/`; the steps are in the README's Deploy (v2). On v2, `/health` checks that the app can reach Supabase.
 
 **The image.** The `Dockerfile` builds Next's standalone server (`output: "standalone"`, turned on by `DOCKER_BUILD` so that `next start` does not warn about it elsewhere), runs as the non-root `node` user, and needs only `DATABASE_URL` at run time; the optional `RATE_LIMIT_*` are read at run time too, and Compose passes them on. `NEXT_PUBLIC_MAP_*` are build args, since they are inlined into client code. `docker compose --profile app up --build` runs it with the database; the profile leaves `docker compose up -d db` starting only the database. It does not yet contain the RDS CA bundle, which `INFRA.md` lists as needed before a first deploy.
 

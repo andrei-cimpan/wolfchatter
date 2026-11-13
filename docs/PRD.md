@@ -74,7 +74,7 @@ The brief gives no load figures. Assumed: ~50k monthly users at launch, with a d
 
 - Supabase for Postgres, Realtime, and Auth. Row-level security: anyone can read; inserts require a signed-in user where `user_id = auth.uid()`.
 - Mapbox via react-map-gl.
-- Deployment to a simple host, for example Vercel. `INFRA.md` is separate: it plans v1 on AWS and does not depend on v2.
+- Deployment to Vercel, with a hosted Supabase project (steps in the README's Deploy (v2)). `INFRA.md` is separate: it plans v1 on AWS and does not depend on v2.
 
 ## 7. Working with AI
 
