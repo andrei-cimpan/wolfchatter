@@ -139,6 +139,18 @@ test.describe("signed in", () => {
     expect(loads).toEqual([]);
   });
 
+  // PR #33 review #7: Supabase signs this browser out before asking the server to revoke the token,
+  // so a failed request still signs out; it must not leave an unhandled rejection in the page,
+  // which the browser-errors fixture would report.
+  test("signing out works even when the server cannot revoke the session", async ({ page }) => {
+    await page.route("**/auth/v1/logout**", (route) => route.fulfill({ status: 500, json: { message: "down" } }));
+    await openMap(page);
+    await startDraftAt(page, 500, 300);
+    await signOut(page).click();
+    await expect(signIn(page)).toBeVisible();
+    await expect(postingAs(page)).toHaveCount(0);
+  });
+
   test("a reload keeps the session", async ({ page }) => {
     await openMap(page);
     await expect(page.getByText(/Click on the map/)).toBeVisible();
