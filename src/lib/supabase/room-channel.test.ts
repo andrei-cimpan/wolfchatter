@@ -8,7 +8,7 @@ import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { createTestUser } from "@/server/repositories/test/test-users";
 import { subscribeToRoomMessages } from "./room-channel";
 
-setupTestDatabase();
+const db = setupTestDatabase();
 
 let client: SupabaseClient;
 let unsubscribes: (() => void)[];
@@ -110,5 +110,20 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
 
     await repo().deleteRoom(watched.id);
     await expect.poll(() => deleted.count, { timeout: 5000 }).toBe(1);
+  });
+
+  // PR #35 review #1: until a deploy's migration lands, the hosted project may not publish rooms,
+  // and a binding Realtime refuses fails its whole channel; messages must not depend on it.
+  it("still delivers messages when room deletions cannot be watched", async () => {
+    const room = await repo().createRoom({ lat: 0, lng: 0 });
+    await db().query("alter publication supabase_realtime drop table public.rooms");
+    try {
+      const { rows, ready } = subscribe(room.id);
+      await ready;
+      const posted = await repo().postMessage(room.id, { body: "still live" });
+      await deliveredOnce(rows, posted);
+    } finally {
+      await db().query("alter publication supabase_realtime add table public.rooms");
+    }
   });
 });

@@ -48,10 +48,6 @@ export function subscribeToRoomMessages(
       { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
       (payload) => handlers.onInsert(payload.new),
     )
-    // Realtime cannot filter deletions by row, so every room's deletion arrives here.
-    .on<DeletedRoom>("postgres_changes", { event: "DELETE", schema: "public", table: "rooms" }, (payload) => {
-      if (payload.old.id === roomId) handlers.onRoomDeleted();
-    })
     .on("system", {}, (payload: SystemPayload) => {
       if (unsubscribed || failed || payload.extension !== "postgres_changes") return;
       if (payload.status === "ok") handlers.onStatus("ready");
@@ -62,8 +58,20 @@ export function subscribeToRoomMessages(
       if (status !== "SUBSCRIBED") fail();
     });
 
+  // Its own channel: Realtime fails a whole channel when it refuses one binding, as it does while
+  // `rooms` is not yet published (a deploy whose migration has not landed), and messages must not
+  // stop for that. Its status is not watched: a refetch of the room on every `ready` covers a
+  // deletion this channel missed. Realtime cannot filter deletions by row, so every room's arrives.
+  const deletions = client
+    .channel(`room-deletions:${roomId}:${channelCount}`)
+    .on<DeletedRoom>("postgres_changes", { event: "DELETE", schema: "public", table: "rooms" }, (payload) => {
+      if (!unsubscribed && payload.old.id === roomId) handlers.onRoomDeleted();
+    })
+    .subscribe();
+
   return () => {
     unsubscribed = true;
     void client.removeChannel(channel);
+    void client.removeChannel(deletions);
   };
 }
