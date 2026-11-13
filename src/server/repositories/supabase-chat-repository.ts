@@ -42,8 +42,8 @@ type CellRow = {
 const ROOM_COLUMNS = "id, title, lat, lng, message_count, created_at";
 const MESSAGE_COLUMNS = "id, room_id, author, body, created_at";
 
-// Rooms just created are the caller's own.
-function toRoom(row: RoomRow, canDelete = row.can_delete ?? true): Room {
+// False unless asked for: a read that forgets `can_delete` must not offer everyone the button.
+function toRoom(row: RoomRow, canDelete = row.can_delete === true): Room {
   return {
     id: row.id,
     title: row.title,
@@ -134,12 +134,13 @@ export class SupabaseChatRepository implements ChatRepository {
     const row = rowsOf<RoomRow | null>(
       await this.read((c) => c.from("rooms").select(`${ROOM_COLUMNS}, can_delete`).eq("id", id).retry(false).maybeSingle()),
     );
-    return row ? toRoom(row, row.can_delete === true) : null;
+    return row ? toRoom(row) : null;
   }
 
   async createRoom({ lat, lng }: { lat: number; lng: number }): Promise<Room> {
     return toRoom(
       writtenRowsOf<RoomRow>(await this.client.from("rooms").insert({ lat, lng }).select(ROOM_COLUMNS).single()),
+      true, // The caller's own room.
     );
   }
 
@@ -151,7 +152,7 @@ export class SupabaseChatRepository implements ChatRepository {
     const result = writtenRowsOf<{ room: RoomRow; message: MessageRow }>(
       await this.client.rpc("create_room_with_message", { p_lat: lat, p_lng: lng, p_body: body }),
     );
-    return { room: toRoom(result.room), message: messageFromRow(result.message) };
+    return { room: toRoom(result.room, true), message: messageFromRow(result.message) };
   }
 
   async listMapItems({ bbox, zoom }: { bbox: Bbox; zoom: number }): Promise<MapItem[]> {
