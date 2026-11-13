@@ -6,7 +6,7 @@ import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { createTestUser } from "@/server/repositories/test/test-users";
 import { GET, POST } from "./route";
 
-setupTestDatabase();
+const db = setupTestDatabase();
 
 // Requests come from a signed-in user unless a test sends `cookie: ""`.
 let cookie: string;
@@ -125,6 +125,17 @@ describe("POST /api/rooms/:id/messages", () => {
     const response = await postMessage(room.id, JSON.stringify({ body: "hi" }), { cookie: "" });
     await expectError(response, 401, "unauthenticated");
     expect((await repository().getRoom(room.id))?.messageCount).toBe(0);
+  });
+
+  // Its token stays valid until it expires, but the account is gone (PR #33 review #5).
+  it("answers a post from a deleted user with 401, not as an unknown room", async () => {
+    const room = await createRoom();
+    const gone = await createTestUser({ full_name: "Bo Ionescu" });
+    await db().query("delete from auth.users where id = $1", [gone.userId]);
+    const response = await postMessage(room.id, JSON.stringify({ body: "hi" }), {
+      cookie: await sessionCookieHeader(gone.session),
+    });
+    await expectError(response, 401, "unauthenticated");
   });
 
   // Validation comes first, so a broken client learns what is wrong before being asked to sign in.
