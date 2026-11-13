@@ -50,20 +50,31 @@ begin
 end;
 $$;
 
--- The caller's author name, or null when signed out. It reads auth.identities, which users cannot
--- edit, not the user metadata that updateUser changes. A Google identity wins; otherwise the newest.
+-- Whether the caller signed in with Google. Posting requires it: other sign-ins, such as an email
+-- sign-up, which this stack cannot turn off without stopping the password sign-in tests use, carry
+-- identity data the client chose, name included.
+create function public.has_google_identity() returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (select 1 from auth.identities i where i.user_id = auth.uid() and i.provider = 'google');
+$$;
+
+-- The caller's author name, or null when signed out or without a Google identity. It reads
+-- auth.identities, which users cannot edit, not the user metadata that updateUser changes.
 create function public.current_author_name() returns text
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select case when auth.uid() is null then null else public.format_author(coalesce(
-    (select i.identity_data from auth.identities i
-     where i.user_id = auth.uid()
-     order by i.provider = 'google' desc, i.created_at desc
-     limit 1),
-    '{}'::jsonb)) end;
+  select public.format_author(i.identity_data)
+  from auth.identities i
+  where i.user_id = auth.uid() and i.provider = 'google'
+  order by i.created_at desc
+  limit 1;
 $$;
 
 -- Sets the author on every insert by a signed-in user, whatever was sent. Inserts with no user (the
@@ -84,16 +95,16 @@ $$;
 create trigger messages_author before insert on public.messages
   for each row execute function public.set_message_author();
 
--- Only the signed-in may write, as themselves, and only the columns a client should choose: where a
+-- Only users signed in with Google may write, as themselves, and only the columns a client should choose: where a
 -- room is, and which room a message goes to with what text. Everything else is a default or a
 -- trigger's. Nobody may update or delete.
 drop policy "Anyone may create rooms, until sign-in" on public.rooms;
 drop policy "Anyone may post messages, until sign-in" on public.messages;
 
-create policy "Signed-in users create rooms as themselves" on public.rooms
-  for insert to authenticated with check (created_by = (select auth.uid()));
-create policy "Signed-in users post as themselves" on public.messages
-  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "Google users create rooms as themselves" on public.rooms
+  for insert to authenticated with check (created_by = (select auth.uid()) and (select public.has_google_identity()));
+create policy "Google users post as themselves" on public.messages
+  for insert to authenticated with check (user_id = (select auth.uid()) and (select public.has_google_identity()));
 
 revoke all on public.rooms, public.messages from anon, authenticated;
 grant select on public.rooms, public.messages to anon, authenticated;

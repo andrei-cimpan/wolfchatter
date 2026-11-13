@@ -72,6 +72,42 @@ describe("signed out", () => {
   }, 20_000);
 });
 
+// Sign-up by email cannot be turned off without also stopping the password sign-in tests use, and
+// a sign-up's identity data is whatever the client sends. So only a Google identity counts.
+describe("signed in without Google (PR #33 review #1)", () => {
+  async function emailOnlyUser() {
+    const client = anonClient();
+    const email = `email-only-${crypto.randomUUID()}@example.test`;
+    const signedUp = await client.auth.signUp({
+      email,
+      password: crypto.randomUUID(),
+      options: { data: { full_name: "Barack Obama", given_name: "Barack", family_name: "Obama" } },
+    });
+    expect(signedUp.error).toBeNull();
+    return client;
+  }
+
+  it("cannot create rooms or post, whatever name it signed up with", async () => {
+    const client = await emailOnlyUser();
+    const { client: owner } = await createTestUser();
+    const roomId = await createRoom(owner);
+
+    const room = await client.from("rooms").insert({ lat: 1, lng: 1 });
+    const message = await client.from("messages").insert({ room_id: roomId, body: "hi" });
+    const both = await client.rpc("create_room_with_message", { p_lat: 1, p_lng: 1, p_body: "hi" });
+
+    expect(room.error?.code).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(message.error?.code).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(both.error?.code).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(await storedAuthors(roomId)).toEqual([]);
+  });
+
+  it("has no author name", async () => {
+    const client = await emailOnlyUser();
+    expect((await client.rpc("current_author_name")).data).toBeNull();
+  });
+});
+
 describe("signed in", () => {
   it("stores the user's own name as the author", async () => {
     const { client } = await createTestUser({ full_name: "Ana Popescu" });
@@ -131,7 +167,7 @@ describe("signed in", () => {
       .eq("user_id", userId);
     expect(error).not.toBeNull();
     const { rows } = await db().query<{ name: string }>(
-      "select identity_data ->> 'full_name' as name from auth.identities where user_id = $1",
+      "select identity_data ->> 'full_name' as name from auth.identities where user_id = $1 and provider = 'google'",
       [userId],
     );
     expect(rows).toEqual([{ name: "Ana Popescu" }]);

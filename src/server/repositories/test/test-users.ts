@@ -33,16 +33,18 @@ export async function createTestUser(
   if (created.error) throw created.error;
   const userId = created.data.user.id;
 
-  // The admin API has no way to write identity_data, so the name goes in directly.
+  // The admin API cannot add a Google identity, so one goes in directly, as a Google sign-in
+  // would leave it; the database only lets users with one post.
   const dbUrl = process.env.SUPABASE_DB_URL ?? "";
   await assertLocalSupabaseDatabase(dbUrl);
   const db = new pg.Client({ connectionString: dbUrl });
   await db.connect();
   try {
-    await db.query("update auth.identities set identity_data = identity_data || $2::jsonb where user_id = $1", [
-      userId,
-      JSON.stringify(name),
-    ]);
+    await db.query(
+      `insert into auth.identities (user_id, provider, provider_id, identity_data, last_sign_in_at, created_at, updated_at)
+       values ($1, 'google', $2, $3::jsonb, now(), now(), now())`,
+      [userId, randomUUID(), JSON.stringify({ sub: userId, email, ...name })],
+    );
   } finally {
     await db.end();
   }

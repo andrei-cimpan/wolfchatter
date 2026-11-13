@@ -86,6 +86,7 @@ Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task'
 - [x] **T8.5** Sessions and the signed-in API (Task 5).
 - [x] **T8.6** Sign-in in the chat card (Task 6).
 - [ ] **T8.7** Deploy to Vercel, owner-led (Task 7).
+  *From the PR #33 review (#1):* turn the email provider off on the hosted project (Auth > Providers). Locally it stays on for the test users' password sign-in; the database lets only users with a Google identity post, but no account should be made without Google at all.
 - [ ] **T8.8** Mapbox map and pins (Task 8; lands with Task 9).
 - [ ] **T8.9** Mapbox clicks, keyboard and the e2e port (Task 9).
 
