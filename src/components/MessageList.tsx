@@ -13,7 +13,10 @@ export function MessageItems({ messages }: { messages: readonly Message[] }) {
       {messages.map((message) => (
         <li key={message.id} className="border-b border-foreground/15 py-2">
           <p className="break-words whitespace-pre-wrap">
-            <span className="mr-2 text-foreground/70">{message.author}:</span>
+            {/* bdi: a right-to-left name must not reorder the colon or the message after it. */}
+            <span className="mr-2 text-foreground/70">
+              <bdi>{message.author}</bdi>:
+            </span>
             <span className="font-medium">{message.body}</span>
           </p>
           <time dateTime={message.createdAt} className="block text-right text-xs text-foreground/60">

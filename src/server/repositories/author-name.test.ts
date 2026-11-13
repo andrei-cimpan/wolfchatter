@@ -27,6 +27,25 @@ describe("format_author", () => {
     expect(await formatAuthor(identity)).toBe(expected);
   });
 
+  // PR #33 review #8: characters that draw nothing, or turn the text around it, are not a name.
+  it.each([
+    [{ full_name: "​" }, "Anonymous"],
+    [{ full_name: "­" }, "Anonymous"],
+    [{ full_name: "⁠﻿" }, "Anonymous"],
+    [{ full_name: "‮evil" }, "evil"],
+    [{ given_name: "An​a", family_name: "⁧Popescu" }, "Ana P."],
+    [{ given_name: "Ana", family_name: "́Popescu" }, "Ana P."],
+  ])("formats %j as %s", async (identity, expected) => {
+    expect(await formatAuthor(identity)).toBe(expected);
+  });
+
+  it("does not leave half an emoji when cutting a long name", async () => {
+    const family = "👨‍👩‍👧‍👦";
+    const name = await formatAuthor({ given_name: `ab${family.repeat(10)}`, family_name: "Popescu" });
+    expect([...name].length).toBeLessThanOrEqual(32);
+    expect(name).toMatch(/[^‍] P\.$/u);
+  });
+
   it("keeps a long first name within the author limit", async () => {
     const name = await formatAuthor({ given_name: "a".repeat(40), family_name: "Popescu" });
     expect(name).toBe(`${"a".repeat(29)} P.`);

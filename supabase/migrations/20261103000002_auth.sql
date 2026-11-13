@@ -11,42 +11,71 @@ alter table public.rooms
 alter table public.messages
   add column user_id uuid not null default auth.uid() references auth.users (id) on delete cascade;
 
+-- One part of a name, made safe to show: NFC, without the characters that draw nothing or turn the
+-- text around them (zero-width spaces, soft hyphens, bidi controls and the like; the zero-width
+-- joiner stays, since emoji are built with it), with runs of whitespace as one space.
+create function public.author_name_part(part text) returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select btrim(regexp_replace(
+    regexp_replace(normalize(coalesce(part, ''), NFC),
+      U&'[\00AD\034F\061C\115F\1160\17B4\17B5\180B-\180E\200B\200C\200E\200F\202A-\202E\2060-\2064\2066-\206F\3164\FE00-\FE0F\FEFF\FFA0\FFF9-\FFFB]',
+      '', 'g'),
+    '\s+', ' ', 'g'));
+$$;
+
+-- The first letter of a word, for "First L.": a combining mark cannot stand alone.
+create function public.author_initial(word text) returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select left(regexp_replace(word, U&'^[\0300-\036F\1AB0-\1AFF\1DC0-\1DFF\20D0-\20FF\FE20-\FE2F\200D]+', ''), 1);
+$$;
+
 -- "First L." from a sign-in identity: given and family name when the identity has them (Google may
 -- not send them; a real sign-in sent only full_name and name), otherwise the first and last words of
--- the full name. The first part is cut so the whole fits the 32-character author limit, and an
--- identity with no usable name gives "Anonymous", so a post never fails over a missing name.
+-- the full name. The first part is cut so the whole fits the 32-character author limit, without a
+-- joiner left dangling at the cut, and an identity with no usable name gives "Anonymous", so a post
+-- never fails over a missing name.
 create function public.format_author(identity jsonb) returns text
 language plpgsql
 immutable
 set search_path = ''
 as $$
 declare
-  v_given text := btrim(regexp_replace(normalize(coalesce(identity ->> 'given_name', ''), NFC), '\s+', ' ', 'g'));
-  v_family text := btrim(regexp_replace(normalize(coalesce(identity ->> 'family_name', ''), NFC), '\s+', ' ', 'g'));
+  v_given text := public.author_name_part(identity ->> 'given_name');
+  v_family text := public.author_name_part(identity ->> 'family_name');
   v_full text;
   v_words text[];
   v_first text;
+  v_initial text := '';
   v_suffix text := '';
 begin
   if v_given <> '' then
     v_first := v_given;
-    if v_family <> '' then
-      v_suffix := ' ' || left(v_family, 1) || '.';
-    end if;
+    v_initial := public.author_initial(v_family);
   else
-    v_full := btrim(regexp_replace(
-      normalize(coalesce(nullif(btrim(identity ->> 'full_name'), ''), identity ->> 'name', ''), NFC),
-      '\s+', ' ', 'g'));
+    v_full := coalesce(nullif(public.author_name_part(identity ->> 'full_name'), ''), public.author_name_part(identity ->> 'name'));
     if v_full = '' then
       return 'Anonymous';
     end if;
     v_words := string_to_array(v_full, ' ');
     v_first := v_words[1];
     if cardinality(v_words) > 1 then
-      v_suffix := ' ' || left(v_words[cardinality(v_words)], 1) || '.';
+      v_initial := public.author_initial(v_words[cardinality(v_words)]);
     end if;
   end if;
-  return left(v_first, 32 - char_length(v_suffix)) || v_suffix;
+  if v_initial <> '' then
+    v_suffix := ' ' || v_initial || '.';
+  end if;
+  v_first := regexp_replace(left(v_first, 32 - char_length(v_suffix)), U&'\200D+$', '');
+  if v_first = '' then
+    return 'Anonymous';
+  end if;
+  return v_first || v_suffix;
 end;
 $$;
 

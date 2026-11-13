@@ -25,7 +25,13 @@ describe("MessageItems", () => {
     expect(html).not.toContain("<img");
     expect(html).not.toContain("<i>");
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
-    expect(html).toContain("&lt;i&gt;ana&lt;/i&gt;:");
+    expect(html).toContain("&lt;i&gt;ana&lt;/i&gt;</bdi>:");
+  });
+
+  // PR #33 review #8: a name with right-to-left text must not reorder what follows it.
+  it("isolates the author's direction from the rest of the line", () => {
+    const html = render([message({ author: "\u202Eevil" })]);
+    expect(html).toContain("<bdi>\u202Eevil</bdi>:");
   });
 
   it("keeps line breaks in the body", () => {
