@@ -105,7 +105,18 @@ for (const { place, viewport, south, firstWest } of [
 
     const requests = countViewportRequests(page);
     await page.goto(`/?room=${opened.id}`);
+    // The map shows the default view until the room has loaded, and other tests' rooms there can
+    // form 3-room clusters too. So wait for the view around the room, then for its bubble alone.
+    await expect
+      .poll(() =>
+        requests.some((query) => {
+          const [, bboxSouth = 0, , bboxNorth = 0] = (query.get("bbox") ?? "").split(",").map(Number);
+          return bboxSouth <= south && south <= bboxNorth;
+        }),
+      )
+      .toBe(true);
     const bubble = page.getByRole("button", { name: "3 chatrooms", exact: true });
+    await expect(bubble).toHaveCount(1);
     await expect(bubble).toBeInViewport();
     await expect.poll(() => requests.at(-1)?.get("zoom")).toBe("5");
     await bubble.click();
