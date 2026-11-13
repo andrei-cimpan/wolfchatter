@@ -30,9 +30,13 @@ export function DeleteRoomDialog({ open, pending, failed, onCancel, onConfirm }:
       ref={ref}
       aria-labelledby={titleId}
       onClose={onCancel}
+      // Kept open while deleting, so a failure has somewhere to show.
+      onCancel={(event) => {
+        if (pending) event.preventDefault();
+      }}
       // The dialog's own box is filled by its content, so a click on the dialog itself is the backdrop.
       onClick={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+        if (event.target === event.currentTarget && !pending) onCancel();
       }}
       className="m-auto w-[min(24rem,calc(100vw-2rem))] rounded-md border border-foreground/30 bg-background p-0 text-foreground shadow-lg backdrop:bg-black/40"
     >

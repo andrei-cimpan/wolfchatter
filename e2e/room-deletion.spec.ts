@@ -107,6 +107,26 @@ test("signing out takes the button away", async ({ page }) => {
   await expect(deleteRoom(page)).toHaveCount(0);
 });
 
+// PR #35 review #7: closed mid-delete, the dialog would leave a failure nowhere to show.
+test("Escape does not close the dialog while deleting", async ({ page }) => {
+  await createRoomInPanel(page);
+  let release = () => {};
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/rooms/*", async (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    await released;
+    await route.fulfill({ status: 500, body: "" });
+  });
+
+  await deleteRoom(page).click();
+  await dialog(page).getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(dialog(page).getByRole("button", { name: "Deleting…" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog(page)).toBeVisible();
+  release();
+  await expect(dialog(page).getByRole("alert")).toHaveText("Couldn't delete the room. Please try again.");
+});
+
 test("nobody but the creator is offered the button", async ({ page, browser, baseURL }) => {
   const room = await roomByCreator(browser, baseURL ?? "");
   try {
