@@ -75,10 +75,6 @@ class FakePage {
   }
 }
 
-function connectOn(page: FakePage): () => void {
-  return connectRoomStream(ROOM, handlers, { subscribe, random: () => 1, page });
-}
-
 /** How long until the next subscription, in steps of 100 ms. */
 function waitForNextSubscription(): number {
   const before = subscriptions.length;
@@ -97,6 +93,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -172,79 +169,31 @@ describe("connectRoomStream", () => {
     expect(subscriptions[1]!.closed).toBe(true);
   });
 
-  describe("while the tab is hidden", () => {
-    it("drops the channel, and subscribes again when the tab returns", () => {
-      const page = new FakePage();
-      connectOn(page);
-      page.setHidden(true);
-      expect(subscriptions[0]!.closed).toBe(true);
+  // The notifications need a background tab to hear new messages (FR10); the heartbeat runs in a
+  // worker, so throttling cannot starve it.
+  it("keeps its channel while the tab is hidden", () => {
+    const page = new FakePage();
+    vi.stubGlobal("document", page);
+    connect();
+    subscriptions[0]!.ready();
+    page.setHidden(true);
+    subscriptions[0]!.insert(row);
 
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(2);
-      subscriptions[1]!.ready();
-      expect(handlers.onReady).toHaveBeenCalledOnce();
-    });
-
-    it("subscribes nothing for a tab opened in the background until it is shown", () => {
-      const page = new FakePage();
-      page.hidden = true;
-      connectOn(page);
-      expect(subscriptions).toHaveLength(0);
-
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(1);
-    });
-
-    it("cancels a pending retry, and returns with the shortest wait", () => {
-      const page = new FakePage();
-      connectOn(page);
-      subscriptions[0]!.fail();
-      vi.advanceTimersByTime(STREAM_RETRY_MIN_MS);
-      subscriptions[1]!.fail();
-      page.setHidden(true);
-      vi.advanceTimersByTime(STREAM_RETRY_MAX_MS);
-      expect(subscriptions).toHaveLength(2);
-
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(3);
-      subscriptions[2]!.fail();
-      expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
-    });
-
-    it("leaves a pending retry alone when shown without having been hidden", () => {
-      const page = new FakePage();
-      connectOn(page);
-      subscriptions[0]!.fail();
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(1);
-      expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
-    });
-
-    it("subscribes nothing after being disconnected", () => {
-      const page = new FakePage();
-      const disconnect = connectOn(page);
-      page.hidden = true;
-      disconnect();
-      expect(page.listeners).toHaveLength(0);
-
-      const disconnectWhileHidden = connectOn(page);
-      disconnectWhileHidden();
-      expect(subscriptions).toHaveLength(1);
-    });
+    expect(subscriptions[0]!.closed).toBe(false);
+    expect(handlers.onMessage).toHaveBeenCalledWith(message);
+    page.setHidden(false);
+    expect(subscriptions).toHaveLength(1);
   });
 });
 
 describe("when the room is deleted", () => {
   it("reports it once, and lets the channel go for good", () => {
-    const page = new FakePage();
-    const stop = connectOn(page);
+    const stop = connect();
     subscriptions[0]!.ready();
     subscriptions[0]!.deleteRoom();
 
     expect(handlers.onClosed).toHaveBeenCalledTimes(1);
     expect(subscriptions[0]!.closed).toBe(true);
-    page.setHidden(true);
-    page.setHidden(false);
     vi.advanceTimersByTime(STREAM_RETRY_MAX_MS * 2);
     expect(subscriptions).toHaveLength(1);
     stop();

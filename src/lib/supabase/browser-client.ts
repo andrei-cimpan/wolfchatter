@@ -12,7 +12,10 @@ let client: SupabaseClient | undefined;
 export function getBrowserSupabase(): SupabaseClient {
   if (!client) {
     const { url, anonKey } = supabaseConfigFromEnv();
-    client = createBrowserClient(url, anonKey);
+    // A hidden tab keeps its room channel (for notifications), and browsers throttle a background
+    // tab's timers enough to miss heartbeats; a worker's timers are not throttled. The worker's
+    // script is inlined by realtime-js, so nothing is fetched from elsewhere.
+    client = createBrowserClient(url, anonKey, { realtime: { worker: true } });
   }
   return client;
 }

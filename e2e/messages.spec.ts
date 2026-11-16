@@ -276,28 +276,25 @@ test.describe("live messages", () => {
     await expect(messages(page).getByRole("listitem")).toHaveText([/before/, /during one/, /during two/, /after/]);
   });
 
-  test("a hidden tab gives up its channel and catches up when it returns", async ({ page }) => {
+  // Notifications (FR10) need a background tab to keep hearing its room.
+  test("a hidden tab keeps its channel and receives messages live", async ({ page }) => {
     const id = await newRoom(page.request);
     const send = (body: string) => page.request.post(`/api/rooms/${id}/messages`, { data: { body } });
-    const setHidden = (hidden: boolean) =>
-      page.evaluate((value) => {
-        Object.defineProperty(document, "hidden", { configurable: true, get: () => value });
-        document.dispatchEvent(new Event("visibilitychange"));
-      }, hidden);
     const live = await watchLiveConnection(page);
     await openRoom(page, id);
     await live.ready(id);
     const readyBefore = live.readyCount(id);
 
-    await setHidden(true);
-    await expect.poll(() => live.liveChannels(id), { message: "the hidden tab left its channel" }).toBe(0);
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     await send("sent while hidden");
 
-    await setHidden(false);
-    await live.ready(id, { after: readyBefore });
     await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/]);
-    await send("sent after returning");
-    await expect(messages(page).getByRole("listitem")).toHaveText([/sent while hidden/, /sent after returning/]);
+    expect(live.liveChannels(id)).toBe(1);
+    expect(live.readyCount(id)).toBe(readyBefore);
   });
 });
 

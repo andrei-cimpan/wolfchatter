@@ -18,18 +18,10 @@ export type RoomStreamHandlers = {
 /** Subscribes to a room's new messages until the returned function is called. */
 export type SubscribeToRoom = (roomId: string, handlers: RoomChannelHandlers) => () => void;
 
-/** The part of `document` this module uses, so tests can pass a fake. */
-export type PageVisibility = {
-  readonly hidden: boolean;
-  addEventListener(type: "visibilitychange", listener: () => void): void;
-  removeEventListener(type: "visibilitychange", listener: () => void): void;
-};
-
 export type RoomStreamOptions = {
   subscribe?: SubscribeToRoom;
   /** For tests: picks where in its upper half each backoff wait falls. */
   random?: () => number;
-  page?: PageVisibility;
 };
 
 /**
@@ -37,9 +29,9 @@ export type RoomStreamOptions = {
  * that fails is dropped and a new one subscribed after 1 s, doubling to 30 s, with jitter, until one
  * is ready again; each `ready` runs `onReady`, which catches up on what was sent in between.
  *
- * A hidden tab holds no channel. Browsers throttle background tabs, which can starve the socket's
- * heartbeat, and a tab nobody looks at has no reason to receive messages; `ready` catches it up
- * when it returns.
+ * A hidden tab keeps its channel, so new-message notifications reach it. Browsers throttle
+ * background timers, but the browser client sends the socket's heartbeat from a worker, which
+ * they do not; a socket that dies anyway fails the channel, and the retry catches up.
  */
 export function connectRoomStream(
   roomId: string,
@@ -47,7 +39,6 @@ export function connectRoomStream(
   {
     subscribe = (id, channelHandlers) => subscribeToRoomMessages(getBrowserSupabase(), id, channelHandlers),
     random = Math.random,
-    page = typeof document === "undefined" ? undefined : document,
   }: RoomStreamOptions = {},
 ): () => void {
   let unsubscribe: (() => void) | undefined;
@@ -65,7 +56,6 @@ export function connectRoomStream(
         if (closed || unsubscribe !== current) return;
         closed = true;
         disconnect();
-        page?.removeEventListener("visibilitychange", onVisibilityChange);
         handlers.onClosed();
       },
       onStatus: (status) => {
@@ -92,21 +82,8 @@ export function connectRoomStream(
     unsubscribe = undefined;
   }
 
-  function onVisibilityChange(): void {
-    if (page?.hidden) {
-      disconnect();
-    } else if (!unsubscribe && retryTimer === undefined) {
-      retryMs = STREAM_RETRY_MIN_MS;
-      connect();
-    }
-  }
-
-  page?.addEventListener("visibilitychange", onVisibilityChange);
-  if (!page?.hidden) connect();
-  return () => {
-    page?.removeEventListener("visibilitychange", onVisibilityChange);
-    disconnect();
-  };
+  connect();
+  return disconnect;
 }
 
 // Rows come straight from Postgres through Realtime; one that does not make a valid message is dropped.
