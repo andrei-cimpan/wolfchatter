@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDeletingRoom } from "@/hooks/useDeleteRoom";
 import { useFormAcrossSignOut } from "@/hooks/useFormAcrossSignOut";
@@ -12,6 +12,7 @@ import { createRoomErrorMessage, isSignedOutError } from "@/lib/message-input";
 import { DeleteRoomButton } from "./DeleteRoomButton";
 import { MessageForm, RoomMessageForm } from "./MessageForm";
 import { MessageList } from "./MessageList";
+import { NotifyBlockedHint, NotifyToggle } from "./NotifyToggle";
 import { PostingAs } from "./PostingAs";
 import { SignInPrompt } from "./SignInPrompt";
 
@@ -200,8 +201,12 @@ function RoomContent({ roomId, autoFocusBody }: RoomContentProps) {
           negative margin keeps the card's title line its usual height around the 44 px target. */}
       <div className="flex shrink-0 items-center justify-center gap-2 md:has-[button]:justify-between">
         <h2 className="font-medium">{room.title}</h2>
-        <DeleteRoomButton roomId={room.id} className="-my-2.5 hidden md:block" />
+        <div className="-my-2.5 hidden items-center md:flex">
+          <NotifyToggle roomId={room.id} className="flex" />
+          <DeleteRoomButton roomId={room.id} />
+        </div>
       </div>
+      <NotifyBlockedHint />
       <MessageList roomId={room.id} sentCount={sentCount} />
       {/* Nothing until /api/me answers, so neither the form nor the prompt flashes. */}
       {user.status === "signedOut" && !form.showForm && <SignInPrompt label="Sign in with Google to post" />}
@@ -264,7 +269,14 @@ export function RoomPanel({
             openDraft ? (
               <DiscardButton onClick={onDiscardDraft} unavailable={creating} />
             ) : (
-              roomId !== null && <DeleteRoomButton key={roomId} roomId={roomId} />
+              roomId !== null && (
+                <Fragment key={roomId}>
+                  {/* Beside the map on a short screen the panel is half of a narrow window, which
+                      leaves the header no room for a 44 px-wide bell; its target stays 44 px tall. */}
+                  <NotifyToggle roomId={roomId} className="flex short-wide:w-9" />
+                  <DeleteRoomButton roomId={roomId} />
+                </Fragment>
+              )
             )
           }
         />
