@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MessageRow } from "./message-row";
 import { connectRoomStream, STREAM_RETRY_MAX_MS, STREAM_RETRY_MIN_MS } from "./room-stream";
-import type { RoomChannelHandlers } from "./supabase/room-channel";
+import type { LiveMessageRow, RoomChannelHandlers } from "./supabase/room-channel";
 import type { Message } from "./types";
 
 const ROOM = "0b9f8c4e-2f7a-4d55-9a53-1f3e2d4c5b6a";
@@ -13,12 +12,14 @@ const message: Message = {
   createdAt: "2026-10-31T10:00:00.000Z",
 };
 // As Realtime sends it: column names, and the timestamp as Postgres text.
-const row: MessageRow = {
+const POSTER = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+const row: LiveMessageRow = {
   id: message.id,
   room_id: ROOM,
   author: "ana",
   body: "hi",
   created_at: "2026-10-31T10:00:00.000123+00:00",
+  user_id: POSTER,
 };
 
 class FakeSubscription {
@@ -36,7 +37,7 @@ class FakeSubscription {
   fail(): void {
     this.handlers.onStatus("failed");
   }
-  insert(value: MessageRow): void {
+  insert(value: LiveMessageRow): void {
     this.handlers.onInsert(value);
   }
   deleteRoom(): void {
@@ -104,15 +105,21 @@ describe("connectRoomStream", () => {
     subscriptions[0]!.ready();
     subscriptions[0]!.insert(row);
     expect(handlers.onReady).toHaveBeenCalledOnce();
-    expect(handlers.onMessage).toHaveBeenCalledWith(message);
+    expect(handlers.onMessage).toHaveBeenCalledWith(message, POSTER);
+  });
+
+  it("passes no poster for a row without a usable user id", () => {
+    connect();
+    subscriptions[0]!.insert({ ...row, user_id: 42 } as unknown as LiveMessageRow);
+    expect(handlers.onMessage).toHaveBeenCalledWith(message, null);
   });
 
   it("ignores rows that are not a valid message of this room", () => {
     connect();
     subscriptions[0]!.insert({ ...row, room_id: "other" });
-    subscriptions[0]!.insert({ ...row, author: 42 } as unknown as MessageRow);
+    subscriptions[0]!.insert({ ...row, author: 42 } as unknown as LiveMessageRow);
     subscriptions[0]!.insert({ ...row, created_at: "not a date" });
-    subscriptions[0]!.insert({ id: "m1" } as MessageRow);
+    subscriptions[0]!.insert({ id: "m1" } as LiveMessageRow);
     expect(handlers.onMessage).not.toHaveBeenCalled();
   });
 
@@ -180,7 +187,7 @@ describe("connectRoomStream", () => {
     subscriptions[0]!.insert(row);
 
     expect(subscriptions[0]!.closed).toBe(false);
-    expect(handlers.onMessage).toHaveBeenCalledWith(message);
+    expect(handlers.onMessage).toHaveBeenCalledWith(message, POSTER);
     page.setHidden(false);
     expect(subscriptions).toHaveLength(1);
   });

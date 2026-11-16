@@ -10,7 +10,8 @@ export const STREAM_RETRY_MAX_MS = 30_000;
 export type RoomStreamHandlers = {
   /** Live messages are flowing: catch up on anything sent before. Runs on every (re)subscribe. */
   onReady(): void;
-  onMessage(message: Message): void;
+  /** `posterId` is the poster's user id, null if the row had none; it lets a tab skip its own posts. */
+  onMessage(message: Message, posterId: string | null): void;
   /** The room was deleted. The stream has stopped and will not reconnect. */
   onClosed(): void;
 };
@@ -50,7 +51,7 @@ export function connectRoomStream(
     const current = subscribe(roomId, {
       onInsert: (row) => {
         const message = parseMessage(row);
-        if (message?.roomId === roomId) handlers.onMessage(message);
+        if (message?.roomId === roomId) handlers.onMessage(message, typeof row.user_id === "string" ? row.user_id : null);
       },
       onRoomDeleted: () => {
         if (closed || unsubscribe !== current) return;

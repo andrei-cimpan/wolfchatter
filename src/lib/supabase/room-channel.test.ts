@@ -1,12 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { messageFromRow, type MessageRow } from "@/lib/message-row";
+import { messageFromRow } from "@/lib/message-row";
 import type { Message } from "@/lib/types";
 import { SupabaseChatRepository } from "@/server/repositories/supabase-chat-repository";
 import { anonClient } from "@/server/repositories/test/supabase-client";
 import { setupTestDatabase } from "@/server/repositories/test/test-db";
 import { createTestUser } from "@/server/repositories/test/test-users";
-import { subscribeToRoomMessages } from "./room-channel";
+import { subscribeToRoomMessages, type LiveMessageRow } from "./room-channel";
 
 const db = setupTestDatabase();
 
@@ -24,14 +24,15 @@ afterEach(async () => {
 
 // Posts come from a signed-in user; the channel itself listens signed out.
 let poster: SupabaseClient;
+let posterId: string;
 beforeEach(async () => {
-  poster = (await createTestUser({ full_name: "Ana Popescu" })).client;
+  ({ client: poster, userId: posterId } = await createTestUser({ full_name: "Ana Popescu" }));
 });
 const repo = () => new SupabaseChatRepository(poster);
 
 /** Subscribes, and resolves once the channel reports ready; `onReady` runs inside that callback. */
 function subscribe(roomId: string, onReady: () => void = () => {}) {
-  const rows: MessageRow[] = [];
+  const rows: LiveMessageRow[] = [];
   const deleted = { count: 0 };
   const ready = new Promise<void>((resolve, reject) => {
     unsubscribes.push(
@@ -53,7 +54,7 @@ function subscribe(roomId: string, onReady: () => void = () => {}) {
 const SETTLE_MS = 300;
 
 /** Waits for the message, then checks it came exactly once. */
-async function deliveredOnce(rows: MessageRow[], message: Message): Promise<void> {
+async function deliveredOnce(rows: LiveMessageRow[], message: Message): Promise<void> {
   await expect.poll(() => rows.map(messageFromRow), { timeout: 5000 }).toContainEqual(message);
   await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
   expect(rows.filter((row) => row.id === message.id)).toHaveLength(1);
@@ -70,6 +71,8 @@ describe("subscribeToRoomMessages", { timeout: 20_000 }, () => {
     const posted = await repo().postMessage(room.id, { body: "hello" });
 
     await deliveredOnce(rows, posted);
+    // A tab skips alerts for its own posts by this id.
+    expect(rows[0]!.user_id).toBe(posterId);
   });
 
   it("does not miss a message posted right after ready", async () => {

@@ -3,8 +3,11 @@ import type { MessageRow } from "@/lib/message-row";
 
 export type RoomChannelStatus = "ready" | "failed";
 
+/** A `messages` row as Realtime sends it: every column, the poster's id included. */
+export type LiveMessageRow = MessageRow & { user_id: string };
+
 export type RoomChannelHandlers = {
-  onInsert(row: MessageRow): void;
+  onInsert(row: LiveMessageRow): void;
   /** The room was deleted, by its creator. */
   onRoomDeleted(): void;
   /** `ready` once inserts are being delivered; `failed` when the channel will deliver no more. */
@@ -43,7 +46,7 @@ export function subscribeToRoomMessages(
 
   const channel = client
     .channel(`room-messages:${roomId}:${++channelCount}`)
-    .on<MessageRow>(
+    .on<LiveMessageRow>(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
       (payload) => handlers.onInsert(payload.new),
