@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MessageRow } from "./message-row";
 import { connectRoomStream, STREAM_RETRY_MAX_MS, STREAM_RETRY_MIN_MS } from "./room-stream";
-import type { RoomChannelHandlers } from "./supabase/room-channel";
+import type { LiveMessageRow, RoomChannelHandlers } from "./supabase/room-channel";
 import type { Message } from "./types";
 
 const ROOM = "0b9f8c4e-2f7a-4d55-9a53-1f3e2d4c5b6a";
@@ -13,12 +12,14 @@ const message: Message = {
   createdAt: "2026-10-31T10:00:00.000Z",
 };
 // As Realtime sends it: column names, and the timestamp as Postgres text.
-const row: MessageRow = {
+const POSTER = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+const row: LiveMessageRow = {
   id: message.id,
   room_id: ROOM,
   author: "ana",
   body: "hi",
   created_at: "2026-10-31T10:00:00.000123+00:00",
+  user_id: POSTER,
 };
 
 class FakeSubscription {
@@ -36,7 +37,7 @@ class FakeSubscription {
   fail(): void {
     this.handlers.onStatus("failed");
   }
-  insert(value: MessageRow): void {
+  insert(value: LiveMessageRow): void {
     this.handlers.onInsert(value);
   }
   deleteRoom(): void {
@@ -75,10 +76,6 @@ class FakePage {
   }
 }
 
-function connectOn(page: FakePage): () => void {
-  return connectRoomStream(ROOM, handlers, { subscribe, random: () => 1, page });
-}
-
 /** How long until the next subscription, in steps of 100 ms. */
 function waitForNextSubscription(): number {
   const before = subscriptions.length;
@@ -97,6 +94,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -107,15 +105,21 @@ describe("connectRoomStream", () => {
     subscriptions[0]!.ready();
     subscriptions[0]!.insert(row);
     expect(handlers.onReady).toHaveBeenCalledOnce();
-    expect(handlers.onMessage).toHaveBeenCalledWith(message);
+    expect(handlers.onMessage).toHaveBeenCalledWith(message, POSTER);
+  });
+
+  it("passes no poster for a row without a usable user id", () => {
+    connect();
+    subscriptions[0]!.insert({ ...row, user_id: 42 } as unknown as LiveMessageRow);
+    expect(handlers.onMessage).toHaveBeenCalledWith(message, null);
   });
 
   it("ignores rows that are not a valid message of this room", () => {
     connect();
     subscriptions[0]!.insert({ ...row, room_id: "other" });
-    subscriptions[0]!.insert({ ...row, author: 42 } as unknown as MessageRow);
+    subscriptions[0]!.insert({ ...row, author: 42 } as unknown as LiveMessageRow);
     subscriptions[0]!.insert({ ...row, created_at: "not a date" });
-    subscriptions[0]!.insert({ id: "m1" } as MessageRow);
+    subscriptions[0]!.insert({ id: "m1" } as LiveMessageRow);
     expect(handlers.onMessage).not.toHaveBeenCalled();
   });
 
@@ -172,79 +176,31 @@ describe("connectRoomStream", () => {
     expect(subscriptions[1]!.closed).toBe(true);
   });
 
-  describe("while the tab is hidden", () => {
-    it("drops the channel, and subscribes again when the tab returns", () => {
-      const page = new FakePage();
-      connectOn(page);
-      page.setHidden(true);
-      expect(subscriptions[0]!.closed).toBe(true);
+  // The notifications need a background tab to hear new messages (FR10); the heartbeat runs in a
+  // worker, so throttling cannot starve it.
+  it("keeps its channel while the tab is hidden", () => {
+    const page = new FakePage();
+    vi.stubGlobal("document", page);
+    connect();
+    subscriptions[0]!.ready();
+    page.setHidden(true);
+    subscriptions[0]!.insert(row);
 
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(2);
-      subscriptions[1]!.ready();
-      expect(handlers.onReady).toHaveBeenCalledOnce();
-    });
-
-    it("subscribes nothing for a tab opened in the background until it is shown", () => {
-      const page = new FakePage();
-      page.hidden = true;
-      connectOn(page);
-      expect(subscriptions).toHaveLength(0);
-
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(1);
-    });
-
-    it("cancels a pending retry, and returns with the shortest wait", () => {
-      const page = new FakePage();
-      connectOn(page);
-      subscriptions[0]!.fail();
-      vi.advanceTimersByTime(STREAM_RETRY_MIN_MS);
-      subscriptions[1]!.fail();
-      page.setHidden(true);
-      vi.advanceTimersByTime(STREAM_RETRY_MAX_MS);
-      expect(subscriptions).toHaveLength(2);
-
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(3);
-      subscriptions[2]!.fail();
-      expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
-    });
-
-    it("leaves a pending retry alone when shown without having been hidden", () => {
-      const page = new FakePage();
-      connectOn(page);
-      subscriptions[0]!.fail();
-      page.setHidden(false);
-      expect(subscriptions).toHaveLength(1);
-      expect(waitForNextSubscription()).toBe(STREAM_RETRY_MIN_MS);
-    });
-
-    it("subscribes nothing after being disconnected", () => {
-      const page = new FakePage();
-      const disconnect = connectOn(page);
-      page.hidden = true;
-      disconnect();
-      expect(page.listeners).toHaveLength(0);
-
-      const disconnectWhileHidden = connectOn(page);
-      disconnectWhileHidden();
-      expect(subscriptions).toHaveLength(1);
-    });
+    expect(subscriptions[0]!.closed).toBe(false);
+    expect(handlers.onMessage).toHaveBeenCalledWith(message, POSTER);
+    page.setHidden(false);
+    expect(subscriptions).toHaveLength(1);
   });
 });
 
 describe("when the room is deleted", () => {
   it("reports it once, and lets the channel go for good", () => {
-    const page = new FakePage();
-    const stop = connectOn(page);
+    const stop = connect();
     subscriptions[0]!.ready();
     subscriptions[0]!.deleteRoom();
 
     expect(handlers.onClosed).toHaveBeenCalledTimes(1);
     expect(subscriptions[0]!.closed).toBe(true);
-    page.setHidden(true);
-    page.setHidden(false);
     vi.advanceTimersByTime(STREAM_RETRY_MAX_MS * 2);
     expect(subscriptions).toHaveLength(1);
     stop();

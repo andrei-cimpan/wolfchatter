@@ -92,6 +92,7 @@ Design: `docs/superpowers/specs/2026-11-03-wolfchatter-v2-design.md`. Each task'
 - [ ] **T8.9** Mapbox clicks, keyboard and the e2e port (Task 9).
 - [x] **T8.10** Room deletion: a room's creator deletes it and its messages after confirming; readers with it open see "The owner has closed the room" live (FR9; not in the plan, added on request).
   *Deferred from the PR #35 review:* (#4) publishing `rooms` makes Realtime examine every room insert and every `message_count` update, and every open room hears every deletion; negligible at this size. A trigger that broadcasts to a per-room topic would avoid it, but on a public channel any client could send a false "closed" notice, so it needs a private channel and policies on `realtime.messages`. (#7b) If a delete commits but its response is lost, the creator sees "The owner has closed the room" rather than their panel closing; rare, and the room is gone either way.
+- [x] **T8.11** New-message alerts: a bell turns on a ding for others' messages in the open room, plus a system notification when the tab is not in front; hidden tabs now keep their Realtime channel, with the heartbeat in a Web Worker (FR10; not in the plan, added on request). Plan: `docs/superpowers/plans/2026-11-16-message-notifications.md`.
 
 ## Closed notes
 

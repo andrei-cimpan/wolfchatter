@@ -138,7 +138,7 @@ export async function box(page: Page, selector: string) {
   return b;
 }
 
-type LiveConnection = {
+export type LiveConnection = {
   /** How many of this room's channels Realtime has reported as live (postgres_changes running). */
   readyCount(roomId: string): number;
   /** This room's channels that are live now: reported live, and not left or cut off since. */
